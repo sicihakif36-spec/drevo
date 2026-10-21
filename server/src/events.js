@@ -4,14 +4,15 @@
 // Гость не узнаёт об обсуждении живых: по событиям было бы видно, что там пишут.
 import pg from 'pg';
 import { config } from './config.js';
+import { q } from './db.js';
 import { need } from './auth.js';
 import { isGuest, privateIds } from './privacy.js';
 
 const GLUE = 300; // одно действие — несколько записей журнала: склеиваем в одно событие
-const PING = 25000; // пустая строка, чтобы прокси не рвали молчащее соединение
+const PING = 25000; // пустая строка, чтобы прокси не рвали молчащее соединение; заодно перепроверяем вход
 const RETRY = 3000;
 
-export function eventsPlugin(app) {
+export function eventsPlugin(app, { ping = PING } = {}) {
   const streams = new Set();
   let client = null;
   let ready = null;
@@ -66,6 +67,25 @@ export function eventsPlugin(app) {
     }
   }
 
+  // Вышел или отключён — закрыть поток (телефон переподключится и получит 401); сменилась роль — учитывать новую.
+  async function recheck() {
+    const list = [...streams];
+    if (!list.length) return;
+    const rows = await q(
+      `select s.token_hash, u.id, u.name, u.role, u.person_id from sessions s join users u on u.id = s.user_id
+       where s.token_hash = any($1) and not u.disabled`,
+      [list.map((s) => s.session)],
+    );
+    const users = new Map(rows.map(({ token_hash: t, ...u }) => [t, u]));
+    for (const s of list) {
+      if (users.has(s.session)) s.user = users.get(s.session);
+      else {
+        streams.delete(s);
+        s.raw.end();
+      }
+    }
+  }
+
   function stop() {
     clearInterval(pinger);
     clearTimeout(retry);
@@ -89,7 +109,7 @@ export function eventsPlugin(app) {
       if (!streams.size) stop();
       return;
     }
-    const s = { user: req.user, raw: reply.raw };
+    const s = { user: req.user, session: req.sessionHash, raw: reply.raw };
     reply.raw.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
@@ -98,7 +118,10 @@ export function eventsPlugin(app) {
     // retry — через сколько телефон переподключится после обрыва.
     reply.raw.write(`retry: ${RETRY}\n\n`);
     streams.add(s);
-    pinger ??= setInterval(() => { for (const x of streams) x.raw.write(':\n\n'); }, PING);
+    pinger ??= setInterval(() => {
+      for (const x of streams) x.raw.write(':\n\n');
+      recheck().catch((err) => app.log.warn({ err }, 'не удалось перепроверить вход'));
+    }, ping);
     reply.raw.on('close', () => {
       streams.delete(s);
       // Никого не осталось — отпустить подключение к базе.

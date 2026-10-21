@@ -14,6 +14,7 @@ import exportRoutes from './routes/export.js';
 import feedRoutes from './routes/feed.js';
 import commentRoutes from './routes/comments.js';
 import { eventsPlugin } from './events.js';
+import { pushPlugin } from './push.js';
 
 export async function buildApp(opts = {}) {
   const app = Fastify({ logger: opts.logger ?? { level: 'info' }, trustProxy: true, bodyLimit: 256 * 1024 });
@@ -27,6 +28,8 @@ export async function buildApp(opts = {}) {
   await app.register(cookie);
   await app.register(multipart, { limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
   authPlugin(app);
+  // До маршрутов: обсуждение сообщает о новых комментариях через app.push.
+  pushPlugin(app, opts.push);
   await app.register(personRoutes);
   await app.register(userRoutes);
   await app.register(mediaRoutes);
@@ -34,7 +37,7 @@ export async function buildApp(opts = {}) {
   await app.register(exportRoutes);
   await app.register(feedRoutes);
   await app.register(commentRoutes);
-  eventsPlugin(app);
+  eventsPlugin(app, { ping: opts.eventsPing });
 
   app.get('/api/health', async () => {
     await pool.query('select 1');

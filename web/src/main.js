@@ -11,6 +11,7 @@ import FamilyView from './views/FamilyView.vue';
 import InviteView from './views/InviteView.vue';
 import ChangesView from './views/ChangesView.vue';
 import FeedView from './views/FeedView.vue';
+import NotifyView from './views/NotifyView.vue';
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -23,6 +24,7 @@ const router = createRouter({
     { path: '/print', component: PrintView },
     { path: '/family', component: FamilyView },
     { path: '/changes', component: ChangesView },
+    { path: '/notify', component: NotifyView },
     { path: '/invite/:token', component: InviteView, props: true, meta: { public: true } },
   ],
   scrollBehavior: (to, from) => (to.path === from.path ? false : { top: 0 }),

@@ -41,6 +41,8 @@ async function stream(cookie) {
       if (kind) events.push({ kind, data: JSON.parse(block.match(/^data: (.*)$/m)[1]) });
     }
   });
+  let ended = false;
+  res.on('end', () => { ended = true; });
   const count = (kind) => events.filter((e) => e.kind === kind).length;
   return {
     status: res.statusCode,
@@ -51,6 +53,11 @@ async function stream(cookie) {
       for (let t = 0; t < ms / 50 && count(kind) < n; t++) await sleep(50);
       assert.ok(count(kind) >= n, `нет события ${kind}`);
     },
+    // Сервер сам закрыл поток.
+    async closed(ms = 2500) {
+      for (let t = 0; t < ms / 50 && !ended; t++) await sleep(50);
+      return ended;
+    },
     close: () => res.destroy(),
   };
 }
@@ -60,7 +67,7 @@ const listeners = async () => Number((await q("select count(*) from pg_stat_acti
 before(async () => {
   await pool.query('drop schema public cascade; create schema public;');
   await migrate(() => {});
-  app = await buildApp({ logger: false });
+  app = await buildApp({ logger: false, eventsPing: 200, push: { timer: false } });
   await app.listen({ port: 0, host: '127.0.0.1' });
   base = `http://127.0.0.1:${app.server.address().port}`;
 });
@@ -133,4 +140,27 @@ test('обрыв LISTEN: переподключение и общее «пере
   await call(owner, 'POST', '/api/persons', { person: { given: 'После обрыва' } });
   await s.wait('tree', n + 1);
   s.close();
+});
+
+test('вход перепроверяется: после выхода или отключения поток закрывается, новая роль учитывается', async () => {
+  const owner = await login('owner');
+  const leaver = await login('editor');
+  const banned = await login('editor');
+  const demoted = await login('editor');
+  const [sl, sb, sd] = [await stream(leaver), await stream(banned), await stream(demoted)];
+  await call(leaver, 'POST', '/api/logout');
+  const [{ id: bannedId }] = await q('select user_id as id from sessions order by created_at desc limit 1 offset 1');
+  const [{ id: demotedId }] = await q('select user_id as id from sessions order by created_at desc limit 1');
+  await call(owner, 'PATCH', `/api/users/${bannedId}`, { disabled: true });
+  await call(owner, 'PATCH', `/api/users/${demotedId}`, { role: 'viewer' });
+  assert.ok(await sl.closed(), 'вышел — поток закрыт');
+  assert.ok(await sb.closed(), 'отключён — поток закрыт');
+  await sleep(400);
+  assert.ok(!(await sd.closed(100)), 'роль сменилась — поток жив');
+  const living = await call(owner, 'POST', '/api/persons', { person: { given: 'Живая', birth_date: '2001' } });
+  await call(owner, 'POST', `/api/persons/${living.id}/comments`, { body: 'Адрес' });
+  await sd.wait('tree');
+  await sleep(500);
+  assert.deepEqual(sd.got('comments'), [], 'теперь гость — обсуждения живых не видит');
+  sd.close();
 });

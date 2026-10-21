@@ -52,6 +52,7 @@ export default async function commentRoutes(app) {
     const body = text(req.body);
     const p = await person(req.params.id);
     const { id } = (await q('insert into comments (person_id, user_id, body) values ($1, $2, $3) returning id', [p.id, req.user.id, body]))[0];
+    app.push.comment(id);
     return (await q(`${SELECT} and c.id = $1`, [id]))[0];
   });
 

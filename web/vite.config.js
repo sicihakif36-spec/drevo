@@ -28,6 +28,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Обработчики уведомлений (push, нажатие) — отдельным файлом из public.
+        importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [

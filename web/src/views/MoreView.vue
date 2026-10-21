@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import { store, isOwner, canEdit, loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { fullName } from '@shared/names.js';
+import { disablePush } from '../push.js';
 
 const ROLE = { owner: 'владелец', editor: 'участник', viewer: 'гость (только просмотр)' };
 const title = ref(store.title);
@@ -27,6 +28,8 @@ async function rename() {
 }
 async function logout() {
   if (!confirm('Выйти на этом устройстве? Войти снова можно будет только по новой ссылке.')) return;
+  // Этот телефон больше не получает уведомлений.
+  await disablePush().catch(() => {});
   await api('POST', '/api/logout');
   location.reload();
 }
@@ -45,6 +48,10 @@ async function logout() {
       <p class="small muted" v-if="isIos">В Safari нажмите «Поделиться» (квадрат со стрелкой), затем «На экран „Домой“».</p>
       <p class="small muted" v-else-if="!installEvent">В меню браузера выберите «Установить приложение» или «Добавить на главный экран».</p>
       <button v-else class="primary" @click="installEvent.prompt()">Установить</button>
+    </div>
+
+    <div class="list" style="margin-top:12px">
+      <router-link to="/notify">Уведомления</router-link>
     </div>
 
     <h2>Дерево</h2>

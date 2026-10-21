@@ -4,12 +4,21 @@ import { useRoute, useRouter } from 'vue-router';
 import { store, loadMe, loadTree } from './store.js';
 import AddPersonSheet from './components/AddPersonSheet.vue';
 import { addState, openAdd } from './components/addState.js';
+import { syncPush } from './push.js';
 
 const route = useRoute();
 const router = useRouter();
 const isPublic = computed(() => route.meta.public);
 
-loadMe().then(() => { if (store.me) loadTree(); });
+loadMe().then(() => {
+  if (!store.me) return;
+  loadTree();
+  syncPush();
+});
+// Нажали на уведомление, а приложение уже открыто: service worker просит перейти в нужное место.
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  if (e.data?.type === 'drevo-open') router.push(new URL(e.data.url).hash.slice(1) || '/');
+});
 watch(() => store.me?.id, (id, old) => { if (id && id !== old && !store.tree) loadTree(); });
 
 function plus() {

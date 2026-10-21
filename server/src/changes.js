@@ -14,7 +14,7 @@ export async function logChange(db, userId, entity, entityId, action, before, af
 
 // Действие осталось в силе: само не отменено и не отменяет другое (у отменённых reverted_by = id первой записи отмены).
 // Для ленты: пара «сделал — отменил» — не новость.
-const STANDS = `bool_and(c.reverted_by is null)
+export const STANDS = `bool_and(c.reverted_by is null)
   and not exists (select 1 from changes x join changes r on r.reverted_by = x.id where x.op = c.op)`;
 
 // Последние действия целиком, новые сверху. id действия — номер его первой записи.
