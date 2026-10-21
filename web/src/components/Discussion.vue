@@ -1,7 +1,7 @@
 <script setup>
-import { nextTick, ref, watch } from 'vue';
+import { nextTick, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { store, canEdit, isOwner, toast } from '../store.js';
+import { store, canEdit, isOwner, toast, onLive } from '../store.js';
 import { api } from '../api.js';
 
 // Обсуждение у карточки: воспоминания и комментарии родственников.
@@ -34,6 +34,12 @@ async function load() {
   }
 }
 watch(() => props.person.id, load, { immediate: true });
+
+// Родственник написал здесь — перечитать тихо, не сбивая начатый ответ.
+onUnmounted(onLive(async (events) => {
+  if (!loaded.value || !events.some((e) => e.kind === 'comments' && (!e.person_id || e.person_id === props.person.id))) return;
+  comments.value = await api('GET', `/api/persons/${props.person.id}/comments`);
+}));
 
 async function send() {
   sending.value = true;

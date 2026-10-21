@@ -13,6 +13,7 @@ import printRoutes from './routes/print.js';
 import exportRoutes from './routes/export.js';
 import feedRoutes from './routes/feed.js';
 import commentRoutes from './routes/comments.js';
+import { eventsPlugin } from './events.js';
 
 export async function buildApp(opts = {}) {
   const app = Fastify({ logger: opts.logger ?? { level: 'info' }, trustProxy: true, bodyLimit: 256 * 1024 });
@@ -33,6 +34,7 @@ export async function buildApp(opts = {}) {
   await app.register(exportRoutes);
   await app.register(feedRoutes);
   await app.register(commentRoutes);
+  eventsPlugin(app);
 
   app.get('/api/health', async () => {
     await pool.query('select 1');

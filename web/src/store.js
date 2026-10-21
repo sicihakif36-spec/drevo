@@ -37,6 +37,7 @@ export async function loadTree() {
     store.me = t.me;
     store.title = t.settings?.title || 'Семейное древо';
     store.offline = false;
+    listen();
   } catch (e) {
     if (e.status === 401) store.me = null;
     else if (e.status === 0) store.offline = true;
@@ -47,6 +48,57 @@ export async function loadTree() {
 export const canEdit = () => store.me && store.me.role !== 'viewer';
 export const isOwner = () => store.me?.role === 'owner';
 
-// Подтягивать правки родственников, когда приложение снова на экране.
+// Обновления у всех сразу: сервер сообщает о правках (GET /api/events), телефон перечитывает нужное.
+// События: { kind: 'tree' } — дерево изменилось, { kind: 'comments', person_id } — новое в обсуждении
+// (без person_id — неизвестно где, перечитать открытое).
+const watchers = new Set();
+// Открытый экран подписывается: fn(events) перечитывает своё. Возвращает отписку.
+export function onLive(fn) {
+  watchers.add(fn);
+  return () => watchers.delete(fn);
+}
+
+let source = null;
+let missed = false; // связь прерывалась: события за это время потеряны
+let glued = [];
+let glueTimer;
+
+// Одно действие родственника — несколько событий подряд: перечитываем один раз.
+function soon(...events) {
+  glued.push(...events);
+  clearTimeout(glueTimer);
+  glueTimer = setTimeout(refresh, 200);
+}
+
+async function refresh() {
+  const events = glued;
+  glued = [];
+  // Сначала открытые экраны (лента отмечает новое просмотренным), потом дерево с точкой «есть новое».
+  await Promise.allSettled([...watchers].map((fn) => fn(events)));
+  await loadTree();
+}
+
+function listen() {
+  if (source || typeof EventSource === 'undefined') return;
+  source = new EventSource('/api/events');
+  source.onopen = () => {
+    if (missed) soon({ kind: 'tree' }, { kind: 'comments' });
+    missed = false;
+  };
+  source.addEventListener('tree', () => soon({ kind: 'tree' }));
+  source.addEventListener('comments', (e) => soon({ kind: 'comments', ...JSON.parse(e.data) }));
+  source.onerror = () => {
+    missed = true;
+    // Обрыв связи браузер переподключает сам, а после ответа с ошибкой (сервер перезапускается) — бросает.
+    if (source.readyState === EventSource.CLOSED) {
+      source.close();
+      source = null;
+    }
+  };
+}
+
+const live = () => Boolean(source) && source.readyState === EventSource.OPEN;
+
+// Вернулись в приложение — перечитать дерево. Если потока нет, раз в минуту перечитывать и пробовать снова.
 document.addEventListener('visibilitychange', () => { if (!document.hidden && store.me) loadTree(); });
-setInterval(() => { if (!document.hidden && store.me) loadTree(); }, 60000);
+setInterval(() => { if (!document.hidden && store.me && !live()) loadTree(); }, 60000);

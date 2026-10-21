@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
-import { store, canEdit } from '../store.js';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { store, canEdit, onLive } from '../store.js';
 import { api } from '../api.js';
 import { namer, opLines } from '../history.js';
 import { fullName, missingFields, upcomingDates, yearsText } from '@shared/names.js';
@@ -9,17 +9,21 @@ const items = ref([]);
 const loaded = ref(false);
 const error = ref('');
 
-onMounted(async () => {
+async function load() {
   try {
     const feed = await api('GET', '/api/feed');
     items.value = feed.items;
     loaded.value = true;
+    error.value = '';
     await api('POST', '/api/feed/seen', { at: feed.now });
     if (store.tree) store.tree.feed_new = 0;
   } catch (e) {
     error.value = e.message;
   }
-});
+}
+onMounted(load);
+// Лента открыта — новое сразу на экране и считается просмотренным.
+onUnmounted(onLive(load));
 
 const persons = computed(() => (store.idx ? [...store.idx.persons.values()] : []));
 

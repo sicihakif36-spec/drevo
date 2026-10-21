@@ -1,7 +1,7 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { store, loadTree, canEdit, toast } from '../store.js';
+import { store, loadTree, canEdit, toast, onLive } from '../store.js';
 import { api, photoUrl, shrinkImage } from '../api.js';
 import { openAdd } from '../components/addState.js';
 import ChangeList from '../components/ChangeList.vue';
@@ -98,6 +98,7 @@ async function loadHistory() {
 }
 
 watch(() => props.id, () => { editing.value = false; showHistory.value = false; });
+onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.kind === 'tree')) return reloadHistory(); }));
 </script>
 
 <template>
