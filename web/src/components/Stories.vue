@@ -8,6 +8,7 @@ import StoryView from './StoryView.vue';
 // Истории человека: воспоминания текстом и голосом. Открытая история — поверх карточки, адрес ?story=<id>
 // (?story=new — новая): кнопка «Назад» на телефоне её закрывает.
 const props = defineProps({ person: Object });
+const emit = defineEmits(['count']); // сколько историй — для закладки в карточке
 const route = useRoute();
 const router = useRouter();
 const items = ref([]);
@@ -43,6 +44,7 @@ async function load() {
   if (!props.person.hidden) await reload();
 }
 watch(() => props.person.id, load, { immediate: true });
+watch([loaded, () => items.value.length], ([l, n]) => emit('count', l ? n : null), { immediate: true });
 onUnmounted(onLive((events) => { if (loaded.value && events.some((e) => e.kind === 'tree')) return reload(); }));
 
 let pushed = false; // открыто отсюда: закрывать шагом назад, чтобы «Назад» не открывал историю снова

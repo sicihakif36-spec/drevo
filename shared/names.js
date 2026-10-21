@@ -233,11 +233,38 @@ function wordGenitive(w, female) {
   if (/[бвгджзклмнпрстфхцчшщ]$/.test(low)) return w + 'а';
   return w;
 }
-export function nameGenitive(p) {
-  if (!p?.given) return fullName(p);
-  const female = (p.sex === 'U' || !p.sex ? guessSex(p.given, p.patronymic) : p.sex) === 'F';
-  return [p.given, p.patronymic].filter(Boolean).map((w) => wordGenitive(w.trim(), female)).join(' ');
+// Винительный: «Петра», «Илью», «Анну», «Любовь».
+function wordAccusative(w, female) {
+  const low = w.toLowerCase();
+  if (/а$/.test(low)) return w.slice(0, -1) + 'у'; // Анну, Никиту
+  if (/я$/.test(low)) return w.slice(0, -1) + 'ю'; // Марию, Илью
+  return female ? w : wordGenitive(w, false);
 }
+const isFemale = (p) => (p.sex === 'U' || !p.sex ? guessSex(p.given, p.patronymic) : p.sex) === 'F';
+function nameCase(p, word, patronymic) {
+  if (!p?.given) return fullName(p);
+  const female = isFemale(p);
+  return [p.given, patronymic && p.patronymic].filter(Boolean).map((w) => word(w.trim(), female)).join(' ');
+}
+// Предложный: «о Петре», «об Анне», «о Марии», «о Любови», «о Сергее».
+function wordPrepositional(w, female) {
+  const low = w.toLowerCase();
+  const special = { 'пётр': 'Петре', 'петр': 'Петре', 'павел': 'Павле', 'лев': 'Льве' };
+  if (!female && special[low]) return special[low];
+  if (/(ия|ий)$/.test(low)) return w.slice(0, -1) + 'и';
+  if (/[ая]$/.test(low)) return w.slice(0, -1) + 'е';
+  if (/(вич|ич)$/.test(low)) return w + 'е';
+  if (female) return /ь$/.test(low) ? w.slice(0, -1) + 'и' : w;
+  if (/[йь]$/.test(low)) return w.slice(0, -1) + 'е';
+  if (/[бвгджзклмнпрстфхцчшщ]$/.test(low)) return w + 'е';
+  return w;
+}
+// «для Сергея Юрьевича»; short — только имя: «у Петра».
+export const nameGenitive = (p, short = false) => nameCase(p, wordGenitive, !short);
+// «Удалить Анну Петровну»; short — только имя: «Убрать Юрия».
+export const nameAccusative = (p, short = false) => nameCase(p, wordAccusative, !short);
+// «Рассказ о Петре»; short — только имя.
+export const namePrepositional = (p, short = false) => nameCase(p, wordPrepositional, !short);
 
 // ---------- Родство ----------
 

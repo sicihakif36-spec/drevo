@@ -44,7 +44,7 @@ let usedAt = 0;
 
 <template>
   <div class="field place">
-    <label :for="id">{{ label }}</label>
+    <label :for="id" class="label">{{ label }}</label>
     <!-- Многострочное: полное старое название не помещается в строку. Перевод строки не нужен — Enter его не ставит. -->
     <textarea :id="id" v-grow class="line" rows="1" :value="modelValue" :maxlength="maxlength" :placeholder="placeholder" autocomplete="off" role="combobox"
       :aria-expanded="list.length > 0" :aria-controls="`${id}-list`"
@@ -62,11 +62,12 @@ let usedAt = 0;
 
 <style scoped>
 .place { position: relative; }
-.place > label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-.hints { margin-top: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
-.hints button { display: block; width: 100%; text-align: left; background: transparent; border-radius: 0; padding: 10px 12px; min-height: 52px; border-top: 1px solid var(--line); }
+/* Подпись — как у остальных полей (.field > span). */
+.place > .label { display: block; font-size: 0.889rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem; }
+.hints { margin-top: 0.222rem; background: var(--card); border: 1.5px solid var(--field); border-radius: var(--radius-s); overflow: hidden; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+.hints button { display: block; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 0; padding: 0.556rem 0.667rem; min-height: 3rem; border-top: 1px solid var(--line); color: var(--text); font-weight: 400; }
 .hints button:first-child { border-top: 0; }
-.hints .t { display: block; font-size: 16px; overflow-wrap: anywhere; }
+.hints .t { display: block; overflow-wrap: anywhere; }
 .hints .small { display: block; }
 .ok { margin-top: 4px; }
 </style>

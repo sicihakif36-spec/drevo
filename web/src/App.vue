@@ -3,6 +3,7 @@ import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { store, loadMe, loadTree, canEdit } from './store.js';
 import AddPersonSheet from './components/AddPersonSheet.vue';
+import AskDialog from './components/AskDialog.vue';
 import { addState, openAdd } from './components/addState.js';
 import { syncPush } from './push.js';
 
@@ -69,4 +70,5 @@ function added(id) {
     <AddPersonSheet v-if="addState.open" @done="added" />
   </template>
   <div class="toast" v-if="store.toast">{{ store.toast }}</div>
+  <AskDialog />
 </template>

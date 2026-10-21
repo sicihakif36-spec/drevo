@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { store, loadTree, canEdit, toast } from '../store.js';
 import { api, photoUrl } from '../api.js';
 import { fullName, lifespan } from '@shared/names.js';
+import { ask } from './ask.js';
 
 // Просмотр во весь экран: листание пальцем влево-вправо, увеличение щипком или нажатием, подпись и кто на фото.
 const props = defineProps({ items: Array, index: Number, person: Object });
@@ -134,11 +135,11 @@ const saveEdit = () => act(async () => {
 const makeMain = () => act(async () => {
   await api('PUT', `/api/persons/${props.person.id}/photo`, { media_id: m.value.id });
   await loadTree();
-}, 'Теперь это главное фото');
+}, 'Это фото теперь на карточке');
 
-function remove() {
+async function remove() {
   const what = m.value.kind === 'doc' ? 'этот документ' : 'это фото';
-  if (!confirm(`Удалить ${what}? Отменить можно в «Ещё → Последние правки».`)) return;
+  if (!await ask({ text: `Удалить ${what}?`, note: 'Вернуть можно в «Ещё → Последние правки».', yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   const i = props.index;
   act(async () => {
     await api('DELETE', `/api/media/${m.value.id}`);
@@ -204,14 +205,14 @@ function closeTags() {
       <template v-else>
         <div class="caption">{{ m.caption || (!isImage && m.name) || 'Без подписи' }}</div>
         <div v-if="m.date" class="date">{{ m.date }}</div>
-        <div v-if="m.id === person.photo_id" class="date">Главное фото</div>
+        <div v-if="m.id === person.photo_id" class="date">Это фото на карточке</div>
         <div class="who">
           {{ where }}:
           <template v-for="(x, i) in people" :key="x.id"><router-link :to="`/person/${x.id}`">{{ fullName(x) }}</router-link><template v-if="i < people.length - 1">, </template></template>
         </div>
         <div v-if="canEdit()" class="actions">
           <button @click="tagging = true">Отметить людей</button>
-          <button v-if="isImage && m.id !== person.photo_id" :disabled="busy" @click="makeMain">Сделать главным</button>
+          <button v-if="isImage && m.id !== person.photo_id" :disabled="busy" @click="makeMain">Поставить на карточку</button>
           <button @click="startEdit">Изменить подпись</button>
           <button class="del" :disabled="busy" @click="remove">Удалить</button>
         </div>
@@ -227,7 +228,7 @@ function closeTags() {
           <button v-for="t in found" :key="t.p.id" :class="{ on: t.on }" :disabled="busy" @click="toggle(t)">
             <span class="avatar" :class="t.p.sex">{{ (t.p.given || '?')[0] }}</span>
             <span class="grow"><span class="ellipsis name">{{ fullName(t.p) }}</span><span class="muted small">{{ lifespan(t.p) }}</span></span>
-            <span class="mark">{{ t.on ? '✓ Отмечен(а)' : 'Отметить' }}</span>
+            <span class="mark">{{ t.on ? (t.p.sex === 'F' ? '✓ Отмечена' : '✓ Отмечен') : 'Отметить' }}</span>
           </button>
           <div v-if="!found.length" class="muted">Никого не нашлось</div>
         </div>
@@ -240,7 +241,7 @@ function closeTags() {
 <style scoped>
 .viewer { position: fixed; inset: 0; z-index: 60; background: #111; color: #f2efe9; display: flex; flex-direction: column; }
 .top { display: flex; align-items: center; justify-content: space-between; padding: calc(6px + var(--safe-t)) 8px 6px; }
-.close { background: rgba(255,255,255,.12); color: #fff; font-size: 17px; }
+.close { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.28); color: #fff; }
 .count { font-size: 17px; padding-right: 8px; color: #cfc8bd; }
 .stage { position: relative; flex: 1; min-height: 0; overflow: hidden; display: grid; touch-action: pan-x pan-y; }
 .stage.zoomed { overflow: auto; }
@@ -249,7 +250,7 @@ function closeTags() {
 .pdf { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 20px; }
 .pdf .icon { width: 110px; height: 140px; border-radius: 12px; background: #b4442f; color: #fff; font-weight: 700; font-size: 28px; display: grid; place-items: center; }
 .pdf .btn { font-size: 18px; min-height: 56px; }
-.flip { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 64px; padding: 0; background: rgba(0,0,0,.35); }
+.flip { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 64px; padding: 0; background: rgba(0,0,0,.35); border-color: transparent; }
 .flip svg { width: 28px; height: 28px; fill: none; stroke: #fff; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 .prev { left: 6px; }
 .next { right: 6px; }
@@ -260,14 +261,14 @@ function closeTags() {
 .who { margin-top: 8px; font-size: 16px; color: #cfc8bd; }
 .who a { color: #b9d69a; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
-.actions button { background: rgba(255,255,255,.12); color: #fff; font-size: 16px; }
+.actions button { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.28); color: #fff; font-size: 0.889rem; }
 .actions .del { color: #ff9b86; }
 .info label.field > span { color: #cfc8bd; }
 .top-layer.sheet-backdrop { z-index: 70; }
 .top-layer.sheet { z-index: 71; color: var(--text); }
 .tags { margin: 10px 0; max-height: 50vh; overflow-y: auto; }
 .tags button { width: 100%; justify-content: flex-start; text-align: left; border-radius: 0; background: transparent; }
-.tags button.on { background: var(--accent-soft); }
+.tags button.on { background: var(--accent-soft); color: var(--accent-soft-text); }
 .tags .name, .tags .grow > span { display: block; }
-.mark { flex: none; font-size: 14px; color: var(--accent); font-weight: 600; }
+.mark { flex: none; font-size: 0.889rem; color: var(--accent-text); font-weight: 700; }
 </style>

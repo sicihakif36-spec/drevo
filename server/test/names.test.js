@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   patronymicFrom, surnameFor, guessSex, kinshipTerm, lifespan, isPrivate, exactDate, yearsText, upcomingDates, parsePeriod,
-  toNewStyle, dateText, isOldStyle, withOldStyle, canBeOldStyle, parseDate, nameGenitive,
+  toNewStyle, dateText, isOldStyle, withOldStyle, canBeOldStyle, parseDate, nameGenitive, nameAccusative, namePrepositional,
 } from '../../shared/names.js';
 import { placeTitle, placeKey, suggestPlaces } from '../../shared/places.js';
 import { gedDate, gedPeriod } from '../src/routes/export.js';
@@ -32,6 +32,21 @@ test('имя в родительном падеже', () => {
     [{ given: '', surname: 'Смирнов', patronymic: '', sex: 'M' }, 'Смирнов'],
   ];
   for (const [p, want] of cases) assert.equal(nameGenitive({ surname: '', ...p }), want);
+});
+
+test('винительный падеж имени', () => {
+  const cases = [[{ given: 'Пётр', patronymic: 'Иванович', sex: 'M' }, 'Петра Ивановича'], [{ given: 'Анна', patronymic: 'Петровна', sex: 'F' }, 'Анну Петровну'],
+    [{ given: 'Мария', sex: 'F' }, 'Марию'], [{ given: 'Любовь', sex: 'F' }, 'Любовь'], [{ given: 'Юрий', sex: 'M' }, 'Юрия'], [{ given: 'Илья', sex: 'M' }, 'Илью']];
+  for (const [p, want] of cases) assert.equal(nameAccusative({ surname: '', ...p }), want);
+  assert.equal(nameAccusative({ given: 'Галина', patronymic: 'Ивановна', sex: 'F' }, true), 'Галину');
+  assert.equal(nameGenitive({ given: 'Пётр', patronymic: 'Иванович', sex: 'M' }, true), 'Петра');
+});
+
+test('предложный падеж имени', () => {
+  const cases = [['Пётр', 'M', 'Петре'], ['Анна', 'F', 'Анне'], ['Мария', 'F', 'Марии'], ['Юрий', 'M', 'Юрии'], ['Любовь', 'F', 'Любови'],
+    ['Сергей', 'M', 'Сергее'], ['Игорь', 'M', 'Игоре'], ['Иван', 'M', 'Иване'], ['Илья', 'M', 'Илье']];
+  for (const [given, sex, want] of cases) assert.equal(namePrepositional({ surname: '', given, sex }, true), want);
+  assert.equal(namePrepositional({ given: 'Галина', patronymic: 'Ивановна', sex: 'F' }), 'Галине Ивановне');
 });
 
 test('фамилии и пол', () => {

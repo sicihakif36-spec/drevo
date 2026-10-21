@@ -52,8 +52,8 @@ onUnmounted(() => audio.value?.pause());
 
 <style scoped>
 .player { display: flex; align-items: center; gap: 14px; }
-.play { flex: none; width: 64px; height: 64px; min-height: 0; padding: 0; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; }
-.play svg { width: 30px; height: 30px; fill: currentColor; }
+.play { flex: none; width: 3.556rem; height: 3.556rem; min-height: 0; padding: 0; border-radius: 50%; background: var(--accent); border-color: var(--accent); color: var(--on-accent); display: grid; place-items: center; }
+.play svg { width: 1.667rem; height: 1.667rem; fill: currentColor; }
 input[type=range] { width: 100%; padding: 0; height: 32px; min-height: 0; border: 0; background: transparent; }
 .error { margin: 4px 0 0; }
 </style>

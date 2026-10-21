@@ -1,6 +1,7 @@
 <script setup>
 import { onUnmounted, ref } from 'vue';
 import AudioPlayer from './AudioPlayer.vue';
+import { ask } from './ask.js';
 
 // Запись голоса с телефона или готовая запись из диктофона. Наружу — { blob, name, duration } или null (записи нет).
 // Микрофон просим только по нажатию «Записать». Запись не длиннее 15 минут: потом останавливается сама.
@@ -96,7 +97,12 @@ function stop() {
   if (rec?.state === 'recording') rec.stop();
 }
 
-function clear() {
+async function again() {
+  if (await ask({ text: 'Записать заново?', note: 'Эта запись пропадёт.', yes: 'Записать заново', no: 'Оставить эту' })) start();
+}
+// Новая запись ещё нигде не сохранена: убрать её — насовсем, поэтому спрашиваем.
+async function clear() {
+  if (!await ask({ text: 'Убрать эту запись?', note: 'Она ещё не сохранена, вернуть её будет нельзя.', yes: 'Убрать', no: 'Не убирать', danger: true })) return;
   if (url.value) URL.revokeObjectURL(url.value);
   url.value = '';
   state.value = 'idle';
@@ -151,8 +157,8 @@ onUnmounted(() => {
     <template v-else-if="state === 'done'">
       <AudioPlayer :src="url" :duration="duration" />
       <div class="row">
-        <button type="button" class="grow" @click="start">Перезаписать</button>
-        <button type="button" class="danger" @click="clear">Убрать</button>
+        <button type="button" class="grow" @click="again">Перезаписать</button>
+        <button type="button" class="danger" @click="clear">Убрать запись</button>
       </div>
     </template>
     <template v-else>
@@ -169,14 +175,15 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.recorder { display: flex; flex-direction: column; gap: 10px; }
-.rec, .stop { min-height: 60px; font-size: 18px; font-weight: 600; }
-.rec { background: var(--danger); color: #fff; }
-.rec svg { width: 26px; height: 26px; fill: currentColor; }
-.stop { background: var(--text); color: var(--bg); }
-.live { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 0; }
-.dot { width: 16px; height: 16px; border-radius: 50%; background: var(--danger); animation: blink 1s infinite; }
-.time { font-size: 32px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.recorder { display: flex; flex-direction: column; gap: 0.556rem; }
+.rec, .stop { min-height: 4rem; font-size: 1.111rem; font-weight: 700; }
+.rec { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.rec svg { width: 1.556rem; height: 1.556rem; fill: currentColor; }
+.recorder .ghost { color: var(--accent-text); }
+.stop { background: var(--text); border-color: var(--text); color: var(--bg); }
+.live { display: flex; align-items: center; justify-content: center; gap: 0.556rem; padding: 0.333rem 0; }
+.dot { width: 0.889rem; height: 0.889rem; border-radius: 50%; background: var(--danger); animation: blink 1s infinite; }
+.time { font-size: 1.778rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .banner { margin: 0; }
 .error { margin: 0; }
 @keyframes blink { 50% { opacity: .25; } }
