@@ -56,9 +56,9 @@ async function save() {
     if (voice.value) {
       saving.value = 'Отправляю запись…';
       const fd = new FormData();
-      fd.append('duration', String(voice.value.duration || ''));
       fd.append('file', voice.value.blob, voice.value.name);
-      const a = await upload('/api/audio', fd, (x) => { saving.value = `Отправляю запись… ${Math.round(x * 100)}%`; });
+      // Когда запись дошла, сервер ещё переводит её в MP3.
+      const a = await upload('/api/audio', fd, (x) => { saving.value = x < 1 ? `Отправляю запись… ${Math.round(x * 100)}%` : 'Готовлю запись…'; });
       data.audio_id = a.id;
     } else if (dropAudio.value) data.audio_id = null;
     saving.value = 'Сохраняю…';

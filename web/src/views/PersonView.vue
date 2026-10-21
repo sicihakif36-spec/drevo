@@ -8,6 +8,10 @@ import ChangeList from '../components/ChangeList.vue';
 import Discussion from '../components/Discussion.vue';
 import Album from '../components/Album.vue';
 import Stories from '../components/Stories.vue';
+import Sources from '../components/Sources.vue';
+import FactBadge from '../components/FactBadge.vue';
+import FactSheet from '../components/FactSheet.vue';
+import { factInfo, personFacts } from '../sources.js';
 import { FIELDS } from '../history.js';
 import { fullName, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields } from '@shared/names.js';
 
@@ -30,6 +34,23 @@ const marriages = computed(() => (p.value ? spousesOf(idx.value, p.value.id).map
   const fam = idx.value.families.get(s.familyId);
   return { ...s, fam, spouse: s.spouseId && idx.value.persons.get(s.spouseId), kids: fam.children.map((c) => idx.value.persons.get(c)).filter(Boolean) };
 }) : []));
+// Источники и достоверность сведений: значки у дат и мест, окно сведения, раздел «Источники».
+const sources = ref(null);
+const sheet = ref(null); // { fact } — открытое окно сведения; fact null — сначала выбрать сведение
+const facts = computed(() => (p.value ? personFacts(p.value, marriages.value) : []));
+const fact = (subject, id, key) => facts.value.find((f) => f.subject === subject && f.id === id && f.fact === key);
+const info = (subject, id, key) => factInfo(sources.value, subject, id, key);
+async function loadSources() {
+  const id = props.id;
+  if (!p.value || p.value.hidden) {
+    sources.value = { quality: [], citations: [], sources: [] };
+    return;
+  }
+  const data = await api('GET', `/api/persons/${id}/sources`).catch(() => null);
+  if (props.id === id) sources.value = data;
+}
+// Дерево перечитывается при каждой правке — источники заново грузим только для другого человека.
+watch(() => `${props.id}:${Boolean(p.value)}:${Boolean(p.value?.hidden)}`, () => { sources.value = null; sheet.value = null; loadSources(); }, { immediate: true });
 const siblings = computed(() => (p.value ? siblingsOf(idx.value, p.value.id).map((id) => idx.value.persons.get(id)).filter(Boolean) : []));
 
 function startEdit() {
@@ -93,7 +114,11 @@ async function loadHistory() {
 }
 
 watch(() => props.id, () => { editing.value = false; showHistory.value = false; });
-onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.kind === 'tree')) return reloadHistory(); }));
+onUnmounted(onLive((events) => {
+  if (!events.some((e) => e.kind === 'tree')) return;
+  loadSources();
+  if (showHistory.value) return reloadHistory();
+}));
 </script>
 
 <template>
@@ -113,6 +138,7 @@ onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.k
       <h1>{{ fullName(p) }}</h1>
       <div class="muted">{{ [lifespan(p), kin].filter(Boolean).join(' · ') }}</div>
       <div v-if="p.birth_surname && p.birth_surname !== p.surname" class="muted small">урождённая(-ый) {{ p.birth_surname }}</div>
+      <FactBadge v-if="!p.hidden" :info="info('person', p.id, 'name')" :editable="canEdit()" @open="sheet = { fact: fact('person', p.id, 'name') }" />
     </div>
 
     <div v-if="missing.length && canEdit() && !editing" class="banner">Не хватает: {{ missing.join(', ') }}</div>
@@ -143,8 +169,11 @@ onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.k
     <div v-else class="list">
       <template v-for="[k, label] in FIELDS" :key="k">
         <div v-if="p[k] && !['surname', 'given', 'patronymic', 'birth_surname'].includes(k)" class="fact">
-          <div class="muted small">{{ label }}</div>
-          <div class="pre">{{ p[k] }}</div>
+          <div class="grow">
+            <div class="muted small">{{ label }}</div>
+            <div class="pre">{{ p[k] }}</div>
+          </div>
+          <FactBadge v-if="fact('person', p.id, k)" :info="info('person', p.id, k)" :editable="canEdit()" @open="sheet = { fact: fact('person', p.id, k) }" />
         </div>
       </template>
       <div v-if="p.hidden" class="muted small">Даты, места и фото живых родственников видны только участникам дерева.</div>
@@ -170,6 +199,8 @@ onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.k
         <router-link v-if="m.spouse" :to="`/person/${m.spouse.id}`">
           <div class="avatar" :class="m.spouse.sex">{{ (m.spouse.given || '?')[0] }}</div>
           <div class="grow"><div class="ellipsis">{{ fullName(m.spouse) }}</div><div class="muted small">{{ m.spouse.sex === 'F' ? 'жена' : 'муж' }}<template v-if="m.fam.start_date"> · брак {{ m.fam.start_date }}</template></div></div>
+          <FactBadge v-if="!editing && !m.spouse.hidden && !p.hidden" :info="info('family', m.familyId, 'marriage')" :editable="canEdit()"
+            @open="sheet = { fact: fact('family', m.familyId, 'marriage') }" />
           <button v-if="editing" class="danger" @click.prevent="unlink(m.familyId, m.spouse.id, 'супруг')">✕</button>
         </router-link>
         <router-link v-for="c in m.kids" :key="c.id" :to="`/person/${c.id}`" class="kid">
@@ -199,6 +230,8 @@ onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.k
 
     <Stories :person="p" />
 
+    <Sources :person="p" :data="sources" @cite="sheet = { fact: null }" @changed="loadSources" />
+
     <Discussion :person="p" />
 
     <h2>Ещё</h2>
@@ -209,6 +242,9 @@ onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.k
       <a href="#" v-if="canEdit()" @click.prevent="loadHistory">История правок</a>
       <a href="#" v-if="canEdit()" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
     </div>
+
+    <FactSheet v-if="sheet" :key="sheet.fact ? sheet.fact.subject + sheet.fact.id + sheet.fact.fact : 'pick'" :fact="sheet.fact" :facts="facts"
+      :data="sources" :person="p" @close="sheet = null" @changed="loadSources" />
 
     <ChangeList v-if="showHistory" :ops="history" style="margin-top:10px" @reverted="reloadHistory" />
   </div>
@@ -221,7 +257,9 @@ onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.k
 .photo.M { background: var(--male-soft); color: var(--male); }
 .photo.F { background: var(--female-soft); color: var(--female); }
 .photo img { width: 100%; height: 100%; object-fit: cover; }
-.fact { display: block !important; }
+.fact { align-items: flex-start !important; }
+.fact .badge { margin-top: 6px; }
+.head .badge { margin-top: 8px; }
 .pre { white-space: pre-wrap; }
 .kid { padding-left: 32px !important; }
 .danger-link { color: var(--danger) !important; }

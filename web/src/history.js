@@ -1,5 +1,6 @@
 // Подписи к журналу правок: одно действие пользователя — одна или несколько строк.
 import { fullName } from '@shared/names.js';
+import { KINDS, QUALITY, factLabel } from '@shared/sources.js';
 
 export const FIELDS = [
   ['surname', 'Фамилия'], ['given', 'Имя'], ['patronymic', 'Отчество'], ['birth_surname', 'Фамилия при рождении'],
@@ -119,12 +120,55 @@ function storyLine(e, name) {
   return null;
 }
 
+// Источники: «добавил(а) источник «Метрическая книга…» — дата рождения: Смирнов Пётр Иванович».
+// Гостю названия не приходят — тогда вид источника: «источник (Ревизская сказка)», а у достоверности — без самой отметки.
+const SOURCE_FIELD = {
+  kind: 'вид', title: 'название', archive: 'архив', fond: 'фонд', opis: 'опись', delo: 'дело', sheet: 'лист', verso: 'оборот',
+  url: 'ссылку', media_id: 'скан', note: 'заметку',
+};
+const sourceName = (x) => (x?.title ? `источник «${x.title}»` : KINDS[x?.kind] ? `источник (${KINDS[x.kind].label})` : 'источник');
+// «— дата рождения: Смирнов Пётр Иванович».
+const factOf = (e, name) => {
+  const x = e.after || e.before || {};
+  const who = (e.persons || []).map(name).join(', ');
+  return `${x.fact ? ` — ${factLabel(x.subject, x.fact).toLowerCase()}` : ''}${who ? `: ${who}` : ''}`;
+};
+function sourceLines(entries, name) {
+  const lines = [];
+  // Новый источник сразу привязан к сведению — одной строкой.
+  const added = entries.filter((e) => e.entity === 'source' && e.action === 'add');
+  const merged = added.length === 1 ? entries.filter((e) => e.entity === 'citation' && e.action === 'add') : [];
+  for (const e of entries) {
+    const x = e.after || e.before || {};
+    if (e.entity === 'quality') {
+      const q = QUALITY[e.after?.quality];
+      const what = q ? `отметил(а): ${q.label.toLowerCase()}` : e.after?.marked ? 'отметил(а) достоверность' : 'убрал(а) отметку достоверности';
+      lines.push(what + factOf(e, name));
+    } else if (e.entity === 'citation') {
+      if (merged.includes(e)) continue;
+      if (e.action === 'add') lines.push(`указал(а) ${sourceName(x)}${factOf(e, name)}`);
+      if (e.action === 'remove') lines.push(`убрал(а) ${sourceName(x)}${factOf(e, name)}`);
+      if (e.action === 'update') lines.push(`изменил(а) уточнение к источнику${factOf(e, name)}`);
+    } else if (e.action === 'add') {
+      lines.push(`добавил(а) ${sourceName(x)}${merged.map((c) => factOf(c, name)).join(';')}`);
+    } else if (e.action === 'update') {
+      const fields = Object.keys(e.before || {}).map((k) => SOURCE_FIELD[k] || k).join(', ');
+      lines.push(`изменил(а) ${sourceName(x)}${fields ? `: ${fields}` : ''}`);
+    } else if (e.action === 'delete' || e.action === 'restore') {
+      const who = (e.persons || []).map(name).join(', ');
+      lines.push(`${e.action === 'delete' ? 'удалил(а)' : 'вернул(а)'} ${sourceName(x)}${who ? `: ${who}` : ''}`);
+    }
+  }
+  return lines;
+}
+
 // Строки действия. Служебные записи (пустая семья создана или убрана) не показываем.
 export function opLines(op, name) {
   // Первое фото само становится главным, удалённое перестаёт им быть — отдельной строкой это не показываем.
   const withFiles = op.entries.some((e) => e.entity === 'media' && ['add', 'delete', 'restore'].includes(e.action));
   const lines = [
     ...mediaLines(op.entries.filter((e) => e.entity === 'media'), name),
+    ...sourceLines(op.entries.filter((e) => ['source', 'citation', 'quality'].includes(e.entity)), name),
     ...op.entries.map((e) => {
       if (e.entity === 'person') return e.action === 'photo' && withFiles ? null : personLine(e, name);
       if (e.entity === 'story') return storyLine(e, name);
@@ -135,11 +179,12 @@ export function opLines(op, name) {
 }
 
 // «было: …» для правок карточки.
-// У истории — только заголовок и дата: текст длинный, а запись голоса словами не покажешь.
+// У истории — только заголовок и дата: текст длинный, а запись голоса словами не покажешь. У источника — без скана и оборота.
+const WAS = { story: ['title', 'date'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'url'] };
 export function opWas(op) {
   return op.entries
     .filter((e) => e.entity !== 'family' && e.action === 'update')
-    .map((e) => Object.entries(e.before || {}).filter(([k]) => e.entity !== 'story' || ['title', 'date'].includes(k)).map(([, v]) => v))
+    .map((e) => Object.entries(e.before || {}).filter(([k]) => !WAS[e.entity] || WAS[e.entity].includes(k)).map(([, v]) => v))
     .filter((vals) => vals.length)
     .map((vals) => 'было: ' + vals.map((v) => (v === '' ? '—' : String(v))).join(', '));
 }

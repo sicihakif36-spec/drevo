@@ -7,9 +7,12 @@ import {
 } from './tree.js';
 import { MEDIA_FIELDS, deleteMedia, restoreMedia, tag, untag } from './album.js';
 import { STORY_FIELDS, deleteStory, restoreStory, updateStory, linkPerson, unlinkPerson } from './stories.js';
+import { SOURCE_FIELDS } from '../../shared/sources.js';
+import { deleteSource, restoreSource, updateSource, cite, uncite, updateCitation, setQuality } from './sources.js';
 
 const LATER = 'После этой правки были другие. Сначала отмените более поздние правки.';
 const GONE = 'Этот человек удалён. Сначала верните его.';
+const SOURCE_GONE = 'Этот источник удалён. Сначала верните его.';
 const pick = (o, cols) => Object.fromEntries(cols.map((c) => [c, o[c]]));
 
 async function undoPerson(db, userId, e) {
@@ -156,6 +159,61 @@ async function undoStory(db, userId, e) {
   throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
 }
 
+async function undoSource(db, userId, e) {
+  const s = (await db.q('select * from sources where id = $1 for update', [e.entity_id]))[0];
+  if (!s) throw new HttpError(404, 'Источник не найден');
+  switch (e.action) {
+    case 'add':
+    case 'restore':
+      if (s.deleted_at) throw new HttpError(409, 'Этот источник уже удалён');
+      return deleteSource(db, userId, s.id);
+    case 'delete':
+      return restoreSource(db, userId, s.id);
+    case 'update': {
+      if (s.deleted_at) throw new HttpError(409, SOURCE_GONE);
+      const before = e.before || {};
+      const id = await updateSource(db, userId, s.id, pick(before, Object.keys(before).filter((c) => SOURCE_FIELDS.includes(c))));
+      if (!id) throw new HttpError(409, 'Здесь уже всё как было до этой правки');
+      return id;
+    }
+  }
+  throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
+}
+
+// Привязка источника к сведению: снимок в журнале — сама строка привязки.
+async function undoCitation(db, userId, e) {
+  const x = e.after || e.before;
+  if ((await db.q('select 1 from sources where id = $1 and deleted_at is not null', [x.source_id]))[0]) throw new HttpError(409, SOURCE_GONE);
+  switch (e.action) {
+    case 'add': {
+      const id = await uncite(db, userId, e.entity_id);
+      if (!id) throw new HttpError(409, LATER);
+      return id;
+    }
+    case 'remove': {
+      if (x.subject === 'person' && !(await alive(db, x.subject_id))) throw new HttpError(409, GONE);
+      const c = await cite(db, userId, x, e.entity_id);
+      if (!c) throw new HttpError(409, LATER);
+      return c.changeId;
+    }
+    case 'update': {
+      const cur = (await db.q('select page from citations where id = $1', [e.entity_id]))[0];
+      if (!cur || cur.page !== e.after.page) throw new HttpError(409, LATER);
+      return updateCitation(db, userId, e.entity_id, e.before.page);
+    }
+  }
+  throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
+}
+
+async function undoQuality(db, userId, e) {
+  const { subject, fact } = e.before;
+  if (subject === 'person' && !(await alive(db, e.entity_id))) throw new HttpError(409, GONE);
+  const cur = (await db.q('select quality from fact_quality where subject = $1 and subject_id = $2 and fact = $3',
+    [subject, e.entity_id, fact]))[0]?.quality ?? null;
+  if (cur !== e.after.quality) throw new HttpError(409, LATER);
+  return setQuality(db, userId, { subject, subject_id: e.entity_id, fact }, e.before.quality);
+}
+
 export async function revertOp(db, userId, changeId) {
   const head = (await db.q('select op from changes where id = $1', [changeId]))[0];
   if (!head) throw new HttpError(404, 'Правка не найдена');
@@ -165,7 +223,9 @@ export async function revertOp(db, userId, changeId) {
   let first = null;
   for (const e of entries) {
     if (e.entity === 'family') families.push(e.entity_id);
-    const undo = { person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory }[e.entity];
+    const undo = {
+      person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory, source: undoSource, citation: undoCitation, quality: undoQuality,
+    }[e.entity];
     const id = await undo(db, userId, e);
     first ??= id;
   }

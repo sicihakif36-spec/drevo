@@ -11,6 +11,8 @@ COPY web web
 RUN cd web && npm run build
 
 FROM ${NODE_IMAGE}
+# ffmpeg переводит записи голоса в MP3 (server/src/audio.js); берётся из пакетов Debian при сборке образа.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8095 DATA_DIR=/data WEB_DIR=/app/web/dist
 WORKDIR /app
 COPY server/package.json server/package-lock.json server/

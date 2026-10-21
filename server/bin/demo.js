@@ -4,12 +4,15 @@ import { pool, tx } from '../src/db.js';
 import { migrate } from '../src/migrate.js';
 import { createInvite } from '../src/auth.js';
 import { logChange } from '../src/changes.js';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../src/config.js';
 import { mediaPath } from '../src/routes/media.js';
+import { toMp3 } from '../src/audio.js';
 import { snapshot } from '../src/album.js';
 import { snapshot as storySnapshot } from '../src/stories.js';
+import { createSource, cite, setQuality } from '../src/sources.js';
 import { demoImage, demoLetter, demoVoice } from './demo-media.js';
 
 if (process.env.NODE_ENV === 'production') { console.error('Не запускайте на рабочей базе'); process.exit(1); }
@@ -51,7 +54,7 @@ const misha = await P({ sex: 'M', surname: 'Новиков', given: 'Михаи�
 const andrey = await P({ sex: 'M', surname: 'Новиков', given: 'Андрей', patronymic: 'Олегович', b: '1996', living: true });
 await F(ivan, agr, [petr, vas]);
 await F(nik, pel, [klav, tam]);
-await F(petr, klav, [yuri, lyuda], '1945');
+const petrKlav = await F(petr, klav, [yuri, lyuda], '1945');
 await F(yuri, gal, [sergey, elena], '1970');
 await F(sergey, olga, [anna, dmitry], '1997');
 await F(andrey, anna, [misha], '2021');
@@ -84,10 +87,11 @@ async function media(db, { image, pdf, kind = 'photo', caption, date, name, pers
   await logChange(db, user, 'media', m.id, 'add', null, snapshot(m), persons);
   return m.id;
 }
+let metrika;
 await tx(async (db) => {
   const portrait = await media(db, { image: 'portrait', caption: 'Иван Фёдорович в молодости', date: 'около 1910', name: 'ivan.jpg', persons: [ivan] });
   const wedding = await media(db, { image: 'wedding', caption: 'Свадьба Петра и Клавдии', date: '1945', name: 'svadba.jpg', persons: [petr, klav] });
-  await media(db, { image: 'scan', kind: 'doc', caption: 'Метрика Петра Ивановича', date: '1912', name: 'metrika.jpg', persons: [petr] });
+  metrika = await media(db, { image: 'scan', kind: 'doc', caption: 'Метрика Петра Ивановича', date: '1912', name: 'metrika.jpg', persons: [petr] });
   await db.q('update persons set photo_id = $1 where id = $2', [portrait, ivan]);
   await db.q('update persons set photo_id = $1 where id = $2', [wedding, petr]);
 });
@@ -100,10 +104,13 @@ await tx(async (db) => {
 async function story(db, { title, date, body, persons, voice, user = u.id }) {
   let audio = null;
   if (voice) {
-    audio = (await db.q("insert into media (kind, mime, bytes, name, duration, created_by) values ('audio', 'audio/wav', 0, 'golos.wav', $1, $2) returning id",
-      [voice, user]))[0].id;
-    fs.writeFileSync(mediaPath(audio), demoVoice(voice));
-    await db.q('update media set bytes = $1 where id = $2', [fs.statSync(mediaPath(audio)).size, audio]);
+    // Как с телефона: запись переводится в MP3 тем же ffmpeg, длительность — от него.
+    const wav = `${mediaPath('demo-voice')}.wav`;
+    fs.writeFileSync(wav, demoVoice(voice));
+    audio = crypto.randomUUID();
+    const sec = await toMp3(wav, mediaPath(audio)).finally(() => fs.rmSync(wav, { force: true }));
+    await db.q("insert into media (id, kind, mime, bytes, name, duration, created_by) values ($1, 'audio', 'audio/mpeg', $2, 'golos.mp3', $3, $4)",
+      [audio, fs.statSync(mediaPath(audio)).size, sec, user]);
   }
   const s = (await db.q('insert into stories (title, date, body, audio_id, created_by) values ($1, $2, $3, $4, $5) returning *',
     [title, date, body, audio, user]))[0];
@@ -118,6 +125,32 @@ await tx((db) => story(db, {
   title: 'Лето в Горках', date: '1960-е', persons: [klav, lyuda], user: ed.id,
   body: 'Каждое лето Людмилу отправляли к бабушке в Горки. Ходили за земляникой, а вечером пили чай на крыльце.',
 }));
+// Источники. Метрика Петра со сканом из альбома; «Память народа» о Василии (добавила Елена — новое для Сергея);
+// семейное предание — общий источник для Ивана и Аграфены. Брак Петра и Клавдии — «со слов», без источника.
+const person = (id, fact) => ({ subject: 'person', subject_id: id, fact });
+await tx(async (db) => {
+  const s = await createSource(db, u.id, { kind: 'metric', title: 'Метрическая книга Троицкой церкви с. Горки, 1912',
+    archive: 'ГАТО', fond: '160', opis: '1', delo: '12', sheet: '34', verso: true, media_id: metrika });
+  for (const fact of ['birth_date', 'birth_place']) {
+    await cite(db, u.id, { source_id: s.id, ...person(petr, fact), page: 'запись № 57' });
+    await setQuality(db, u.id, person(petr, fact), 'document');
+  }
+});
+await tx(async (db) => {
+  const s = await createSource(db, u.id, { kind: 'legend', title: 'Рассказы бабушки Клавдии',
+    note: 'Записано со слов Клавдии Николаевны летом 1995 года в Горках.' });
+  await cite(db, u.id, { source_id: s.id, ...person(ivan, 'birth_place') });
+  await cite(db, u.id, { source_id: s.id, ...person(agr, 'name'), page: 'девичья фамилия' });
+  await setQuality(db, u.id, person(ivan, 'birth_place'), 'oral');
+  await setQuality(db, u.id, person(ivan, 'birth_date'), 'guess');
+  await setQuality(db, u.id, { subject: 'family', subject_id: petrKlav, fact: 'marriage' }, 'oral');
+});
+await tx(async (db) => {
+  const s = await createSource(db, ed.id, { kind: 'pamyat', title: 'Донесение о безвозвратных потерях',
+    url: 'https://pamyat-naroda.ru/', archive: 'ЦАМО', fond: '58', opis: '18001', delo: '1234', sheet: '56' });
+  await cite(db, ed.id, { source_id: s.id, ...person(vas, 'death_date'), page: 'строка 14' });
+  await setQuality(db, ed.id, person(vas, 'death_date'), 'document');
+});
 // Обсуждение: Сергей писал давно, Елена — после его прошлого визита.
 const say = (person, user, body, ago) => pool.query(
   'insert into comments (person_id, user_id, body, created_at) values ($1, $2, $3, now() - $4::interval)', [person, user, body, ago]);

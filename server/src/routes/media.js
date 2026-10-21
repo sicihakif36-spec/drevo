@@ -13,10 +13,11 @@ import { logChange } from '../changes.js';
 import { HttpError, alive } from '../tree.js';
 import { snapshot, liveMedia, setMain, deleteMedia, tag, untag, updateMedia } from '../album.js';
 import { isGuest, guestMedia, guestStories } from '../privacy.js';
+import { toMp3 } from '../audio.js';
 
 const IMAGES = ['image/jpeg', 'image/png', 'image/webp'];
 // Запись голоса: с телефона (MediaRecorder) или готовый файл из диктофона. Телефоны называют одно и то же по-разному,
-// поэтому тип берётся по названию и по расширению файла и сводится к одному.
+// поэтому тип берётся по названию и по расширению файла. Так сервер понимает, что это запись голоса; хранится она в MP3.
 const AUDIO = {
   'audio/mp4': 'audio/mp4', 'audio/x-m4a': 'audio/mp4', 'audio/m4a': 'audio/mp4', 'audio/aac': 'audio/aac', 'audio/x-aac': 'audio/aac',
   'audio/mpeg': 'audio/mpeg', 'audio/mp3': 'audio/mpeg', 'audio/ogg': 'audio/ogg', 'audio/opus': 'audio/ogg', 'audio/webm': 'audio/webm',
@@ -160,35 +161,37 @@ export default async function mediaRoutes(app) {
   });
 
   // Запись голоса. Отдельно от альбома: файл ни к кому не привязан, пока его не приложат к истории.
-  // Поля до файла: duration — длительность в секундах, как её насчитал телефон.
+  // Любую запись сервер переводит в MP3 (src/audio.js): так она играет и на Android, и на любом iPhone.
+  // Длительность — у ffmpeg: в записи с телефона её часто нет.
   app.post('/api/audio', { preHandler: need('editor') }, async (req) => {
     const id = crypto.randomUUID();
-    const fields = {};
+    const upload = `${mediaPath(id)}.upload`;
     let file = null;
     try {
       for await (const part of req.parts()) {
-        if (part.type === 'field') fields[part.fieldname] = part.value;
-        else if (part.fieldname === 'file' && !file) {
+        if (part.type === 'file' && part.fieldname === 'file' && !file) {
           file = { mime: audioMime(part.mimetype, part.filename || ''), name: text(part.filename, 200) };
-          await pipeline(part.file, fs.createWriteStream(mediaPath(id)));
-        } else part.file.resume();
+          await pipeline(part.file, fs.createWriteStream(upload));
+        } else if (part.type === 'file') part.file.resume();
       }
       if (!file) throw new HttpError(400, 'Запись не получена');
       if (!file.mime) throw new HttpError(400, 'Нужна запись голоса: MP3, M4A, OGG, WebM или WAV');
+      if (!(await fsp.stat(upload)).size) throw new HttpError(400, 'Запись пустая. Попробуйте записать ещё раз.');
+      const duration = await toMp3(upload, mediaPath(id));
       const { size } = await fsp.stat(mediaPath(id));
-      if (!size) throw new HttpError(400, 'Запись пустая. Попробуйте записать ещё раз.');
-      const sec = Math.round(Number(fields.duration));
-      const duration = Number.isFinite(sec) && sec > 0 ? Math.min(sec, 24 * 3600) : null;
+      const name = `${file.name.replace(/\.[a-z0-9]{1,5}$/i, '') || 'golos'}.mp3`;
       return (await q(
-        `insert into media (id, kind, mime, bytes, name, duration, created_by) values ($1, 'audio', $2, $3, $4, $5, $6)
+        `insert into media (id, kind, mime, bytes, name, duration, created_by) values ($1, 'audio', 'audio/mpeg', $2, $3, $4, $5)
          returning id, mime, bytes, duration`,
-        [id, file.mime, size, file.name, duration, req.user.id],
+        [id, size, name, duration, req.user.id],
       ))[0];
     } catch (err) {
       await fsp.rm(mediaPath(id), { force: true });
       if (err.code === 'FST_REQ_FILE_TOO_LARGE') throw new HttpError(413, `Запись слишком большая: не больше ${MAX_FILE / 1024 / 1024} МБ`);
       if (err.code === 'FST_FILES_LIMIT') throw new HttpError(413, 'Записи отправляются по одной');
       throw err;
+    } finally {
+      await fsp.rm(upload, { force: true });
     }
   });
 

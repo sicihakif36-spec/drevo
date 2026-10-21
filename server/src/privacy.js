@@ -45,6 +45,11 @@ export function trimEntry(e) {
     const f = e.action === 'update' ? fieldsOnly : (x) => pick(x, ['person_id', 'audio']);
     return { ...both(f), entity_id: null };
   }
+  // Источники: без названий и шифров дел — только вид источника и к какому сведению привязан;
+  // у достоверности — само сведение и есть ли отметка, без самой отметки.
+  if (e.entity === 'source') return { ...both((x) => pick(x, ['kind'])), entity_id: null };
+  if (e.entity === 'citation') return { ...both((x) => pick(x, ['kind', 'subject', 'fact'])), entity_id: null };
+  if (e.entity === 'quality') return { ...both((x) => x && { ...pick(x, ['subject', 'fact']), marked: Boolean(x.quality) }), entity_id: null };
   if (e.action === 'create' || e.action === 'drop') return both(familySnap);
   if (e.action === 'update') return both(fieldsOnly);
   return both((x) => pick(x, LINK));
@@ -71,6 +76,22 @@ export async function guestStories(ids) {
   const rows = await q(
     `select s.id, p.living, p.birth_date, p.deleted_at from stories s
      join story_persons sp on sp.story_id = s.id join persons p on p.id = sp.person_id
+     where s.id = any($1::uuid[]) and s.deleted_at is null`,
+    [ids],
+  );
+  const bad = new Set(rows.filter((r) => isPrivate(r)).map((r) => r.id));
+  return new Set(rows.filter((r) => !r.deleted_at && !bad.has(r.id)).map((r) => r.id));
+}
+
+// Какие из источников ids гость может видеть: источник не удалён, привязан к сведениям кого-то из дерева и ни одного живого.
+// Как с фото: источник, который касается живого (сам человек или супруг в браке), гостю не показывается совсем.
+export async function guestSources(ids) {
+  if (!ids.length) return new Set();
+  const rows = await q(
+    `select s.id, p.living, p.birth_date, p.deleted_at from sources s
+     join citations c on c.source_id = s.id
+     left join families f on c.subject = 'family' and f.id = c.subject_id
+     join persons p on (c.subject = 'person' and p.id = c.subject_id) or p.id in (f.partner1, f.partner2)
      where s.id = any($1::uuid[]) and s.deleted_at is null`,
     [ids],
   );

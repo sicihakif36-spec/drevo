@@ -11,6 +11,8 @@
   --female: #b15b7d;
   --female-soft: #fbeef2;
   --danger: #b4442f;
+  --oral: #93600f;
+  --oral-soft: #fbefd9;
   --radius: 14px;
   --nav-h: 64px;
   --safe-b: env(safe-area-inset-bottom, 0px);
@@ -21,7 +23,7 @@
   :root {
     --bg: #1c1b18; --card: #272521; --text: #ece6dc; --muted: #a59c90; --line: #3a3630;
     --accent: #9cbf72; --accent-soft: #2f3a24; --male-soft: #23303f; --female-soft: #3a2730;
-    --male: #8fb1e4; --female: #e28fb1; color-scheme: dark;
+    --male: #8fb1e4; --female: #e28fb1; --oral: #e3b46a; --oral-soft: #3d3020; color-scheme: dark;
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }

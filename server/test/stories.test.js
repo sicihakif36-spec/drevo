@@ -1,12 +1,16 @@
 // Истории и записи голоса: создание с людьми и голосом, правка, связи с людьми, удаление — и откат каждого действия;
-// приватность гостей, запросы Range (для Safari на iPhone), лента и сводка уведомлений.
+// перевод записей в MP3, приватность гостей, запросы Range (для Safari на iPhone), лента и сводка уведомлений.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { buildApp } from '../src/app.js';
 import { migrate } from '../src/migrate.js';
 import { pool } from '../src/db.js';
 import { createInvite } from '../src/auth.js';
-import { parseRange } from '../src/routes/media.js';
+import { parseRange, mediaPath } from '../src/routes/media.js';
 import { digestText } from '../src/push.js';
 
 let app;
@@ -28,9 +32,18 @@ const json = async (...args) => {
   return r.json();
 };
 
-// «Запись голоса»: 4000 байт, у каждого своё значение — так видно, какой кусок пришёл.
-const VOICE = Buffer.from(Array.from({ length: 4000 }, (_, i) => i % 251));
+// Настоящая короткая запись нужного вида: гудок длиной sec секунд, сделанный самим ffmpeg.
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'drevo-voice-'));
+function sample(ext, sec, codec) {
+  const file = path.join(tmp, `${ext}-${sec}.${ext}`);
+  execFileSync('ffmpeg', ['-nostdin', '-loglevel', 'error', '-f', 'lavfi', '-i', `sine=frequency=330:duration=${sec}`,
+    ...(codec ? ['-c:a', codec] : []), '-y', file]);
+  return fs.readFileSync(file);
+}
+// Как пишет Chrome на Android: Opus в WebM.
+const VOICE = sample('webm', 3, 'libopus');
 
+// duration — длительность, как её насчитал телефон: сервер ей не верит, а берёт у ffmpeg.
 async function audio(cookie, { type = 'audio/webm;codecs=opus', name = 'blob', data = VOICE, duration = '42' } = {}) {
   const b = 'drevo-voice';
   const payload = Buffer.concat([
@@ -57,21 +70,21 @@ before(async () => {
   editor = await login('editor');
   guest = await login('viewer');
 });
-after(async () => { await app.close(); await pool.end(); });
+after(async () => { await app.close(); await pool.end(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
 test('история с голосом и людьми: создание, правка, связи, удаление — каждое отменяется', async () => {
   const grandma = await add({ given: 'Бабушка', sex: 'F', living: false });
   const grandpa = await add({ given: 'Дедушка', sex: 'M', living: false });
   const a = await audio(editor);
   assert.equal(a.statusCode, 200, a.body);
-  assert.equal(a.json().mime, 'audio/webm');
-  assert.equal(a.json().duration, 42);
+  assert.equal(a.json().mime, 'audio/mpeg');
+  assert.equal(a.json().duration, 3, 'длительность — у ffmpeg, не у телефона');
 
   const s = await json(editor, 'POST', `/api/persons/${grandma.id}/stories`,
     { title: 'Как бабушка встретила войну', date: 'лето 1941', body: 'Рассказывала, как…', audio_id: a.json().id });
   assert.equal(s.audio_id, a.json().id);
-  assert.equal(s.audio_mime, 'audio/webm');
-  assert.equal(s.audio_duration, 42);
+  assert.equal(s.audio_mime, 'audio/mpeg');
+  assert.equal(s.audio_duration, 3);
   assert.equal(s.user_name, 'editor');
   assert.deepEqual(s.persons, [grandma.id]);
   assert.equal((await stories(owner, grandma.id))[0].date, 'лето 1941');
@@ -83,8 +96,8 @@ test('история с голосом и людьми: создание, пра
   assert.equal((await call(owner, 'PATCH', `/api/media/${a.json().id}`, { caption: 'x' })).statusCode, 404, 'запись голоса — не файл альбома');
 
   // Правка: текст и новая запись; откат возвращает прежнюю.
-  const b = (await audio(owner, { type: 'audio/mp4', duration: '' })).json();
-  assert.equal(b.duration, null);
+  const b = (await audio(owner, { type: 'audio/mp4', name: 'golos.m4a', data: sample('m4a', 2, 'aac'), duration: '' })).json();
+  assert.equal(b.duration, 2);
   await json(owner, 'PATCH', `/api/stories/${s.id}`, { body: 'Новый текст', audio_id: b.id });
   let cur = await json(owner, 'GET', `/api/stories/${s.id}`);
   assert.equal(cur.body, 'Новый текст');
@@ -169,45 +182,73 @@ test('гость: история с живым скрыта везде, об у�
   assert.equal((await call(guest, 'GET', `/api/media/${vb.id}`)).statusCode, 404);
 });
 
-test('запись голоса: какие файлы принимаются', async () => {
-  for (const [type, name, mime] of [['audio/x-m4a', 'Диктофон.m4a', 'audio/mp4'], ['audio/mpeg', 'a.mp3', 'audio/mpeg'],
-    ['application/octet-stream', 'запись.ogg', 'audio/ogg'], ['audio/wav', 'a.wav', 'audio/wav'], ['', 'b.webm', 'audio/webm']]) {
-    const r = await audio(owner, { type: type || 'application/octet-stream', name });
+test('запись голоса: любая запись становится MP3 с длительностью от ffmpeg', async () => {
+  const files = [
+    ['audio/webm;codecs=opus', 'blob', VOICE, 3],
+    ['audio/ogg', 'Голосовое из Телеграма.ogg', sample('ogg', 4, 'libopus'), 4],
+    ['application/octet-stream', 'WhatsApp Audio.opus', sample('ogg', 2, 'libopus'), 2],
+    ['audio/x-m4a', 'Диктофон.m4a', sample('m4a', 5, 'aac'), 5],
+    ['audio/wav', 'a.wav', sample('wav', 1), 1],
+    ['', 'b.mp3', sample('mp3', 2), 2],
+  ];
+  for (const [type, name, data, sec] of files) {
+    const r = await audio(owner, { type: type || 'application/octet-stream', name, data });
     assert.equal(r.statusCode, 200, `${name}: ${r.body}`);
-    assert.equal(r.json().mime, mime, name);
+    assert.equal(r.json().mime, 'audio/mpeg', name);
+    assert.equal(r.json().duration, sec, name);
+    const mp3 = fs.readFileSync(mediaPath(r.json().id));
+    assert.equal(r.json().bytes, mp3.length);
+    // MP3: метка ID3 или сразу кадр (11 единичных бит подряд).
+    assert.ok(mp3.subarray(0, 3).toString() === 'ID3' || (mp3[0] === 0xff && (mp3[1] & 0xe0) === 0xe0), name);
+    const res = await call(owner, 'GET', `/api/media/${r.json().id}`);
+    assert.equal(res.headers['content-type'], 'audio/mpeg');
   }
   const bad = await audio(owner, { type: 'image/png', name: 'x.png' });
   assert.equal(bad.statusCode, 400);
   assert.match(bad.json().error, /запись голоса/i);
   assert.equal((await audio(owner, { data: Buffer.alloc(0) })).statusCode, 400);
   assert.equal((await audio(owner, { data: Buffer.alloc(21 * 1024 * 1024) })).statusCode, 413);
+
+  // Испорченный файл: понятная ошибка, ничего не сохранено, на диске не осталось мусора.
+  const dir = path.dirname(mediaPath('x'));
+  const filesBefore = fs.readdirSync(dir).sort();
+  const [{ n }] = (await pool.query("select count(*)::int as n from media where kind = 'audio'")).rows;
+  for (const data of [Buffer.from('это не запись'.repeat(200)), VOICE.subarray(0, 60), Buffer.from('#EXTM3U\n#EXTINF:1,\nfile:///etc/passwd\n')]) {
+    const r = await audio(owner, { data, name: 'golos.webm' });
+    assert.equal(r.statusCode, 400, r.body);
+    assert.equal(r.json().error, 'Не удалось прочитать запись');
+  }
+  assert.deepEqual(fs.readdirSync(dir).sort(), filesBefore);
+  assert.equal((await pool.query("select count(*)::int as n from media where kind = 'audio'")).rows[0].n, n);
 });
 
 test('Range: кусок файла — 206, за концом — 416, без заголовка — весь файл', async () => {
   const v = (await audio(owner)).json();
   const url = `/api/media/${v.id}`;
+  const file = fs.readFileSync(mediaPath(v.id));
+  const size = file.length;
   const full = await call(owner, 'GET', url);
   assert.equal(full.statusCode, 200);
   assert.equal(full.headers['accept-ranges'], 'bytes');
-  assert.equal(Number(full.headers['content-length']), VOICE.length);
-  assert.deepEqual(full.rawPayload, VOICE);
+  assert.equal(Number(full.headers['content-length']), size);
+  assert.deepEqual(full.rawPayload, file);
 
   const part = await call(owner, 'GET', url, undefined, { range: 'bytes=100-199' });
   assert.equal(part.statusCode, 206);
-  assert.equal(part.headers['content-range'], `bytes 100-199/${VOICE.length}`);
-  assert.equal(part.headers['content-type'], 'audio/webm');
-  assert.deepEqual(part.rawPayload, VOICE.subarray(100, 200));
+  assert.equal(part.headers['content-range'], `bytes 100-199/${size}`);
+  assert.equal(part.headers['content-type'], 'audio/mpeg');
+  assert.deepEqual(part.rawPayload, file.subarray(100, 200));
   // Safari сначала спрашивает первые два байта.
-  assert.deepEqual((await call(owner, 'GET', url, undefined, { range: 'bytes=0-1' })).rawPayload, VOICE.subarray(0, 2));
-  const tail = await call(owner, 'GET', url, undefined, { range: 'bytes=3900-' });
-  assert.deepEqual(tail.rawPayload, VOICE.subarray(3900));
+  assert.deepEqual((await call(owner, 'GET', url, undefined, { range: 'bytes=0-1' })).rawPayload, file.subarray(0, 2));
+  const tail = await call(owner, 'GET', url, undefined, { range: `bytes=${size - 100}-` });
+  assert.deepEqual(tail.rawPayload, file.subarray(size - 100));
   const suffix = await call(owner, 'GET', url, undefined, { range: 'bytes=-50' });
-  assert.equal(suffix.headers['content-range'], `bytes 3950-3999/${VOICE.length}`);
-  const beyond = await call(owner, 'GET', url, undefined, { range: 'bytes=5000-6000' });
+  assert.equal(suffix.headers['content-range'], `bytes ${size - 50}-${size - 1}/${size}`);
+  const beyond = await call(owner, 'GET', url, undefined, { range: `bytes=${size + 1000}-${size + 2000}` });
   assert.equal(beyond.statusCode, 416);
-  assert.equal(beyond.headers['content-range'], `bytes */${VOICE.length}`);
+  assert.equal(beyond.headers['content-range'], `bytes */${size}`);
   // Конец за файлом — до конца файла; непонятный заголовок — весь файл.
-  assert.equal((await call(owner, 'GET', url, undefined, { range: 'bytes=3990-99999' })).rawPayload.length, 10);
+  assert.equal((await call(owner, 'GET', url, undefined, { range: `bytes=${size - 10}-99999999` })).rawPayload.length, 10);
   assert.equal((await call(owner, 'GET', url, undefined, { range: 'items=1-2' })).statusCode, 200);
   assert.equal(parseRange('bytes=0-1,5-6', 100), null, 'несколько кусков — весь файл');
   assert.equal(parseRange('bytes=-0', 100), false);
