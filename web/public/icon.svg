@@ -1,10 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#5b7a3a"/>
-  <g fill="none" stroke="#f7f3ec" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M256 430V250M256 300l-90-70M256 280l90-80M166 230v-60M346 200v-50M256 250v-90"/>
-  </g>
-  <g fill="#f7f3ec">
-    <circle cx="256" cy="140" r="38"/><circle cx="166" cy="150" r="34"/><circle cx="346" cy="130" r="34"/>
-    <rect x="186" y="420" width="140" height="22" rx="11"/>
+  <!-- Иконка «Крона» (docs/dizain/ikonka-a-krona.svg) со скруглёнными углами: вкладка браузера и обычная иконка. -->
+  <rect width="512" height="512" rx="112" fill="#46682a"/>
+  <g transform="translate(256 253) scale(1.1) translate(-256 -253)">
+    <g fill="#f6f1e7">
+      <circle cx="256" cy="166" r="78"/>
+      <circle cx="256" cy="228" r="104"/>
+      <circle cx="174" cy="246" r="76"/>
+      <circle cx="338" cy="246" r="76"/>
+      <path d="M232 300h48v74c0 14 10 24 30 30h-116c20-6 38-16 38-30z"/>
+      <rect x="164" y="398" width="184" height="20" rx="10"/>
+    </g>
+    <g fill="none" stroke="#46682a" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M256 330V190M256 268l-62-40M256 248l62-44"/>
+    </g>
   </g>
 </svg>

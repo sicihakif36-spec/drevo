@@ -12,7 +12,8 @@ self.addEventListener('push', (event) => {
     tag: msg.tag,
     renotify: Boolean(msg.tag),
     icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    // Значок в строке состояния Android: белый силуэт на прозрачном.
+    badge: '/badge-96.png',
     lang: 'ru',
     data: { url: msg.url || '/' },
   }));
