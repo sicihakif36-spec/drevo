@@ -25,7 +25,7 @@ function personLine(e, name) {
   if (e.action === 'create') return `добавил(а) ${n}`;
   if (e.action === 'delete') return `удалил(а) ${n}`;
   if (e.action === 'restore') return `вернул(а) ${n}`;
-  if (e.action === 'photo') return `${e.after?.photo_id ? 'сменил(а)' : 'убрал(а)'} фото: ${n}`;
+  if (e.action === 'photo') return `${e.after?.photo_id ? 'сменил(а)' : 'убрал(а)'} главное фото: ${n}`;
   if (e.action === 'update') return `изменил(а) ${n}: ${Object.keys(e.after || {}).map((k) => (LABEL[k] || k).toLowerCase()).join(', ')}`;
   return null;
 }
@@ -66,17 +66,58 @@ function familyLine(e, name) {
   return null;
 }
 
+const count = (n, one, few, many) => {
+  const a = n % 10;
+  const b = n % 100;
+  return `${n} ${a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many}`;
+};
+// «3 фото и 1 документ».
+function files(kinds) {
+  const docs = kinds.filter((k) => k === 'doc').length;
+  const photos = kinds.length - docs;
+  return [photos && `${photos} фото`, docs && count(docs, 'документ', 'документа', 'документов')].filter(Boolean).join(' и ');
+}
+
+// Файлы альбома: несколько загруженных разом — одной строкой: «добавил(а) 3 фото: Смирнов Иван Фёдорович».
+function mediaLines(entries, name) {
+  const lines = [];
+  for (const [action, verb] of [['add', 'добавил(а)'], ['delete', 'удалил(а)'], ['restore', 'вернул(а)']]) {
+    const list = entries.filter((e) => e.action === action);
+    if (!list.length) continue;
+    const who = [...new Set(list.flatMap((e) => e.persons || []))].map(name).join(', ');
+    lines.push(`${verb} ${files(list.map((e) => (e.before || e.after)?.kind))}${who ? `: ${who}` : ''}`);
+  }
+  for (const e of entries) {
+    const where = (x) => (x?.kind === 'doc' ? 'на документе' : 'на фото');
+    if (e.action === 'update') {
+      const what = Object.keys(e.after || {}).map((k) => (k === 'date' ? 'дату' : 'подпись')).join(' и ');
+      lines.push(`изменил(а) ${what} у фото: ${(e.persons || []).map(name).join(', ')}`);
+    }
+    if (e.action === 'tag') lines.push(`отметил(а) ${where(e.after)}: ${name(e.after?.person_id)}`);
+    if (e.action === 'untag') lines.push(`убрал(а) отметку ${where(e.before)}: ${name(e.before?.person_id)}`);
+  }
+  return lines;
+}
+
 // Строки действия. Служебные записи (пустая семья создана или убрана) не показываем.
 export function opLines(op, name) {
-  const lines = op.entries.map((e) => (e.entity === 'person' ? personLine(e, name) : familyLine(e, name))).filter(Boolean);
+  // Первое фото само становится главным, удалённое перестаёт им быть — отдельной строкой это не показываем.
+  const withFiles = op.entries.some((e) => e.entity === 'media' && ['add', 'delete', 'restore'].includes(e.action));
+  const lines = [
+    ...mediaLines(op.entries.filter((e) => e.entity === 'media'), name),
+    ...op.entries.map((e) => {
+      if (e.entity === 'person') return e.action === 'photo' && withFiles ? null : personLine(e, name);
+      return e.entity === 'family' ? familyLine(e, name) : null;
+    }),
+  ].filter(Boolean);
   return lines.length ? lines : ['изменил(а) связи'];
 }
 
 // «было: …» для правок карточки.
 export function opWas(op) {
   return op.entries
-    .filter((e) => e.entity === 'person' && e.action === 'update')
+    .filter((e) => e.entity !== 'family' && e.action === 'update')
     .map((e) => 'было: ' + Object.values(e.before || {}).map((v) => (v === '' ? '—' : String(v))).join(', '));
 }
 
-export const restoresSomeone = (op) => op.entries.some((e) => e.entity === 'person' && e.action === 'delete');
+export const restoresSomeone = (op) => op.entries.some((e) => e.entity !== 'family' && e.action === 'delete');

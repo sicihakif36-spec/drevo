@@ -6,7 +6,7 @@ import { q } from '../db.js';
 import { need } from '../auth.js';
 import { mediaPath } from './media.js';
 import { buildIndex, isPrivate, lifespan, shortName } from '../../../shared/names.js';
-import { hideLiving, isGuest } from '../privacy.js';
+import { guestTree, isGuest } from '../privacy.js';
 import { layoutTree, BOX } from '../../../shared/layout.js';
 import { PAPER, planPages } from '../../../shared/printplan.js';
 
@@ -141,7 +141,7 @@ export async function loadTreeData(user) {
     q("select value from settings where key = 'title'"),
   ]);
   const data = { persons, families, children, photoMime: Object.fromEntries(media.map((m) => [m.id, m.mime])), title: settings[0]?.value };
-  return isGuest(user) ? hideLiving(data) : data;
+  return isGuest(user) ? guestTree(data) : data;
 }
 
 export default async function printRoutes(app) {

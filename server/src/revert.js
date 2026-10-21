@@ -5,6 +5,7 @@ import {
   HttpError, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, alive, addChild, removeChild, setPartner, unsetPartner,
   dropFamily, restoreFamily, dropEmpty, deletePerson, restorePerson,
 } from './tree.js';
+import { MEDIA_FIELDS, deleteMedia, restoreMedia, tag, untag } from './album.js';
 
 const LATER = 'После этой правки были другие. Сначала отмените более поздние правки.';
 const GONE = 'Этот человек удалён. Сначала верните его.';
@@ -25,6 +26,9 @@ async function undoPerson(db, userId, e) {
     }
     case 'photo': {
       if ((cur.photo_id ?? null) !== (after.photo_id ?? null)) throw new HttpError(409, LATER);
+      if (before.photo_id && (await db.q('select 1 from media where id = $1 and deleted_at is not null', [before.photo_id]))[0]) {
+        throw new HttpError(409, 'Прежнее главное фото удалено. Сначала верните его.');
+      }
       await db.q('update persons set photo_id = $1, version = version + 1, updated_at = now() where id = $2', [before.photo_id ?? null, cur.id]);
       return logChange(db, userId, 'person', cur.id, 'photo', { photo_id: cur.photo_id }, { photo_id: before.photo_id ?? null });
     }
@@ -82,6 +86,41 @@ async function undoFamily(db, userId, e) {
   throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
 }
 
+async function undoMedia(db, userId, e) {
+  const m = (await db.q('select * from media where id = $1 for update', [e.entity_id]))[0];
+  if (!m) throw new HttpError(404, 'Файл не найден');
+  switch (e.action) {
+    case 'add':
+    case 'restore':
+      if (m.deleted_at) throw new HttpError(409, 'Этот файл уже удалён');
+      return deleteMedia(db, userId, m.id);
+    case 'delete':
+      return restoreMedia(db, userId, m.id);
+  }
+  if (m.deleted_at) throw new HttpError(409, 'Этот файл удалён. Сначала верните его.');
+  switch (e.action) {
+    case 'update': {
+      const before = e.before || {};
+      const cols = Object.keys(before).filter((c) => MEDIA_FIELDS.includes(c));
+      if (!cols.length) break;
+      await db.q(`update media set ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')} where id = $1`, [m.id, ...cols.map((c) => before[c])]);
+      return logChange(db, userId, 'media', m.id, 'update', pick(m, cols), pick(before, cols), e.persons);
+    }
+    case 'tag': {
+      const id = await untag(db, userId, m.id, e.after.person_id);
+      if (!id) throw new HttpError(409, LATER);
+      return id;
+    }
+    case 'untag': {
+      if (!(await alive(db, e.before.person_id))) throw new HttpError(409, GONE);
+      const id = await tag(db, userId, m.id, e.before.person_id);
+      if (!id) throw new HttpError(409, LATER);
+      return id;
+    }
+  }
+  throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
+}
+
 export async function revertOp(db, userId, changeId) {
   const head = (await db.q('select op from changes where id = $1', [changeId]))[0];
   if (!head) throw new HttpError(404, 'Правка не найдена');
@@ -91,7 +130,8 @@ export async function revertOp(db, userId, changeId) {
   let first = null;
   for (const e of entries) {
     if (e.entity === 'family') families.push(e.entity_id);
-    const id = e.entity === 'person' ? await undoPerson(db, userId, e) : await undoFamily(db, userId, e);
+    const undo = { person: undoPerson, media: undoMedia, family: undoFamily }[e.entity];
+    const id = await undo(db, userId, e);
     first ??= id;
   }
   // Пустые семьи убираем в конце: по ходу отката они ещё нужны.

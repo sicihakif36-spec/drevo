@@ -37,25 +37,33 @@ function moscow(now) {
 
 // «Елена добавила 3 человек и 2 фото, изменила 1 карточку».
 export function digestText(name, sex, entries, ops) {
-  const n = { added: 0, removed: 0, photos: 0, cards: new Set() };
+  const n = { added: 0, removed: 0, photos: 0, docs: 0, dropPhotos: 0, dropDocs: 0, cards: new Set(), files: new Set() };
   let links = 0;
   for (const op of ops) {
     const mine = entries.filter((e) => e.op === op);
+    // Первое фото само становится главным, удалённое перестаёт им быть: это часть добавления или удаления файла.
+    const withFiles = mine.some((e) => e.entity === 'media' && ['add', 'delete'].includes(e.action));
     for (const e of mine) {
-      if (e.entity !== 'person') continue;
-      if (e.action === 'create') n.added++;
-      else if (e.action === 'delete') n.removed++;
-      else if (e.action === 'photo' && e.after?.photo_id) n.photos++;
-      else n.cards.add(e.entity_id);
+      if (e.entity === 'media') {
+        if (e.action === 'add') n[e.after?.kind === 'doc' ? 'docs' : 'photos']++;
+        else if (e.action === 'delete') n[e.before?.kind === 'doc' ? 'dropDocs' : 'dropPhotos']++;
+        else n.files.add(e.entity_id);
+      } else if (e.entity === 'person') {
+        if (e.action === 'create') n.added++;
+        else if (e.action === 'delete') n.removed++;
+        else if (e.action !== 'photo' || !withFiles) n.cards.add(e.entity_id);
+      }
     }
-    if (mine.every((e) => e.entity !== 'person')) links++;
+    if (mine.every((e) => e.entity === 'family')) links++;
   }
+  const docs = (k) => k && plural(k, 'документ', 'документа', 'документов');
   const groups = [
-    [verb('добавил', sex), [n.added && plural(n.added, 'человека', 'человек', 'человек'), n.photos && `${n.photos} фото`]],
-    [verb('изменил', sex), [n.cards.size && plural(n.cards.size, 'карточку', 'карточки', 'карточек'), links && plural(links, 'связь', 'связи', 'связей')]],
-    [verb('удалил', sex), [n.removed && plural(n.removed, 'человека', 'человек', 'человек')]],
+    [verb('добавил', sex), [n.added && plural(n.added, 'человека', 'человек', 'человек'), n.photos && `${n.photos} фото`, docs(n.docs)]],
+    [verb('изменил', sex), [n.cards.size && plural(n.cards.size, 'карточку', 'карточки', 'карточек'), n.files.size && `${n.files.size} фото`,
+      links && plural(links, 'связь', 'связи', 'связей')]],
+    [verb('удалил', sex), [n.removed && plural(n.removed, 'человека', 'человек', 'человек'), n.dropPhotos && `${n.dropPhotos} фото`, docs(n.dropDocs)]],
   ].map(([v, items]) => [v, items.filter(Boolean)]).filter(([, items]) => items.length);
-  const what = groups.map(([v, items]) => `${v} ${items.join(' и ')}`).join(', ');
+  const what = groups.map(([v, items]) => `${v} ${items.length > 1 ? `${items.slice(0, -1).join(', ')} и ${items.at(-1)}` : items[0]}`).join(', ');
   return `${name || 'Кто-то'} ${what || `${verb('сделал', sex)} ${plural(ops.length, 'правку', 'правки', 'правок')}`}`;
 }
 
@@ -176,7 +184,7 @@ export function pushPlugin(app, opts = {}) {
       );
       if (!won.length) continue;
       const entries = await q(
-        `select c.op, c.entity, c.entity_id, c.action, c.after from changes c where c.op in (
+        `select c.op, c.entity, c.entity_id, c.action, c.before, c.after from changes c where c.op in (
            select c.op from changes c where c.user_id = $1 group by c.op
            having max(c.id) > $2 and max(c.id) <= $3 and ${STANDS})
          order by c.id`,

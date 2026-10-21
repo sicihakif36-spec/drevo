@@ -2,10 +2,11 @@
 import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { store, loadTree, canEdit, toast, onLive } from '../store.js';
-import { api, photoUrl, shrinkImage } from '../api.js';
+import { api, photoUrl } from '../api.js';
 import { openAdd } from '../components/addState.js';
 import ChangeList from '../components/ChangeList.vue';
 import Discussion from '../components/Discussion.vue';
+import Album from '../components/Album.vue';
 import { FIELDS } from '../history.js';
 import { fullName, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields } from '@shared/names.js';
 
@@ -19,7 +20,7 @@ const error = ref('');
 const form = reactive({});
 const history = ref([]);
 const showHistory = ref(false);
-const fileInput = ref(null);
+const album = ref(null);
 
 const kin = computed(() => p.value && kinship(idx.value, store.me?.person_id, p.value.id));
 const missing = computed(() => (p.value ? missingFields(p.value, idx.value) : []));
@@ -51,17 +52,10 @@ async function save() {
   }
 }
 
-async function uploadPhoto(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const fd = new FormData();
-  fd.append('file', await shrinkImage(file), 'photo.jpg');
-  try {
-    await api('POST', `/api/persons/${p.value.id}/photo`, fd);
-    await loadTree();
-    toast('Фото добавлено');
-  } catch (err) { toast(err.message); }
-  e.target.value = '';
+// Фото в шапке: открыть его в альбоме, а если фото нет — добавить.
+function headPhoto() {
+  if (p.value.photo_id) album.value.show(p.value.photo_id);
+  else if (canEdit()) album.value.add();
 }
 
 async function removePerson() {
@@ -111,11 +105,10 @@ onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.k
     </div>
 
     <div class="head">
-      <div class="photo" :class="p.sex" @click="canEdit() && fileInput.click()">
+      <div class="photo" :class="p.sex" @click="headPhoto">
         <img v-if="p.photo_id" :src="photoUrl(p.photo_id)" alt="" />
         <span v-else>{{ canEdit() ? '+ фото' : (p.given || '?')[0] }}</span>
       </div>
-      <input ref="fileInput" type="file" accept="image/*" hidden @change="uploadPhoto" />
       <h1>{{ fullName(p) }}</h1>
       <div class="muted">{{ [lifespan(p), kin].filter(Boolean).join(' · ') }}</div>
       <div v-if="p.birth_surname && p.birth_surname !== p.surname" class="muted small">урождённая(-ый) {{ p.birth_surname }}</div>
@@ -200,6 +193,8 @@ onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.k
       <div v-if="!siblings.length && !canEdit()" class="muted">Не указаны</div>
       <div v-if="canEdit()" class="row"><button @click="openAdd({ to: p.id, type: 'sibling' })">+ Брат / сестра</button></div>
     </div>
+
+    <Album ref="album" :person="p" />
 
     <Discussion :person="p" />
 

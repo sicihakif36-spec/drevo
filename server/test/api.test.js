@@ -103,6 +103,7 @@ function parentsIn(t, id) {
 }
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+// Первое фото человека становится главным.
 async function upload(personId) {
   const b = 'drevo-test';
   const payload = Buffer.concat([
@@ -110,11 +111,11 @@ async function upload(personId) {
     PNG, Buffer.from(`\r\n--${b}--\r\n`),
   ]);
   const r = await app.inject({
-    method: 'POST', url: `/api/persons/${personId}/photo`, payload,
+    method: 'POST', url: `/api/persons/${personId}/media`, payload,
     headers: { ...H, cookie: ownerCookie, 'content-type': `multipart/form-data; boundary=${b}` },
   });
   assert.equal(r.statusCode, 200, r.body);
-  return r.json().photo_id;
+  return r.json().id;
 }
 
 test('откат связей: отец, супруг, брат, разрыв связи, удаление; отменённое можно вернуть', async () => {
@@ -220,7 +221,7 @@ test('гость не видит дат, мест, заметок и фото ж
 test('несуществующий человек: понятная ошибка, а не сбой сервера', async () => {
   const none = '00000000-0000-0000-0000-000000000000';
   assert.equal((await call(ownerCookie, 'PATCH', '/api/me', { person_id: none })).statusCode, 404);
-  assert.equal((await call(ownerCookie, 'DELETE', `/api/persons/${none}/photo`)).statusCode, 404);
+  assert.equal((await call(ownerCookie, 'PUT', `/api/persons/${none}/photo`, { media_id: none })).statusCode, 404);
   assert.equal((await call(ownerCookie, 'GET', '/api/persons/abc/history')).statusCode, 400);
   const someone = await add({ given: 'Кто-то', sex: 'M' });
   assert.equal((await call(ownerCookie, 'POST', '/api/relations', { personId: none, to: someone.id, type: 'father' })).statusCode, 404);

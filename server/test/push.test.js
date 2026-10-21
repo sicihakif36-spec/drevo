@@ -197,10 +197,14 @@ test('правки: одна сводка по автору после 10 мин
 });
 
 test('подписи сводки', () => {
-  const e = (op, entity, action, extra = {}) => ({ op, entity, action, entity_id: extra.id || op, after: extra.after || null });
+  const e = (op, entity, action, extra = {}) => ({ op, entity, action, entity_id: extra.id || op, before: extra.before || null, after: extra.after || null });
   assert.equal(digestText('Елена', 'F', [e(1, 'person', 'create'), e(1, 'family', 'add_child'), e(2, 'person', 'create'),
-    e(3, 'person', 'photo', { after: { photo_id: 'x' } }), e(4, 'person', 'photo', { after: { photo_id: 'y' } })], [1, 2, 3, 4]),
-  'Елена добавила 2 человек и 2 фото');
+    e(3, 'media', 'add', { after: { kind: 'photo' } }), e(3, 'person', 'photo', { after: { photo_id: 'x' } }), e(3, 'media', 'add', { after: { kind: 'doc' } }),
+    e(4, 'media', 'add', { after: { kind: 'photo' } })], [1, 2, 3, 4]),
+  'Елена добавила 2 человек, 2 фото и 1 документ');
+  assert.equal(digestText('Елена', 'F', [e(1, 'person', 'photo', { after: { photo_id: 'x' } }), e(2, 'media', 'tag', { id: 'm' }),
+    e(3, 'media', 'delete', { before: { kind: 'doc' } }), e(3, 'person', 'photo', { after: { photo_id: null } })], [1, 2, 3]),
+  'Елена изменила 1 карточку и 1 фото, удалила 1 документ');
   assert.equal(digestText('Олег', 'M', [e(1, 'family', 'set_partner'), e(2, 'person', 'delete')], [1, 2]), 'Олег изменил 1 связь, удалил 1 человека');
   assert.equal(digestText('Ира', 'U', [e(1, 'family', 'update'), e(2, 'family', 'update')], [1, 2]), 'Ира изменил(а) 2 связи');
 });

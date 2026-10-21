@@ -8,7 +8,7 @@ import { authPlugin } from './auth.js';
 import { pool } from './db.js';
 import personRoutes from './routes/persons.js';
 import userRoutes from './routes/users.js';
-import mediaRoutes from './routes/media.js';
+import mediaRoutes, { MAX_FILE } from './routes/media.js';
 import printRoutes from './routes/print.js';
 import exportRoutes from './routes/export.js';
 import feedRoutes from './routes/feed.js';
@@ -26,7 +26,7 @@ export async function buildApp(opts = {}) {
     return reply.code(500).send({ error: 'Ошибка на сервере' });
   });
   await app.register(cookie);
-  await app.register(multipart, { limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
+  await app.register(multipart, { limits: { fileSize: MAX_FILE, files: 2 } });
   authPlugin(app);
   // До маршрутов: обсуждение сообщает о новых комментариях через app.push.
   pushPlugin(app, opts.push);

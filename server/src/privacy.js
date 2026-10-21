@@ -35,9 +35,35 @@ export function trimEntry(e) {
     if (e.action === 'photo') return both((x) => x && { photo_id: Boolean(x.photo_id) });
     return both(fieldsOnly);
   }
+  // Файлы: без подписей, имён и id — только вид (фото или документ) и кто отмечен.
+  if (e.entity === 'media') {
+    const f = e.action === 'update' ? fieldsOnly : (x) => pick(x, ['kind', 'person_id']);
+    return { ...both(f), entity_id: null };
+  }
   if (e.action === 'create' || e.action === 'drop') return both(familySnap);
   if (e.action === 'update') return both(fieldsOnly);
   return both((x) => pick(x, LINK));
+}
+
+// Какие из файлов ids гость может видеть: файл не удалён, на нём отмечен кто-то из дерева и нет ни одного живого.
+// Групповое фото с живым человеком гостю не показывается совсем — ни в альбоме, ни по ссылке, ни главным фото ушедшего.
+export async function guestMedia(ids) {
+  if (!ids.length) return new Set();
+  const rows = await q(
+    `select m.id, p.living, p.birth_date, p.deleted_at from media m
+     join media_persons mp on mp.media_id = m.id join persons p on p.id = mp.person_id
+     where m.id = any($1::uuid[]) and m.deleted_at is null`,
+    [ids],
+  );
+  const bad = new Set(rows.filter((r) => isPrivate(r)).map((r) => r.id));
+  return new Set(rows.filter((r) => !r.deleted_at && !bad.has(r.id)).map((r) => r.id));
+}
+
+// Дерево для гостя: hideLiving и без главных фото, которые гостю не видны.
+export async function guestTree(data) {
+  const out = hideLiving(data);
+  const ok = await guestMedia(out.persons.map((p) => p.photo_id).filter(Boolean));
+  return { ...out, persons: out.persons.map((p) => (p.photo_id && !ok.has(p.photo_id) ? { ...p, photo_id: null } : p)) };
 }
 
 // Кого гость видит без подробностей: их карточки, обсуждения и комментарии в ленте скрыты.

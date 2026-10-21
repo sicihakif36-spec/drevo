@@ -4,6 +4,12 @@ import { pool, tx } from '../src/db.js';
 import { migrate } from '../src/migrate.js';
 import { createInvite } from '../src/auth.js';
 import { logChange } from '../src/changes.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from '../src/config.js';
+import { mediaPath } from '../src/routes/media.js';
+import { snapshot } from '../src/album.js';
+import { demoImage, demoLetter } from './demo-media.js';
 
 if (process.env.NODE_ENV === 'production') { console.error('Не запускайте на рабочей базе'); process.exit(1); }
 await pool.query('drop schema public cascade; create schema public;');
@@ -58,6 +64,36 @@ await tx(async (db) => {
 await tx(async (db) => {
   await db.q("update persons set notes = 'Пекла лучшие пироги в деревне.' where id = $1", [agr]);
   await logChange(db, ed.id, 'person', agr, 'update', { notes: '' }, { notes: 'Пекла лучшие пироги в деревне.' });
+});
+// Фото и документы. Групповое фото с живой Людмилой гостю не видно; свадебное и портрет — видны.
+fs.mkdirSync(path.join(config.dataDir, 'media'), { recursive: true });
+async function media(db, { image, pdf, kind = 'photo', caption, date, name, persons, user = u.id }) {
+  const m = (await db.q(
+    `insert into media (kind, mime, bytes, name, caption, date, thumb, created_by)
+     values ($1, $2, 0, $3, $4, $5, $6, $7) returning *`,
+    [kind, pdf ? 'application/pdf' : 'image/png', name, caption, date, Boolean(image), user],
+  ))[0];
+  if (image) {
+    const { full, thumb } = demoImage(image);
+    fs.writeFileSync(mediaPath(m.id), full);
+    fs.writeFileSync(mediaPath(m.id, true), thumb);
+  } else await demoLetter(mediaPath(m.id));
+  await db.q('update media set bytes = $1 where id = $2', [fs.statSync(mediaPath(m.id)).size, m.id]);
+  for (const p of persons) await db.q('insert into media_persons (media_id, person_id) values ($1, $2)', [m.id, p]);
+  await logChange(db, user, 'media', m.id, 'add', null, snapshot(m), persons);
+  return m.id;
+}
+await tx(async (db) => {
+  const portrait = await media(db, { image: 'portrait', caption: 'Иван Фёдорович в молодости', date: 'около 1910', name: 'ivan.jpg', persons: [ivan] });
+  const wedding = await media(db, { image: 'wedding', caption: 'Свадьба Петра и Клавдии', date: '1945', name: 'svadba.jpg', persons: [petr, klav] });
+  await media(db, { image: 'scan', kind: 'doc', caption: 'Метрика Петра Ивановича', date: '1912', name: 'metrika.jpg', persons: [petr] });
+  await db.q('update persons set photo_id = $1 where id = $2', [portrait, ivan]);
+  await db.q('update persons set photo_id = $1 where id = $2', [wedding, petr]);
+});
+// Елена добавила одним действием групповое фото и письмо — новое в ленте у Сергея.
+await tx(async (db) => {
+  await media(db, { image: 'group', caption: 'Вся семья у дома в Горках', date: 'лето 1975', name: 'gorki.jpg', persons: [petr, klav, yuri, lyuda], user: ed.id });
+  await media(db, { pdf: true, kind: 'doc', caption: 'Письмо Василия с фронта', date: 'март 1942', name: 'pismo.pdf', persons: [vas, petr], user: ed.id });
 });
 // Обсуждение: Сергей писал давно, Елена — после его прошлого визита.
 const say = (person, user, body, ago) => pool.query(

@@ -24,7 +24,7 @@ export async function listOps({ person = null, limit = 50, standing = false } = 
        select op, max(id) as last from changes c where $1::uuid is null or $1 = any(persons)
        group by op ${standing ? `having ${STANDS}` : ''} order by last desc limit $2
      )
-     select c.id, c.op, c.at, c.entity, c.entity_id, c.action, c.before, c.after, c.reverted_by, c.user_id, u.name as user_name
+     select c.id, c.op, c.at, c.entity, c.entity_id, c.action, c.before, c.after, c.persons, c.reverted_by, c.user_id, u.name as user_name
      from changes c join ops o on o.op = c.op left join users u on u.id = c.user_id
      order by o.last desc, c.id`,
     [person, limit],
@@ -34,7 +34,7 @@ export async function listOps({ person = null, limit = 50, standing = false } = 
     let op = out.at(-1);
     if (op?.op !== r.op) out.push((op = { op: r.op, id: r.id, at: r.at, user_id: r.user_id, user_name: r.user_name, reverted: false, entries: [] }));
     if (r.reverted_by) op.reverted = true;
-    op.entries.push({ id: r.id, entity: r.entity, entity_id: r.entity_id, action: r.action, before: r.before, after: r.after });
+    op.entries.push({ id: r.id, entity: r.entity, entity_id: r.entity_id, action: r.action, before: r.before, after: r.after, persons: r.persons });
   }
   return out;
 }
