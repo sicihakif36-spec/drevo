@@ -47,7 +47,7 @@ function openSpouse() {
 <template>
   <div class="sheet-backdrop" @click="emit('close')" />
   <form class="sheet msheet" role="dialog" aria-modal="true" @submit.prevent="save">
-    <div class="muted small">{{ spouse.sex === 'F' ? 'Жена' : spouse.sex === 'M' ? 'Муж' : 'Супруг(а)' }}</div>
+    <div class="muted small">{{ spouse.sex === 'F' ? 'Жена' : spouse.sex === 'M' ? 'Муж' : 'Муж или жена' }}</div>
     <h1>{{ fullName(spouse) }}</h1>
 
     <div class="field"><span class="lbl">Вид связи</span>
@@ -70,9 +70,9 @@ function openSpouse() {
 </template>
 
 <style scoped>
-.msheet h1 { font-size: 22px; overflow-wrap: anywhere; }
+.msheet h1 { font-size: 1.222rem; overflow-wrap: anywhere; }
 .field { display: block; margin: 10px 0; }
-.lbl { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-.seg button { min-height: 46px; font-size: 15px; line-height: 1.2; }
-.open { margin-top: 6px; color: var(--accent); }
+.lbl { display: block; font-size: 0.889rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem; }
+.seg button { min-height: 46px; font-size: 0.833rem; line-height: 1.2; }
+.open { margin-top: 6px; color: var(--accent-text); }
 </style>

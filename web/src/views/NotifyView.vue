@@ -113,12 +113,12 @@ async function toggle(key, on) {
 </template>
 
 <style scoped>
-.status p { margin: 0 0 12px; }
-.status button + button { margin-top: 8px; }
+.status p { margin: 0 0 0.667rem; }
+.status button + button { margin-top: 0.444rem; }
 .status ol { margin: 0 0 12px; padding-left: 22px; }
 .status li { margin-bottom: 4px; }
-.big { font-size: 18px; font-weight: 600; }
-.ok { color: var(--accent); }
+.big { font-size: 1.056rem; font-weight: 700; }
+.ok { color: var(--accent-text); }
 .opt { cursor: pointer; }
-.opt input { width: 28px; height: 28px; min-height: 0; flex: none; margin: 0; }
+.opt input { width: 1.556rem; height: 1.556rem; min-height: 0; flex: none; margin: 0; }
 </style>

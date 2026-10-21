@@ -4,6 +4,8 @@ import { api, upload, shrinkImage } from '../api.js';
 import { STEPS, ROLES, MAX_PHOTOS, newId, filled, surveyPeople } from '@shared/survey.js';
 import SurveyPerson from '../components/SurveyPerson.vue';
 import { vGrow } from '../grow.js';
+import { ask } from '../components/ask.js';
+import { nameAccusative } from '@shared/names.js';
 
 // Анкета по ссылке: без входа, ничего из дерева — только пустые поля и имя того, кто просит.
 // Ответы сохраняются на сервере по ходу: можно закрыть и вернуться по той же ссылке.
@@ -87,9 +89,9 @@ const savedText = computed(() => {
   return saving.at ? 'Сохранено' : '';
 });
 
-function remove(role, i) {
+async function remove(role, i) {
   const list = answers.value.people[role];
-  if (filled(list[i]) && !confirm(`Убрать ${list[i].given}?`)) return;
+  if (filled(list[i]) && !await ask({ text: `Убрать ${list[i].given ? nameAccusative(list[i], true) : 'этого человека'} из анкеты?`, note: 'Всё, что о нём написано, пропадёт.', yes: 'Убрать', no: 'Не убирать', danger: true })) return;
   list.splice(i, 1);
 }
 
@@ -128,7 +130,7 @@ async function caption(p) {
   try { await sapi('PATCH', `/api/survey/photos/${p.id}`, { caption: p.caption }); } catch (e) { photoError.value = e.message; }
 }
 async function dropPhoto(p) {
-  if (!confirm('Убрать это фото?')) return;
+  if (!await ask({ text: 'Убрать это фото из анкеты?', yes: 'Убрать', no: 'Не убирать', danger: true })) return;
   try {
     await sapi('DELETE', `/api/survey/photos/${p.id}`);
     photos.value = photos.value.filter((x) => x !== p);
@@ -138,7 +140,7 @@ async function dropPhoto(p) {
 // ---------- Отправка ----------
 const sending = ref(false);
 async function submit() {
-  if (!confirm('Отправить анкету? После этого менять ответы будет нельзя.')) return;
+  if (!await ask({ text: 'Отправить анкету?', note: 'После этого менять ответы будет нельзя.', yes: 'Отправить', no: 'Ещё не отправлять' })) return;
   sending.value = true;
   error.value = '';
   try {
@@ -231,8 +233,11 @@ const nameOf = (p) => [p.surname, p.given, p.patronymic].map((s) => s.trim()).fi
 
         <div class="nav-steps">
           <button class="huge" @click="go(step - 1)">Назад</button>
-          <button class="primary huge" @click="go(step + 1)">{{ cur.roles && !(cur.roles.some((r) => answers.people[r] && (ROLES[r].many ? answers.people[r].some(filled) : filled(answers.people[r])))) ? 'Пропустить' : 'Дальше' }}</button>
+          <button class="primary huge" @click="go(step + 1)">Дальше</button>
         </div>
+        <!-- Главная кнопка всегда «Дальше»; пропустить пустой шаг — второстепенной. -->
+        <button v-if="cur.roles && !cur.roles.some((r) => answers.people[r] && (ROLES[r].many ? answers.people[r].some(filled) : filled(answers.people[r])))"
+          class="ghost block skip" @click="go(step + 1)">Пропустить этот шаг</button>
       </template>
 
       <!-- Отправка -->
@@ -259,22 +264,23 @@ const nameOf = (p) => [p.surname, p.given, p.patronymic].map((s) => s.trim()).fi
 </template>
 
 <style scoped>
-.survey { padding-bottom: calc(110px + var(--safe-b)); font-size: 18px; }
-.survey h1 { font-size: 26px; margin-top: 6px; }
-.big-text { font-size: 18px; line-height: 1.5; }
+.survey { padding-bottom: calc(6rem + var(--safe-b)); }
+.survey h1 { margin-top: 0.333rem; overflow-wrap: anywhere; }
+.big-text { line-height: 1.5; }
 .big-text p { margin: 0 0 10px; }
 .big-text p:last-child { margin-bottom: 0; }
 .hint { margin: -4px 0 8px; color: var(--muted); }
-.huge { min-height: 56px; font-size: 19px; }
-.add { width: 100%; margin-top: 12px; min-height: 54px; font-size: 18px; border: 2px dashed var(--line); background: var(--card); }
-.nav-steps { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; margin-top: 20px; }
+.huge { min-height: 3.111rem; font-size: 1.056rem; }
+.add { width: 100%; margin-top: 0.667rem; min-height: 3rem; border: 2px dashed var(--field); background: var(--card); }
+.nav-steps { display: grid; grid-template-columns: 1fr 2fr; gap: 0.556rem; margin-top: 1.111rem; }
+.skip { margin-top: 0.444rem; color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
 .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 6px 0 12px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--accent); }
-.story { min-height: 260px; font-size: 18px; }
+.story { min-height: 14rem; }
 .photo { margin-top: 12px; }
 .photo img { width: 100%; max-height: 320px; object-fit: contain; border-radius: 10px; background: var(--line); }
 .noimg { height: 120px; display: grid; place-items: center; background: var(--line); border-radius: 10px; }
-.who { width: 120px; flex: none; font-size: 15px; }
+.who { width: 6.667rem; flex: none; font-size: 0.889rem; }
 .saved { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px 16px calc(8px + var(--safe-b)); text-align: center; background: var(--bg); color: var(--muted); }
 .saved:empty { display: none; }
 .saved.bad { color: var(--danger); }

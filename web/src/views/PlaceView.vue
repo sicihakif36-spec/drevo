@@ -7,6 +7,7 @@ import { fullName, dateText, parsePeriod } from '@shared/names.js';
 import { placeKey } from '@shared/places.js';
 import { eventTitle } from '@shared/events.js';
 import PlaceForm from '../components/PlaceForm.vue';
+import { ask } from '../components/ask.js';
 
 // Карточка места: полное старое название, как это сейчас, и кто здесь родился, вступил в брак, жил, умер, похоронен.
 // Адрес: /place?id=<место справочника> или /place?text=<место, как записано в карточке>.
@@ -56,7 +57,7 @@ const choices = computed(() => {
   return (store.tree?.places || []).filter((x) => words.every((w) => placeKey(`${x.title} ${x.now}`).includes(w))).slice(0, 8);
 });
 async function adopt(x) {
-  if (!confirm(`Записать «${x.title}» у всех, у кого сейчас «${card.value.text}»?`)) return;
+  if (!await ask({ text: `Записать «${x.title}» у всех, у кого сейчас «${card.value.text}»?`, yes: 'Записать', no: 'Не записывать' })) return;
   try {
     await api('POST', `/api/places/${x.id}/adopt`, { text: card.value.text });
     await loadTree();
@@ -71,7 +72,7 @@ function saved(x) {
   load();
 }
 async function remove() {
-  if (!confirm(`Убрать «${p.value.title}» из справочника? У людей место останется записанным текстом. Вернуть можно в «Ещё → Последние правки».`)) return;
+  if (!await ask({ text: `Убрать «${p.value.title}» из справочника?`, note: 'У людей место останется записанным текстом. Вернуть можно в «Ещё → Последние правки».', yes: 'Убрать', no: 'Не убирать', danger: true })) return;
   try {
     await api('DELETE', `/api/places/${p.value.id}`);
     await loadTree();
@@ -145,7 +146,7 @@ function open(r) {
 
 <style scoped>
 h1 { margin: 2px 0 6px; overflow-wrap: anywhere; }
-.now { font-size: 18px; margin: 0 0 8px; }
+.now { font-size: 1rem; margin: 0 0 8px; }
 .pre { white-space: pre-wrap; }
 .pick { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; }
 .pick .grow > span { display: block; }

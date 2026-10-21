@@ -57,6 +57,6 @@ function close() {
 
 <style scoped>
 .sources > .item { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; }
-.item .title { display: block; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.item .title { display: block; font-size: 0.944rem; font-weight: 600; overflow-wrap: anywhere; }
 .item .grow > span { display: block; }
 </style>

@@ -59,10 +59,11 @@ const when = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', mo
       <b>Новая анкета</b>
       <label class="field"><span>Для кого (видите только вы, например «Тётя Валя»)</span><input v-model="name" maxlength="80" /></label>
       <div class="field">
-        <span class="muted small">Кто это в дереве — необязательно: тогда ответы сразу привяжутся к нему</span>
+        <span>Кто это в дереве (можно не указывать)</span>
+        <p class="muted small hint">Тогда ответы сразу привяжутся к нему.</p>
         <div v-if="person" class="row picked">
           <span class="grow">{{ fullName(person) }} <span class="muted small">{{ lifespan(person) }}</span></span>
-          <button class="ghost" @click="personId = null" aria-label="Убрать">✕</button>
+          <button class="ghost" @click="personId = null">Убрать</button>
         </div>
         <template v-else>
           <input v-model="find" placeholder="Начните вводить имя" />
@@ -90,7 +91,7 @@ const when = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', mo
       <p class="muted small" style="margin:4px 0 0">Те же вопросы на листах A4 с линиями — чтобы расспросить родственника за чаем.
         Потом создайте анкету, заполните её по ссылке сами по бланку и загрузите в дерево.</p>
       <label class="field"><span>Кого опрашиваем (необязательно, будет в шапке)</span><input v-model="blankName" maxlength="80" /></label>
-      <div class="row">
+      <div class="row wrap">
         <a class="btn primary grow" :href="blankUrl(false)" target="_blank">Напечатать пустой бланк</a>
         <a class="btn grow" :href="blankUrl(true)">Скачать</a>
       </div>
@@ -101,7 +102,7 @@ const when = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', mo
     <div v-else class="list">
       <router-link v-for="s in list" :key="s.id" :to="`/surveys/${s.id}`">
         <div class="grow">
-          <div>{{ s.name }}</div>
+          <div class="name">{{ s.name }}</div>
           <div class="small"><span class="status" :class="s.status">{{ STATUS[s.status] }}</span>
             <span class="muted"> · {{ s.created_by_name }}, {{ when(s.created_at) }}</span></div>
         </div>
@@ -113,9 +114,12 @@ const when = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', mo
 </template>
 
 <style scoped>
-.picked { background: var(--accent-soft); border-radius: 12px; padding: 4px 4px 4px 12px; }
-.status { font-weight: 600; color: var(--muted); }
-.status.submitted { color: var(--accent); }
+.picked { background: var(--accent-soft); color: var(--accent-soft-text); border-radius: var(--radius-s); padding: 0.222rem 0.222rem 0.222rem 0.667rem; }
+.picked .ghost { color: var(--accent-soft-text); }
+.hint { margin: 0 0 0.333rem; }
+.name { overflow-wrap: anywhere; }
+.status { font-weight: 700; color: var(--muted); }
+.status.submitted { color: var(--accent-text); }
 .status.filling { color: var(--oral); }
 .status.loaded { color: var(--text); font-weight: 400; }
 </style>

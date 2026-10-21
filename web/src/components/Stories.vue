@@ -101,8 +101,8 @@ const time = (sec) => (sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStar
 
 <style scoped>
 .stories > .item { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; }
-.item .title { display: block; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.item .title { display: block; font-size: 0.944rem; font-weight: 600; overflow-wrap: anywhere; }
 .item .grow > span { display: block; }
-.voice { flex: none; display: flex; align-items: center; gap: 2px; color: var(--accent); }
+.voice { flex: none; display: flex; align-items: center; gap: 2px; color: var(--accent-text); }
 .voice svg { width: 22px; height: 22px; fill: currentColor; }
 </style>

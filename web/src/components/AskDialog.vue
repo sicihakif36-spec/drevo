@@ -53,7 +53,7 @@ function no() {
   position: fixed; z-index: 71; left: 1rem; right: 1rem; top: 50%; transform: translateY(-50%);
   max-width: 480px; margin: 0 auto; max-height: calc(100vh - 2rem); overflow-y: auto;
   background: var(--card); border-radius: var(--radius); padding: 1.333rem 1.111rem 1.111rem;
-  box-shadow: 0 8px 40px rgba(0,0,0,.35);
+  border: 1px solid var(--field); box-shadow: 0 8px 40px rgba(0,0,0,.35);
 }
 .ask-text { font-size: 1.111rem; font-weight: 700; line-height: 1.35; margin: 0 0 0.5rem; overflow-wrap: anywhere; }
 .ask-note { color: var(--muted); margin: 0 0 0.5rem; white-space: pre-line; overflow-wrap: anywhere; }

@@ -6,6 +6,7 @@ import { fullName } from '@shared/names.js';
 import { KINDS, citeText, kindNote, sourceTitle } from '@shared/sources.js';
 import { citeWhat } from '../sources.js';
 import SourceForm from './SourceForm.vue';
+import { ask, askText } from './ask.js';
 
 // Источник поверх карточки: все поля, скан, к каким сведениям каких людей он привязан; правка и удаление.
 const props = defineProps({ id: String, person: Object });
@@ -52,7 +53,7 @@ async function save({ fields }) {
 }
 
 async function editPage(c) {
-  const page = prompt('Уточнение: номер записи, страница', c.page);
+  const page = await askText({ text: 'Уточнение к источнику', label: 'Номер записи, страница', value: c.page });
   if (page === null) return;
   try {
     await api('PATCH', `/api/citations/${c.id}`, { page });
@@ -62,7 +63,7 @@ async function editPage(c) {
 }
 
 async function detach(c) {
-  if (!confirm(`Убрать этот источник у сведения «${c.what}»?`)) return;
+  if (!await ask({ text: `Убрать этот источник у сведения «${c.what}»?`, note: 'Сам источник останется.', yes: 'Убрать', no: 'Не убирать', danger: true })) return;
   try {
     await api('DELETE', `/api/citations/${c.id}`);
     await load();
@@ -71,7 +72,7 @@ async function detach(c) {
 }
 
 async function remove() {
-  if (!confirm(`Удалить источник «${sourceTitle(s.value)}» у всех людей? Это можно отменить в «Ещё → Последние правки».`)) return;
+  if (!await ask({ text: `Удалить источник «${sourceTitle(s.value)}»?`, note: `Он пропадёт у всех людей. Вернуть можно в «Ещё → Последние правки».`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   try {
     await api('DELETE', `/api/sources/${s.value.id}`);
     toast('Источник удалён. Вернуть можно в «Ещё → Последние правки».');
@@ -106,7 +107,7 @@ async function remove() {
           <span>Открыть скан</span>
         </a>
         <div v-if="s.note" class="note">{{ s.note }}</div>
-        <div class="muted small">Записал(а) {{ s.user_name || 'кто-то' }}, {{ new Date(s.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) }}</div>
+        <div class="muted small">Записано: {{ s.user_name || 'кто-то' }}, {{ new Date(s.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) }}</div>
 
         <h2>Что подтверждает</h2>
         <div class="list">
@@ -137,14 +138,14 @@ async function remove() {
 .srcview { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; overscroll-behavior: contain; }
 .srcview .page { padding-bottom: calc(32px + var(--safe-b)); }
 .top { margin-bottom: 8px; }
-h1 { font-size: 24px; overflow-wrap: anywhere; margin-top: 2px; }
-.cite { font-size: 18px; padding: 10px 14px; border-radius: 12px; background: var(--accent-soft); }
-.link { overflow-wrap: anywhere; font-size: 17px; }
-.scan { display: flex; align-items: center; gap: 12px; margin: 12px 0; text-decoration: none; font-size: 17px; }
+h1 { font-size: 1.333rem; overflow-wrap: anywhere; margin-top: 2px; }
+.cite { font-size: 1rem; padding: 10px 14px; border-radius: 12px; background: var(--accent-soft); }
+.link { overflow-wrap: anywhere; font-size: 0.944rem; }
+.scan { display: flex; align-items: center; gap: 12px; margin: 12px 0; text-decoration: none; font-size: 0.944rem; }
 .scan img, .pdf { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; background: var(--line); display: grid; place-items: center; font-weight: 700; color: var(--muted); }
-.note { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 17px; line-height: 1.5; margin: 12px 0; }
+.note { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.944rem; line-height: 1.5; margin: 12px 0; }
 .cit { align-items: center; gap: 4px !important; padding-right: 8px !important; }
-.icon { padding: 10px; min-width: 44px; font-size: 18px; }
+.icon { padding: 10px; min-width: 44px; font-size: 1rem; }
 .who { display: block; font-weight: 600; text-decoration: none; }
 .actions-col { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; }
 </style>
