@@ -11,6 +11,7 @@ import userRoutes from './routes/users.js';
 import mediaRoutes, { MAX_FILE } from './routes/media.js';
 import printRoutes from './routes/print.js';
 import exportRoutes from './routes/export.js';
+import archiveRoutes from './routes/archive.js';
 import feedRoutes from './routes/feed.js';
 import commentRoutes from './routes/comments.js';
 import storyRoutes from './routes/stories.js';
@@ -40,6 +41,7 @@ export async function buildApp(opts = {}) {
   await app.register(mediaRoutes);
   await app.register(printRoutes);
   await app.register(exportRoutes);
+  await app.register(archiveRoutes);
   await app.register(feedRoutes);
   await app.register(commentRoutes);
   await app.register(storyRoutes);

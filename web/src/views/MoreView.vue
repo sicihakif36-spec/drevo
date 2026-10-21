@@ -26,6 +26,24 @@ async function rename() {
   await api('PATCH', '/api/me', { name });
   await loadTree();
 }
+// Полный архив: сначала — сколько весит, потом скачивание обычной ссылкой (браузер сам покажет ход).
+const archive = ref(null);
+async function openArchive() {
+  archive.value = { loading: true };
+  try {
+    archive.value = await api('GET', '/api/archive');
+  } catch (err) {
+    archive.value = null;
+    toast(err.message);
+  }
+}
+const BIG = 200 * 1024 * 1024;
+function sizeText(n) {
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} КБ`;
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toLocaleString('ru-RU', { maximumFractionDigits: n < 10 * 1024 ** 2 ? 1 : 0 })} МБ`;
+  return `${(n / 1024 ** 3).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} ГБ`;
+}
+
 async function logout() {
   if (!confirm('Выйти на этом устройстве? Войти снова можно будет только по новой ссылке.')) return;
   // Этот телефон больше не получает уведомлений.
@@ -60,7 +78,8 @@ async function logout() {
       <router-link to="/places">Места</router-link>
       <router-link v-if="canTalk()" to="/changes">Последние правки</router-link>
       <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
-      <a href="/api/export.ged" download>Скачать всё дерево (GEDCOM)</a>
+      <a v-if="isOwner()" href="#" @click.prevent="openArchive">Скачать всё: дерево, фото, документы</a>
+      <a href="/api/export.ged" download>Скачать дерево для других программ (GEDCOM)</a>
       <router-link v-if="isOwner()" to="/family">Родственники и приглашения</router-link>
     </div>
 
@@ -77,5 +96,25 @@ async function logout() {
     </div>
 
     <div style="margin-top:24px"><button class="danger block" @click="logout">Выйти на этом устройстве</button></div>
+
+    <template v-if="archive">
+      <div class="sheet-backdrop" @click="archive = null" />
+      <div class="sheet" role="dialog" aria-modal="true">
+        <h2 style="margin-top:0">Скачать всё</h2>
+        <p class="small">Один архив со всем деревом: люди, фото, документы, истории и записи голоса.
+          Это копия на случай, если с сервером что-то случится, и способ перенести дерево в другую программу.</p>
+        <p v-if="archive.loading" class="muted">Считаю, сколько весит архив…</p>
+        <template v-else>
+          <p>В архиве: {{ archive.summary }}.<br />Весит примерно <b>{{ sizeText(archive.bytes) }}</b>.</p>
+          <p v-if="archive.missing" class="small muted">Не нашлось на сервере файлов: {{ archive.missing }}. Их в архиве не будет.</p>
+          <p v-if="archive.bytes > BIG" class="small"><b>Архив большой.</b> Лучше скачивать с компьютера или по Wi-Fi,
+            а на телефоне проверьте, хватит ли места.</p>
+          <p class="small muted">После скачивания распакуйте архив и откройте файл index.html — дерево откроется в браузере без интернета.</p>
+          <a class="btn primary" style="width:100%;box-sizing:border-box" href="/api/archive.zip" download @click="archive.started = true">Скачать архив</a>
+          <p v-if="archive.started" class="small">Скачивание началось. Ход виден в браузере, в списке загрузок.</p>
+        </template>
+        <button class="ghost block" style="margin-top:8px" @click="archive = null">Закрыть</button>
+      </div>
+    </template>
   </div>
 </template>
