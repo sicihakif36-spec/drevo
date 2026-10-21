@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
-# Копия базы и фото в /srv/drevo/backups, хранится 30 дней.
+# Ежедневная копия в /srv/drevo/backups (запускает таймер drevo-backup.timer, можно и вручную через sudo):
+#   drevo-<время>.dump — база, хранится 30 дней (копии перед обновлением — пока их не удалят руками);
+#   files/ — все файлы: фото, миниатюры, сканы, записи голоса (media/) и фото из анкет (survey/).
+# Файлы приложение не меняет и не стирает (удаление мягкое), поэтому files/ только пополняется новыми:
+# одна копия на диске, а не по архиву всех фото на каждый день.
 set -euo pipefail
 APP=/srv/drevo
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 compose() { docker compose -p drevo --env-file "$APP/.env" -f "$APP/current/deploy/docker-compose.yml" "$@"; }
 umask 077
-compose exec -T db pg_dump -U drevo -Fc drevo > "$APP/backups/drevo-$STAMP.dump"
-compose exec -T app tar -C /data -cf - media | gzip > "$APP/backups/media-$STAMP.tar.gz"
-find "$APP/backups" -type f -mtime +30 -delete
+mkdir -p "$APP/backups/files"
+
+compose exec -T db pg_dump -U drevo -Fc drevo > "$APP/backups/drevo-$STAMP.dump.part"
+mv "$APP/backups/drevo-$STAMP.dump.part" "$APP/backups/drevo-$STAMP.dump"
+
+# Файлы — прямо из тома Docker; копия не стирает того, чего в томе уже нет.
+DATA=$(docker volume inspect drevo_media --format '{{.Mountpoint}}')
+rsync -a "$DATA/" "$APP/backups/files/"
+
+find "$APP/backups" -maxdepth 1 -type f \( -name 'drevo-*Z.dump' -o -name 'media-*.tar.gz' -o -name '*.part' \) -mtime +30 -delete

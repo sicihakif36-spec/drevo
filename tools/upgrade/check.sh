@@ -16,10 +16,8 @@ psql "$PGURL/drevo" -qc 'drop database if exists drevo_v1' -c 'create database d
 export DATABASE_URL="$PGURL/drevo_v1"
 
 mkdir -p "$WORK/data" "$WORK/img"
-i=0
-for c in tomato seagreen steelblue orange; do
-  ffmpeg -loglevel error -f lavfi -i "color=c=$c:s=640x480" -frames:v 1 "$WORK/img/$(printf "\\x$(printf %x $((97 + i)))").jpg"
-  i=$((i + 1))
+for f in a:tomato b:seagreen c:steelblue d:orange; do
+  ffmpeg -loglevel error -f lavfi -i "color=c=${f#*:}:s=640x480" -frames:v 1 "$WORK/img/${f%%:*}.jpg"
 done
 
 cd "$WORK/v1/server"

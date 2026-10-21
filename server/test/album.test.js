@@ -248,6 +248,19 @@ test('печать «скрыть живых» у владельца: без г�
   assert.match(await pdf('&hideLiving=1'), /\/Subtype \/Image/, 'фото ушедшего без живых — печатается');
 });
 
+test('печать берёт миниатюру фото, а у старого фото без миниатюры — сам снимок', async () => {
+  const p = await add({ given: 'Миниатюра', sex: 'M', living: false });
+  const pdf = async () => (await call(owner, 'GET', `/api/print.pdf?root=${p.id}&mode=descendants&up=0&down=0`)).rawPayload.toString('latin1');
+  // Снимок — PNG, миниатюра — JPEG: по фильтру картинки в PDF видно, какую взяли.
+  await upload(owner, p.id);
+  assert.match(await pdf(), /\/DCTDecode/);
+  const orig = (await upload(owner, p.id, { thumb: false })).json();
+  await json(owner, 'PUT', `/api/persons/${p.id}/photo`, { media_id: orig.id });
+  const old = await pdf();
+  assert.match(old, /\/Subtype \/Image/);
+  assert.doesNotMatch(old, /\/DCTDecode/);
+});
+
 test('лента и сводка: «добавил 3 фото», гостю — без подписей и id файлов', async () => {
   const p = await add({ given: 'Лента', sex: 'M', living: false });
   const a = (await upload(editor, p.id, { caption: 'секретная подпись', date: '1961' })).json();

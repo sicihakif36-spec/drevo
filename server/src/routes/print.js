@@ -60,10 +60,10 @@ function drawTree(doc, idx, layout, o, theme) {
     doc.lineWidth(n.root ? 3 : 1.4).roundedRect(n.x, n.y, BOX.w, BOX.h, 9).fillAndStroke(fill, stroke);
     let tx = n.x + 8;
     const hidden = o.hideLiving && isPrivate(p);
-    if (o.photos && p.photo_id && !hidden && p._photoOk) {
+    if (o.photos && p.photo_id && !hidden && p._photo) {
       try {
         doc.save().roundedRect(n.x + 6, n.y + 6, BOX.h - 12, BOX.h - 12, 6).clip();
-        doc.image(mediaPath(p.photo_id), n.x + 6, n.y + 6, { cover: [BOX.h - 12, BOX.h - 12], align: 'center', valign: 'center' });
+        doc.image(p._photo, n.x + 6, n.y + 6, { cover: [BOX.h - 12, BOX.h - 12], align: 'center', valign: 'center' });
         doc.restore();
         tx = n.x + BOX.h;
       } catch { doc.restore(); }
@@ -80,7 +80,9 @@ function drawTree(doc, idx, layout, o, theme) {
 export function renderPdf(stream, data, o) {
   const idx = buildIndex(data);
   for (const p of idx.persons.values()) {
-    p._photoOk = Boolean(p.photo_id && data.photoMime?.[p.photo_id] && fs.existsSync(mediaPath(p.photo_id)));
+    // Миниатюра (400 px) — с запасом для рамки на листе; без неё PDF с сотнями фото весит гигабайт и не помещается в память.
+    const m = p.photo_id && data.photos?.[p.photo_id];
+    p._photo = m ? [m.thumb && mediaPath(m.id, true), mediaPath(m.id)].find((f) => f && fs.existsSync(f)) : null;
   }
   const root = idx.persons.has(o.root) ? o.root : data.persons[0]?.id;
   const layout = layoutTree(idx, root, { mode: o.mode, up: o.up, down: o.down });
@@ -138,10 +140,10 @@ export async function loadTreeData(user, hide = isGuest(user)) {
     q('select * from persons where deleted_at is null'),
     q('select * from families'),
     q('select * from family_children'),
-    q("select id, mime from media where mime in ('image/jpeg', 'image/png')"),
+    q("select id, mime, thumb from media where mime in ('image/jpeg', 'image/png')"),
     q("select value from settings where key = 'title'"),
   ]);
-  const data = { persons, families, children, photoMime: Object.fromEntries(media.map((m) => [m.id, m.mime])), title: settings[0]?.value };
+  const data = { persons, families, children, photos: Object.fromEntries(media.map((m) => [m.id, m])), title: settings[0]?.value };
   return hide ? guestTree(data) : data;
 }
 
