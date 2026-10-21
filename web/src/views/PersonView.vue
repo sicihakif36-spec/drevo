@@ -264,6 +264,7 @@ onUnmounted(onLive((events) => {
 
     <h2>Ещё</h2>
     <div class="list">
+      <router-link :to="`/person/${p.id}/print`">Напечатать карточку</router-link>
       <a href="#" @click.prevent="showOnTree">Показать в центре дерева</a>
       <a href="#" v-if="store.me?.person_id !== p.id" @click.prevent="setMe">Это я (считать родство от этого человека)</a>
       <a :href="`/api/print.pdf?root=${p.id}&mode=hourglass`" target="_blank">Распечатать дерево вокруг этого человека</a>

@@ -43,6 +43,9 @@ async function create() {
     error.value = e.message;
   }
 }
+// Пустой бланк на бумаге: опросить за чаем, потом перенести ответы в анкету.
+const blankName = ref('');
+const blankUrl = (download) => `/api/survey-blank.pdf?${new URLSearchParams({ name: blankName.value.trim(), ...(download ? { download: '1' } : {}) })}`;
 const when = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 </script>
 
@@ -79,6 +82,17 @@ const when = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', mo
       <div class="grid2">
         <button class="primary" @click="shareSurvey(link, 'share')">Поделиться</button>
         <button @click="shareSurvey(link, 'copy')">Скопировать</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <b>Бумажный бланк</b>
+      <p class="muted small" style="margin:4px 0 0">Те же вопросы на листах A4 с линиями — чтобы расспросить родственника за чаем.
+        Потом создайте анкету, заполните её по ссылке сами по бланку и загрузите в дерево.</p>
+      <label class="field"><span>Кого опрашиваем (необязательно, будет в шапке)</span><input v-model="blankName" maxlength="80" /></label>
+      <div class="row">
+        <a class="btn primary grow" :href="blankUrl(false)" target="_blank">Напечатать пустой бланк</a>
+        <a class="btn grow" :href="blankUrl(true)">Скачать</a>
       </div>
     </div>
 

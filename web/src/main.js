@@ -7,6 +7,7 @@ import PersonView from './views/PersonView.vue';
 import PeopleView from './views/PeopleView.vue';
 import MoreView from './views/MoreView.vue';
 import PrintView from './views/PrintView.vue';
+import CardPrintView from './views/CardPrintView.vue';
 import FamilyView from './views/FamilyView.vue';
 import InviteView from './views/InviteView.vue';
 import ChangesView from './views/ChangesView.vue';
@@ -23,6 +24,7 @@ const router = createRouter({
   routes: [
     { path: '/', component: TreeView },
     { path: '/person/:id', component: PersonView, props: true },
+    { path: '/person/:id/print', component: CardPrintView, props: true },
     { path: '/people', component: PeopleView },
     { path: '/feed', component: FeedView },
     { path: '/more', component: MoreView },

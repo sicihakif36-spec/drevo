@@ -138,6 +138,8 @@ async function revoke() {
 }
 const reverted = async () => { notes.value = []; await load(); };
 const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+// Бумажный бланк с именем из анкеты: расспросить вживую и заполнить анкету по нему.
+const blankUrl = computed(() => `/api/survey-blank.pdf?${new URLSearchParams({ name: s.value?.name || '' })}`);
 const goPerson = (id) => router.push(`/person/${id}`);
 </script>
 
@@ -153,6 +155,10 @@ const goPerson = (id) => router.push(`/person/${id}`);
           <template v-else-if="['sent', 'filling'].includes(s.status)">; ссылка работает до {{ when(s.expires_at) }}</template></div>
         <div v-if="s.status === 'loaded'" class="muted">Загрузил(а) {{ s.loaded_by_name }} {{ when(s.loaded_at) }}</div>
         <div v-if="s.person_id && store.idx?.persons.get(s.person_id)" class="muted">В дереве: {{ fullName(store.idx.persons.get(s.person_id)) }}</div>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <a class="btn grow" :href="blankUrl" target="_blank">Напечатать бланк</a>
       </div>
 
       <template v-if="['sent', 'filling', 'expired'].includes(s.status)">
