@@ -60,7 +60,7 @@ test('семья из родителей, ребёнка и супруга; от
   const stale = await call(ownerCookie, 'PATCH', `/api/persons/${dad.id}`, { birth_place: 'Москва', version: dad.version });
   assert.equal(stale.statusCode, 409);
   const hist = (await call(ownerCookie, 'GET', `/api/persons/${dad.id}/history`)).json();
-  const change = hist.find((h) => h.action === 'update');
+  const change = hist.find((op) => op.entries.some((e) => e.action === 'update'));
   assert.equal((await call(ownerCookie, 'POST', `/api/changes/${change.id}/revert`)).statusCode, 200);
   const t2 = (await call(ownerCookie, 'GET', '/api/tree')).json();
   assert.equal(t2.persons.find((p) => p.id === dad.id).birth_place, '');
@@ -87,4 +87,141 @@ test('гость не может править', async () => {
   assert.equal((await call(guest, 'GET', '/api/tree')).statusCode, 200);
   assert.equal((await call(guest, 'POST', '/api/persons', { person: { given: 'X' } })).statusCode, 403);
   assert.equal((await call(guest, 'GET', '/api/users')).statusCode, 403);
+});
+
+const tree = async () => (await call(ownerCookie, 'GET', '/api/tree')).json();
+async function add(person, relation) {
+  const r = await call(ownerCookie, 'POST', '/api/persons', { person, relation });
+  assert.equal(r.statusCode, 200, r.body);
+  return r.json();
+}
+const lastOp = async () => (await call(ownerCookie, 'GET', '/api/changes')).json()[0];
+const revert = (op) => call(ownerCookie, 'POST', `/api/changes/${op.id}/revert`);
+function parentsIn(t, id) {
+  const fids = t.children.filter((c) => c.child_id === id).map((c) => c.family_id);
+  return t.families.filter((f) => fids.includes(f.id)).flatMap((f) => [f.partner1, f.partner2]).filter(Boolean).sort();
+}
+
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+async function upload(personId) {
+  const b = 'drevo-test';
+  const payload = Buffer.concat([
+    Buffer.from(`--${b}\r\nContent-Disposition: form-data; name="file"; filename="p.png"\r\nContent-Type: image/png\r\n\r\n`),
+    PNG, Buffer.from(`\r\n--${b}--\r\n`),
+  ]);
+  const r = await app.inject({
+    method: 'POST', url: `/api/persons/${personId}/photo`, payload,
+    headers: { ...H, cookie: ownerCookie, 'content-type': `multipart/form-data; boundary=${b}` },
+  });
+  assert.equal(r.statusCode, 200, r.body);
+  return r.json().photo_id;
+}
+
+test('откат связей: отец, супруг, брат, разрыв связи, удаление; отменённое можно вернуть', async () => {
+  const son = await add({ given: 'Сын', sex: 'M' });
+  const dad = await add({ given: 'Отец', sex: 'M' }, { to: son.id, type: 'father' });
+  const addDad = await lastOp();
+  const sonHist = (await call(ownerCookie, 'GET', `/api/persons/${son.id}/history`)).json();
+  assert.ok(sonHist.some((op) => op.op === addDad.op), 'связь видна в истории сына');
+
+  assert.equal((await revert(addDad)).statusCode, 200);
+  let t = await tree();
+  assert.ok(!t.persons.some((p) => p.id === dad.id));
+  assert.ok(!t.children.some((c) => c.child_id === son.id), 'пустая семья не осталась');
+  assert.equal((await revert(addDad)).statusCode, 409);
+  assert.equal((await revert(await lastOp())).statusCode, 200);
+  assert.deepEqual(parentsIn(await tree(), son.id), [dad.id]);
+
+  // Супруг отца становится вторым родителем сына; откат убирает и связь, и человека.
+  const wife = await add({ given: 'Жена', sex: 'F' }, { to: dad.id, type: 'spouse' });
+  assert.deepEqual(parentsIn(await tree(), son.id), [dad.id, wife.id].sort());
+  assert.equal((await revert(await lastOp())).statusCode, 200);
+  t = await tree();
+  assert.deepEqual(parentsIn(t, son.id), [dad.id]);
+  assert.ok(!t.persons.some((p) => p.id === wife.id));
+
+  const families = (await tree()).families.length;
+  const a = await add({ given: 'Брат', sex: 'M' });
+  await add({ given: 'Сестра', sex: 'F' }, { to: a.id, type: 'sibling' });
+  assert.equal((await tree()).families.length, families + 1);
+  assert.equal((await revert(await lastOp())).statusCode, 200);
+  assert.equal((await tree()).families.length, families);
+
+  const fam = (await tree()).families.find((f) => f.partner1 === dad.id || f.partner2 === dad.id);
+  assert.equal((await call(ownerCookie, 'DELETE', `/api/families/${fam.id}/members/${son.id}`)).statusCode, 200);
+  assert.deepEqual(parentsIn(await tree(), son.id), []);
+  assert.equal((await revert(await lastOp())).statusCode, 200);
+  assert.deepEqual(parentsIn(await tree(), son.id), [dad.id]);
+
+  // Единственный родитель: после удаления и возврата связь с сыном на месте.
+  const del = (await call(ownerCookie, 'DELETE', `/api/persons/${dad.id}`)).json();
+  assert.deepEqual(parentsIn(await tree(), son.id), []);
+  assert.equal((await call(ownerCookie, 'POST', `/api/changes/${del.changeId}/revert`)).statusCode, 200);
+  assert.deepEqual(parentsIn(await tree(), son.id), [dad.id]);
+});
+
+test('откат не ломает более поздние правки', async () => {
+  const kid = await add({ given: 'Дочь', sex: 'F' });
+  const dad = await add({ given: 'Папа', sex: 'M' }, { to: kid.id, type: 'father' });
+  const opFather = await lastOp();
+  const mom = await add({ given: 'Мама', sex: 'F' }, { to: kid.id, type: 'mother' });
+  const opMother = await lastOp();
+  const r = await revert(opFather);
+  assert.equal(r.statusCode, 409);
+  assert.match(r.json().error, /Сначала отмените/);
+  assert.deepEqual(parentsIn(await tree(), kid.id), [dad.id, mom.id].sort());
+  assert.equal((await revert(opMother)).statusCode, 200);
+  assert.equal((await revert(opFather)).statusCode, 200);
+  assert.deepEqual(parentsIn(await tree(), kid.id), []);
+
+  const photo = await upload(kid.id);
+  assert.equal((await tree()).persons.find((p) => p.id === kid.id).photo_id, photo);
+  assert.equal((await revert(await lastOp())).statusCode, 200);
+  assert.equal((await tree()).persons.find((p) => p.id === kid.id).photo_id, null);
+});
+
+test('гость не видит дат, мест, заметок и фото живых', async () => {
+  const living = await add({ given: 'Живой', sex: 'M', birth_date: '12.03.2001', birth_place: 'Тверь', notes: 'телефон 123' });
+  const old = await add({ given: 'Долгожительница', sex: 'F', birth_date: '1890' });
+  const gone = await add({ given: 'Ушедший', sex: 'M', living: false, birth_date: '1950', death_date: '2010' });
+  const livingPhoto = await upload(living.id);
+  const gonePhoto = await upload(gone.id);
+  const guest = await login('viewer');
+
+  const t = (await call(guest, 'GET', '/api/tree')).json();
+  const g = (id) => t.persons.find((p) => p.id === id);
+  assert.equal(g(living.id).given, 'Живой');
+  assert.equal(g(living.id).birth_date, '');
+  assert.equal(g(living.id).birth_place, '');
+  assert.equal(g(living.id).notes, '');
+  assert.equal(g(living.id).photo_id, null);
+  assert.equal(g(living.id).hidden, true);
+  assert.equal(g(old.id).birth_date, '1890');
+  assert.equal(g(gone.id).death_date, '2010');
+  assert.equal(g(gone.id).photo_id, gonePhoto);
+  assert.equal((await tree()).persons.find((p) => p.id === living.id).birth_date, '12.03.2001');
+
+  assert.equal((await call(guest, 'GET', `/api/media/${livingPhoto}`)).statusCode, 404);
+  assert.equal((await call(guest, 'GET', `/api/media/${gonePhoto}`)).statusCode, 200);
+  assert.equal((await call(ownerCookie, 'GET', `/api/media/${livingPhoto}`)).statusCode, 200);
+
+  assert.equal((await call(guest, 'GET', `/api/persons/${living.id}/history`)).statusCode, 403);
+  assert.equal((await call(guest, 'GET', '/api/changes')).statusCode, 403);
+  const ged = (await call(guest, 'GET', '/api/export.ged')).body;
+  assert.match(ged, /Живой/);
+  assert.doesNotMatch(ged, /2001|Тверь|телефон/);
+  assert.equal((await call(guest, 'GET', `/api/print.pdf?root=${living.id}`)).statusCode, 200);
+
+  // «Это я» не открывает гостю чужие данные.
+  assert.equal((await call(guest, 'PATCH', '/api/me', { person_id: living.id })).statusCode, 200);
+  assert.equal((await call(guest, 'GET', '/api/tree')).json().persons.find((p) => p.id === living.id).birth_date, '');
+});
+
+test('несуществующий человек: понятная ошибка, а не сбой сервера', async () => {
+  const none = '00000000-0000-0000-0000-000000000000';
+  assert.equal((await call(ownerCookie, 'PATCH', '/api/me', { person_id: none })).statusCode, 404);
+  assert.equal((await call(ownerCookie, 'DELETE', `/api/persons/${none}/photo`)).statusCode, 404);
+  assert.equal((await call(ownerCookie, 'GET', '/api/persons/abc/history')).statusCode, 400);
+  const someone = await add({ given: 'Кто-то', sex: 'M' });
+  assert.equal((await call(ownerCookie, 'POST', '/api/relations', { personId: none, to: someone.id, type: 'father' })).statusCode, 404);
 });

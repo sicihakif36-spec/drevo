@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router';
 import { store, loadTree, canEdit, toast } from '../store.js';
 import { api, photoUrl, shrinkImage } from '../api.js';
 import { openAdd } from '../components/addState.js';
+import ChangeList from '../components/ChangeList.vue';
+import { FIELDS } from '../history.js';
 import { fullName, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields } from '@shared/names.js';
 
 const props = defineProps({ id: String });
@@ -17,13 +19,6 @@ const form = reactive({});
 const history = ref([]);
 const showHistory = ref(false);
 const fileInput = ref(null);
-
-const FIELDS = [
-  ['surname', 'Фамилия'], ['given', 'Имя'], ['patronymic', 'Отчество'], ['birth_surname', 'Фамилия при рождении'],
-  ['birth_date', 'Дата рождения'], ['birth_place', 'Место рождения'], ['death_date', 'Дата смерти'], ['death_place', 'Место смерти'],
-  ['burial_place', 'Место захоронения'], ['occupation', 'Род занятий'], ['notes', 'Заметки и воспоминания'],
-];
-const FIELD_LABEL = Object.fromEntries([...FIELDS, ['sex', 'Пол'], ['living', 'Жив(а)'], ['photo_id', 'Фото']]);
 
 const kin = computed(() => p.value && kinship(idx.value, store.me?.person_id, p.value.id));
 const missing = computed(() => (p.value ? missingFields(p.value, idx.value) : []));
@@ -93,22 +88,13 @@ function showOnTree() {
   router.push('/');
 }
 
+async function reloadHistory() {
+  if (p.value) history.value = await api('GET', `/api/persons/${p.value.id}/history`);
+}
 async function loadHistory() {
   showHistory.value = !showHistory.value;
-  if (showHistory.value) history.value = await api('GET', `/api/persons/${p.value.id}/history`);
+  if (showHistory.value) await reloadHistory();
 }
-async function revert(h) {
-  await api('POST', `/api/changes/${h.id}/revert`);
-  await loadTree();
-  history.value = await api('GET', `/api/persons/${p.value.id}/history`);
-  toast('Правка отменена');
-}
-const ACTION = { create: 'добавил(а) человека', update: 'изменил(а)', delete: 'удалил(а)', restore: 'восстановил(а)', photo: 'сменил(а) фото' };
-function describe(h) {
-  if (h.action !== 'update') return ACTION[h.action] || h.action;
-  return 'изменил(а): ' + Object.keys(h.after || {}).map((k) => FIELD_LABEL[k] || k).join(', ');
-}
-const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 watch(() => props.id, () => { editing.value = false; showHistory.value = false; });
 </script>
@@ -165,7 +151,8 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
           <div class="pre">{{ p[k] }}</div>
         </div>
       </template>
-      <div v-if="!FIELDS.some(([k]) => p[k] && !['surname', 'given', 'patronymic'].includes(k))" class="muted">Подробностей пока нет.</div>
+      <div v-if="p.hidden" class="muted small">Даты, места и фото живых родственников видны только участникам дерева.</div>
+      <div v-else-if="!FIELDS.some(([k]) => p[k] && !['surname', 'given', 'patronymic'].includes(k))" class="muted">Подробностей пока нет.</div>
     </div>
 
     <h2>Родители</h2>
@@ -191,7 +178,7 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
         </router-link>
         <router-link v-for="c in m.kids" :key="c.id" :to="`/person/${c.id}`" class="kid">
           <div class="avatar" :class="c.sex">{{ (c.given || '?')[0] }}</div>
-          <div class="grow"><div class="ellipsis">{{ fullName(c) }}</div><div class="muted small">{{ c.sex === 'F' ? 'дочь' : 'сын' }} · {{ lifespan(c) }}</div></div>
+          <div class="grow"><div class="ellipsis">{{ fullName(c) }}</div><div class="muted small">{{ [c.sex === 'F' ? 'дочь' : 'сын', lifespan(c)].filter(Boolean).join(' · ') }}</div></div>
           <button v-if="editing" class="danger" @click.prevent="unlink(m.familyId, c.id, 'ребёнок')">✕</button>
         </router-link>
       </template>
@@ -217,21 +204,11 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
       <a href="#" @click.prevent="showOnTree">Показать в центре дерева</a>
       <a href="#" v-if="store.me?.person_id !== p.id" @click.prevent="setMe">Это я (считать родство от этого человека)</a>
       <a :href="`/api/print.pdf?root=${p.id}&mode=hourglass`" target="_blank">Распечатать дерево вокруг этого человека</a>
-      <a href="#" @click.prevent="loadHistory">История правок</a>
+      <a href="#" v-if="canEdit()" @click.prevent="loadHistory">История правок</a>
       <a href="#" v-if="canEdit()" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
     </div>
 
-    <div v-if="showHistory" class="list" style="margin-top:10px">
-      <div v-for="h in history" :key="h.id" class="hist">
-        <div class="grow">
-          <div class="small"><b>{{ h.user_name || 'Кто-то' }}</b> {{ describe(h) }}</div>
-          <div class="muted small">{{ when(h.at) }}<template v-if="h.action === 'update'"> · было: {{ Object.values(h.before || {}).map((v) => v === '' ? '—' : String(v)).join(', ') }}</template></div>
-        </div>
-        <button v-if="canEdit() && h.action === 'update' && !h.reverted_by" @click="revert(h)">Вернуть</button>
-        <span v-else-if="h.reverted_by" class="muted small">отменено</span>
-      </div>
-      <div v-if="!history.length" class="muted">Правок пока нет</div>
-    </div>
+    <ChangeList v-if="showHistory" :ops="history" style="margin-top:10px" @reverted="reloadHistory" />
   </div>
 </template>
 
@@ -246,5 +223,4 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
 .pre { white-space: pre-wrap; }
 .kid { padding-left: 32px !important; }
 .danger-link { color: var(--danger) !important; }
-.hist { gap: 8px; }
 </style>

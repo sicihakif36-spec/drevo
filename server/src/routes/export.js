@@ -79,7 +79,7 @@ export function toGedcom(data) {
 
 export default async function exportRoutes(app) {
   app.get('/api/export.ged', { preHandler: need('viewer') }, async (req, reply) => {
-    const data = await loadTreeData();
+    const data = await loadTreeData(req.user);
     const date = new Date().toISOString().slice(0, 10);
     reply.header('Content-Type', 'text/plain; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="drevo-${date}.ged"`);

@@ -6,6 +6,8 @@ import { q } from '../db.js';
 import { need } from '../auth.js';
 import { config } from '../config.js';
 import { logChange } from '../changes.js';
+import { isGuest } from '../privacy.js';
+import { isPrivate } from '../../../shared/names.js';
 
 const MIME = ['image/jpeg', 'image/png', 'image/webp'];
 export const mediaPath = (id) => path.join(config.dataDir, 'media', id);
@@ -28,20 +30,26 @@ export default async function mediaRoutes(app) {
     const { size } = await fsp.stat(mediaPath(id));
     await q('update media set bytes = $1 where id = $2', [size, id]);
     await q('update persons set photo_id = $1, version = version + 1, updated_at = now() where id = $2', [id, person.id]);
-    await logChange(q, req.user.id, 'person', person.id, 'photo', { photo_id: person.photo_id }, { photo_id: id });
+    await logChange({ q }, req.user.id, 'person', person.id, 'photo', { photo_id: person.photo_id }, { photo_id: id });
     return { photo_id: id };
   });
 
-  app.delete('/api/persons/:id/photo', { preHandler: need('editor') }, async (req) => {
-    const p = (await q('select photo_id from persons where id = $1', [req.params.id]))[0];
-    await q('update persons set photo_id = null, version = version + 1 where id = $1', [req.params.id]);
-    if (p?.photo_id) await logChange(q, req.user.id, 'person', req.params.id, 'photo', { photo_id: p.photo_id }, { photo_id: null });
+  app.delete('/api/persons/:id/photo', { preHandler: need('editor') }, async (req, reply) => {
+    const p = (await q('select photo_id from persons where id = $1 and deleted_at is null', [req.params.id]))[0];
+    if (!p) return reply.code(404).send({ error: 'Человек не найден' });
+    if (!p.photo_id) return { ok: true };
+    await q('update persons set photo_id = null, version = version + 1, updated_at = now() where id = $1', [req.params.id]);
+    await logChange({ q }, req.user.id, 'person', req.params.id, 'photo', { photo_id: p.photo_id }, { photo_id: null });
     return { ok: true };
   });
 
   app.get('/api/media/:id', { preHandler: need('viewer') }, async (req, reply) => {
-    const m = (await q('select * from media where id = $1', [req.params.id]))[0];
-    if (!m) return reply.code(404).send({ error: 'Файл не найден' });
+    const m = (await q(
+      'select m.*, p.living, p.birth_date, p.deleted_at from media m left join persons p on p.id = m.person_id where m.id = $1',
+      [req.params.id],
+    ))[0];
+    // Гостям — только фото ушедших и тех, кому больше 100 лет.
+    if (!m || (isGuest(req.user) && (!m.person_id || m.deleted_at || isPrivate(m)))) return reply.code(404).send({ error: 'Файл не найден' });
     reply.header('Content-Type', m.mime).header('Cache-Control', 'private, max-age=31536000, immutable');
     return reply.send(fs.createReadStream(mediaPath(m.id)));
   });

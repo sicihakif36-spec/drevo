@@ -37,6 +37,13 @@ export function birthYear(p) {
   return parseDate(p.birth_date)?.year ?? null;
 }
 
+// Живые моложе 100 лет (и живые без года рождения): их даты, места и фото видят только участники.
+export function isPrivate(p, year = new Date().getFullYear()) {
+  if (!p.living) return false;
+  const b = birthYear(p);
+  return !b || year - b < 100;
+}
+
 // Отчество по имени отца.
 export function patronymicFrom(fatherGiven, sex) {
   if (!fatherGiven) return '';

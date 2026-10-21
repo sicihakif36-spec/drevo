@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { patronymicFrom, surnameFor, guessSex, kinshipTerm, lifespan } from '../../shared/names.js';
+import { patronymicFrom, surnameFor, guessSex, kinshipTerm, lifespan, isPrivate } from '../../shared/names.js';
 import { gedDate } from '../src/routes/export.js';
 
 test('отчества', () => {
@@ -33,4 +33,11 @@ test('родство и даты', () => {
   assert.equal(gedDate('12.03.1890'), '12 MAR 1890');
   assert.equal(gedDate('между 1880 и 1885'), 'BET 1880 AND 1885');
   assert.equal(gedDate('весна 1943'), '(весна 1943)');
+});
+
+test('чьи данные скрывать от гостей', () => {
+  assert.equal(isPrivate({ living: true, birth_date: '1990' }, 2026), true);
+  assert.equal(isPrivate({ living: true, birth_date: '' }, 2026), true);
+  assert.equal(isPrivate({ living: true, birth_date: 'около 1900' }, 2026), false);
+  assert.equal(isPrivate({ living: false, birth_date: '1990' }, 2026), false);
 });

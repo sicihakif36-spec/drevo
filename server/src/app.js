@@ -14,6 +14,13 @@ import exportRoutes from './routes/export.js';
 
 export async function buildApp(opts = {}) {
   const app = Fastify({ logger: opts.logger ?? { level: 'info' }, trustProxy: true, bodyLimit: 256 * 1024 });
+  // До регистрации маршрутов: плагины берут обработчик ошибок, действующий в момент их подключения.
+  app.setErrorHandler((err, req, reply) => {
+    if (err.code === '22P02') return reply.code(400).send({ error: 'Неверный идентификатор' });
+    if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: err.message });
+    req.log.error(err);
+    return reply.code(500).send({ error: 'Ошибка на сервере' });
+  });
   await app.register(cookie);
   await app.register(multipart, { limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
   authPlugin(app);
@@ -26,13 +33,6 @@ export async function buildApp(opts = {}) {
   app.get('/api/health', async () => {
     await pool.query('select 1');
     return { ok: true };
-  });
-
-  app.setErrorHandler((err, req, reply) => {
-    if (err.code === '22P02') return reply.code(400).send({ error: 'Неверный идентификатор' });
-    if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: err.message });
-    req.log.error(err);
-    return reply.code(500).send({ error: 'Ошибка на сервере' });
   });
 
   if (fs.existsSync(config.webDir)) {

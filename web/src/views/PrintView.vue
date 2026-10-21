@@ -1,6 +1,6 @@
 <script setup>
 import { computed, reactive, watch } from 'vue';
-import { store } from '../store.js';
+import { store, canEdit } from '../store.js';
 import { layoutTree, BOX } from '@shared/layout.js';
 import { planPages, PAPER, MM } from '@shared/printplan.js';
 import { fullName } from '@shared/names.js';
@@ -118,7 +118,8 @@ const sizeMm = computed(() => {
       </div>
       <label class="field"><span>Заголовок</span><input v-model="o.title" :placeholder="store.title" /></label>
       <label class="row field"><input type="checkbox" v-model="o.photos" style="width:auto;min-height:0" /> Фотографии</label>
-      <label class="row field"><input type="checkbox" v-model="o.hideLiving" style="width:auto;min-height:0" /> Скрыть даты и фото живых (для печати не для семьи)</label>
+      <label v-if="canEdit()" class="row field"><input type="checkbox" v-model="o.hideLiving" style="width:auto;min-height:0" /> Скрыть даты и фото живых (для печати не для семьи)</label>
+      <p v-else class="muted small">Даты и фото живых родственников на печати не показываются.</p>
     </template>
   </div>
 </template>

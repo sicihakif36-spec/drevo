@@ -5,7 +5,8 @@ import PDFDocument from 'pdfkit';
 import { q } from '../db.js';
 import { need } from '../auth.js';
 import { mediaPath } from './media.js';
-import { buildIndex, fullName, lifespan, shortName } from '../../../shared/names.js';
+import { buildIndex, isPrivate, lifespan, shortName } from '../../../shared/names.js';
+import { hideLiving, isGuest } from '../privacy.js';
 import { layoutTree, BOX } from '../../../shared/layout.js';
 import { PAPER, planPages } from '../../../shared/printplan.js';
 
@@ -58,7 +59,7 @@ function drawTree(doc, idx, layout, o, theme) {
     const [fill, stroke] = t[p.sex] || t.U;
     doc.lineWidth(n.root ? 3 : 1.4).roundedRect(n.x, n.y, BOX.w, BOX.h, 9).fillAndStroke(fill, stroke);
     let tx = n.x + 8;
-    const hidden = o.hideLiving && p.living;
+    const hidden = o.hideLiving && isPrivate(p);
     if (o.photos && p.photo_id && !hidden && p._photoOk) {
       try {
         doc.save().roundedRect(n.x + 6, n.y + 6, BOX.h - 12, BOX.h - 12, 6).clip();
@@ -131,7 +132,7 @@ export function renderPdf(stream, data, o) {
   return plan;
 }
 
-export async function loadTreeData() {
+export async function loadTreeData(user) {
   const [persons, families, children, media, settings] = await Promise.all([
     q('select * from persons where deleted_at is null'),
     q('select * from families'),
@@ -139,13 +140,15 @@ export async function loadTreeData() {
     q("select id, mime from media where mime in ('image/jpeg', 'image/png')"),
     q("select value from settings where key = 'title'"),
   ]);
-  return { persons, families, children, photoMime: Object.fromEntries(media.map((m) => [m.id, m.mime])), title: settings[0]?.value };
+  const data = { persons, families, children, photoMime: Object.fromEntries(media.map((m) => [m.id, m.mime])), title: settings[0]?.value };
+  return isGuest(user) ? hideLiving(data) : data;
 }
 
 export default async function printRoutes(app) {
   app.get('/api/print.pdf', { preHandler: need('viewer') }, async (req, reply) => {
     const o = parsePrintOptions(req.query);
-    const data = await loadTreeData();
+    const data = await loadTreeData(req.user);
+    if (isGuest(req.user)) o.hideLiving = true;
     if (!o.title) o.title = data.title || 'Семейное древо';
     if (!o.root) o.root = req.user.person_id;
     reply.header('Content-Type', 'application/pdf');
