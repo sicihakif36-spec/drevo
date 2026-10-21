@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { store, canEdit } from '../store.js';
 import { layoutTree } from '@shared/layout.js';
@@ -20,6 +20,9 @@ const selected = ref(null);
 const searching = ref(false);
 const query = ref('');
 const canvas = ref(null);
+const searchInput = ref(null);
+// autofocus не срабатывает у появившегося поля — ставим курсор сами, чтобы сразу открылась клавиатура.
+watch(searching, (on) => { if (on) nextTick(() => searchInput.value?.focus()); });
 
 const idx = computed(() => store.idx);
 const root = computed(() => {
@@ -84,8 +87,8 @@ function gens(delta) {
       <button class="round" @click="searching = true" aria-label="Найти человека">
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       </button>
+      <div class="banner offline" v-if="store.offline">Нет связи. Показано сохранённое дерево.</div>
     </div>
-    <div class="banner offline" v-if="store.offline">Нет связи. Показано сохранённое дерево.</div>
 
     <div v-if="!store.tree" class="page muted">Загрузка дерева…</div>
     <div v-else-if="!store.tree.persons.length" class="page empty">
@@ -109,7 +112,7 @@ function gens(delta) {
       </div>
       <div class="gens">
         <button @click="gens(-1)" aria-label="Меньше поколений">−</button>
-        <span class="grow">Поколений: <b>{{ gensLabel }}</b></span>
+        <span class="grow">Поколений: <b class="nowrap">{{ gensLabel }}</b></span>
         <button @click="gens(1)" aria-label="Больше поколений">+</button>
       </div>
     </div>
@@ -127,7 +130,7 @@ function gens(delta) {
         <button class="ghost close" @click="selected = null" aria-label="Закрыть">✕</button>
       </div>
       <div class="grid2 actions">
-        <button class="primary" :class="{ wide: !canEdit() && sel.id === root }" @click="router.push(`/person/${sel.id}`)">Открыть карточку</button>
+        <button class="primary" :class="{ wide: !canEdit() }" @click="router.push(`/person/${sel.id}`)">Открыть карточку</button>
         <button v-if="canEdit()" @click="add(null)">Добавить родственника</button>
         <button v-if="sel.id !== root" class="wide" @click="makeRoot(sel.id)">Дерево от этого человека</button>
       </div>
@@ -138,7 +141,7 @@ function gens(delta) {
       <div class="sheet-backdrop" @click="searching = false" />
       <div class="sheet" role="dialog" aria-modal="true" aria-label="Поиск">
         <div class="row"><h2 class="grow" style="margin:0">Найти человека</h2><button class="ghost" @click="searching = false" aria-label="Закрыть">✕</button></div>
-        <input v-model="query" type="search" placeholder="Имя или фамилия" enterkeyhint="search" autofocus style="margin-top:8px" />
+        <input ref="searchInput" v-model="query" type="search" placeholder="Имя или фамилия" enterkeyhint="search" style="margin-top:8px" />
         <div class="list" style="margin-top:10px" v-if="results.length">
           <a v-for="p in results" :key="p.id" href="#" @click.prevent="pick(p)">
             <div class="grow"><div>{{ fullName(p) }}</div><div class="muted small">{{ lifespan(p) }}</div></div>
@@ -152,11 +155,14 @@ function gens(delta) {
 
 <style scoped>
 .tree-page { position: fixed; inset: 0; bottom: calc(var(--nav-h) + var(--safe-b)); overflow: hidden; }
-.top { position: absolute; z-index: 5; top: calc(0.556rem + var(--safe-t)); left: 0.667rem; right: 0.667rem; display: flex; gap: 0.444rem; }
-.top .seg { flex: 1; background: color-mix(in srgb, var(--line) 88%, transparent); backdrop-filter: blur(6px); }
-.round { flex: none; width: 3.111rem; min-height: 3.111rem; padding: 0; border-color: var(--field); border-width: 1.5px; color: var(--text); }
-.offline { position: absolute; z-index: 5; top: calc(4.222rem + var(--safe-t)); left: 0.667rem; right: 0.667rem; }
-.empty { padding-top: calc(5rem + var(--safe-t)); }
+/* На узком экране или с крупным шрифтом лупа уходит на вторую строку, справа. */
+.top { position: absolute; z-index: 5; top: calc(0.556rem + var(--safe-t)); left: 0.667rem; right: 0.667rem; display: flex; flex-wrap: wrap; gap: 0.444rem; pointer-events: none; }
+.top > * { pointer-events: auto; }
+.top .seg { flex: 1 1 12rem; background: color-mix(in srgb, var(--line) 88%, transparent); backdrop-filter: blur(6px); }
+.round { flex: none; margin-left: auto; width: 3.111rem; min-height: 3.111rem; padding: 0; border-color: var(--field); border-width: 1.5px; color: var(--text); }
+.offline { flex: 1 1 100%; margin: 0; }
+.nowrap { white-space: nowrap; }
+.empty { padding-top: calc(7.5rem + var(--safe-t)); }
 .tools { position: absolute; z-index: 5; left: 0.667rem; right: 0.667rem; bottom: 0.667rem; display: flex; flex-direction: column; gap: 0.444rem; pointer-events: none; }
 .tools > * { pointer-events: auto; }
 .tools-top { align-items: flex-end; justify-content: space-between; pointer-events: none; }
