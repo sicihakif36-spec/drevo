@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onDeactivated, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { store, canEdit } from '../store.js';
 import { layoutTree } from '@shared/layout.js';
@@ -23,6 +23,8 @@ const canvas = ref(null);
 const searchInput = ref(null);
 // autofocus не срабатывает у появившегося поля — ставим курсор сами, чтобы сразу открылась клавиатура.
 watch(searching, (on) => { if (on) nextTick(() => searchInput.value?.focus()); });
+// Дерево живёт в keep-alive, а поиск вынесен в body: уходя с дерева (например, кнопкой «Назад»), закрываем его.
+onDeactivated(() => { searching.value = false; });
 
 const idx = computed(() => store.idx);
 const root = computed(() => {
