@@ -1,7 +1,8 @@
 // Источники и достоверность в карточке: что известно о каждом сведении человека и его браков.
 // data — ответ GET /api/persons/:id/sources: { quality, citations, sources }.
 import { fullName } from '@shared/names.js';
-import { FACTS } from '@shared/sources.js';
+import { FACTS, factLabel } from '@shared/sources.js';
+import { eventTitle } from '@shared/events.js';
 
 // Отметка достоверности и источники одного сведения.
 export function factInfo(data, subject, subjectId, fact) {
@@ -26,4 +27,11 @@ export function personFacts(p, marriages) {
   }
   out.push({ subject: 'person', id: p.id, fact: 'other', label: FACTS.person.other, value: '' });
   return out;
+}
+
+// К чему привязан источник, словами: «дата рождения», «брак», «событие «Война»».
+export function citeWhat(c) {
+  if (c.subject === 'family') return 'брак';
+  if (c.subject === 'event') return `событие «${eventTitle({ kind: c.event_kind, title: c.event_title })}»`;
+  return factLabel(c.subject, c.fact).toLowerCase();
 }

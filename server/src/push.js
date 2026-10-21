@@ -38,7 +38,8 @@ function moscow(now) {
 // «Елена добавила 3 человек и 2 фото, изменила 1 карточку».
 export function digestText(name, sex, entries, ops) {
   const n = { added: 0, removed: 0, photos: 0, docs: 0, dropPhotos: 0, dropDocs: 0, cards: new Set(), files: new Set(),
-    stories: 0, dropStories: 0, storyEdits: new Set(), sources: 0, dropSources: 0, sourceEdits: new Set(), cited: new Set(), quality: 0 };
+    stories: 0, dropStories: 0, storyEdits: new Set(), sources: 0, dropSources: 0, sourceEdits: new Set(), cited: new Set(), quality: 0,
+    events: 0, dropEvents: 0, eventEdits: new Set() };
   let links = 0;
   for (const op of ops) {
     const mine = entries.filter((e) => e.op === op);
@@ -55,6 +56,10 @@ export function digestText(name, sex, entries, ops) {
         if (e.action === 'add') n.stories++;
         else if (e.action === 'delete') n.dropStories++;
         else n.storyEdits.add(e.entity_id);
+      } else if (e.entity === 'event') {
+        if (e.action === 'add') n.events++;
+        else if (e.action === 'delete') n.dropEvents++;
+        else n.eventEdits.add(e.entity_id);
       } else if (e.entity === 'source') {
         if (e.action === 'add') n.sources++;
         else if (e.action === 'delete') n.dropSources++;
@@ -76,15 +81,16 @@ export function digestText(name, sex, entries, ops) {
   const docs = (k) => k && plural(k, 'документ', 'документа', 'документов');
   const stories = (k) => k && plural(k, 'историю', 'истории', 'историй');
   const sources = (k) => k && plural(k, 'источник', 'источника', 'источников');
+  const events = (k) => k && plural(k, 'событие', 'события', 'событий');
   const groups = [
     [verb('добавил', sex), [n.added && plural(n.added, 'человека', 'человек', 'человек'), n.photos && `${n.photos} фото`, docs(n.docs), stories(n.stories),
-      sources(n.sources)]],
+      events(n.events), sources(n.sources)]],
     [verb('изменил', sex), [n.cards.size && plural(n.cards.size, 'карточку', 'карточки', 'карточек'), n.files.size && `${n.files.size} фото`,
-      stories(n.storyEdits.size), sources(n.sourceEdits.size), links && plural(links, 'связь', 'связи', 'связей')]],
+      stories(n.storyEdits.size), events(n.eventEdits.size), sources(n.sourceEdits.size), links && plural(links, 'связь', 'связи', 'связей')]],
     [verb('указал', sex), [sources(n.cited.size)]],
     [verb('отметил', sex), [n.quality && `достоверность ${plural(n.quality, 'сведения', 'сведений', 'сведений')}`]],
     [verb('удалил', sex), [n.removed && plural(n.removed, 'человека', 'человек', 'человек'), n.dropPhotos && `${n.dropPhotos} фото`, docs(n.dropDocs), stories(n.dropStories),
-      sources(n.dropSources)]],
+      events(n.dropEvents), sources(n.dropSources)]],
   ].map(([v, items]) => [v, items.filter(Boolean)]).filter(([, items]) => items.length);
   const what = groups.map(([v, items]) => `${v} ${items.length > 1 ? `${items.slice(0, -1).join(', ')} и ${items.at(-1)}` : items[0]}`).join(', ');
   return `${name || 'Кто-то'} ${what || `${verb('сделал', sex)} ${plural(ops.length, 'правку', 'правки', 'правок')}`}`;

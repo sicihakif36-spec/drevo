@@ -5,14 +5,18 @@ import { need } from '../auth.js';
 import { HttpError } from '../tree.js';
 import { SOURCE_FIELDS, FACTS } from '../../../shared/sources.js';
 import { createSource, updateSource, deleteSource, cite, uncite, updateCitation, setQuality } from '../sources.js';
-import { isGuest, guestSources, guestMedia, privateIds } from '../privacy.js';
+import { isGuest, guestSources, guestMedia, guestEvents, privateIds } from '../privacy.js';
+import { visibleEvents } from './timeline.js';
 
 const LIMITS = { kind: 20, title: 300, archive: 200, fond: 50, opis: 50, delo: 100, sheet: 50, url: 1000, note: 5000 };
 
-// Люди, к сведениям которых привязан источник: сам человек или супруги; удалённые не в счёт.
+// Люди, к сведениям которых привязан источник: сам человек, супруги или участники события; удалённые не в счёт.
 const PERSONS = `array(select distinct p.id from citations c
     left join families f on c.subject = 'family' and f.id = c.subject_id
-    join persons p on ((c.subject = 'person' and p.id = c.subject_id) or p.id in (f.partner1, f.partner2)) and p.deleted_at is null
+    left join life_events e on c.subject = 'event' and e.id = c.subject_id and e.deleted_at is null
+    left join event_persons ep on ep.event_id = e.id
+    join persons p on ((c.subject = 'person' and p.id = c.subject_id) or p.id in (f.partner1, f.partner2) or p.id = ep.person_id)
+      and p.deleted_at is null
     where c.source_id = s.id order by p.id) as persons`;
 
 // Скан — только пока он есть в альбоме.
@@ -20,13 +24,16 @@ const LIST = `select s.id, s.kind, s.title, s.archive, s.fond, s.opis, s.delo, s
     m.id as media_id, m.kind as media_kind, m.thumb as media_thumb, s.created_by, u.name as user_name, s.created_at, ${PERSONS}
   from sources s left join media m on m.id = s.media_id and m.deleted_at is null left join users u on u.id = s.created_by`;
 
-// Привязки к сведениям, которые есть в дереве: человек не удалён, семья на месте.
+// Привязки к сведениям, которые есть в дереве: человек не удалён, семья на месте, событие не удалено.
 const CITATIONS = `select c.id, c.source_id, c.subject, c.subject_id, c.fact, c.page,
-    case when c.subject = 'person' then array[c.subject_id] else array_remove(array[f.partner1, f.partner2], null) end as persons
+    case when c.subject = 'person' then array[c.subject_id]
+      when c.subject = 'event' then array(select person_id from event_persons where event_id = e.id order by person_id)
+      else array_remove(array[f.partner1, f.partner2], null) end as persons, e.kind as event_kind, e.title as event_title
   from citations c join sources s on s.id = c.source_id and s.deleted_at is null
   left join persons p on c.subject = 'person' and p.id = c.subject_id
   left join families f on c.subject = 'family' and f.id = c.subject_id
-  where (p.id is not null and p.deleted_at is null or f.id is not null)`;
+  left join life_events e on c.subject = 'event' and e.id = c.subject_id
+  where (p.id is not null and p.deleted_at is null or f.id is not null or e.id is not null and e.deleted_at is null)`;
 
 // Поля из запроса: только присланные. media_id null или '' — убрать скан.
 function clean(body) {
@@ -69,10 +76,11 @@ export async function sourceData(user) {
   const hidden = new Set(await privateIds());
   const families = await q('select id, partner1, partner2 from families');
   const hiddenFam = new Set(families.filter((f) => hidden.has(f.partner1) || hidden.has(f.partner2)).map((f) => f.id));
+  const events = await guestEvents(quality.filter((x) => x.subject === 'event').map((x) => x.subject_id));
   return {
     sources: sources.filter((s) => shown.has(s.id)),
     citations: citations.filter((c) => shown.has(c.source_id)),
-    quality: quality.filter((x) => !(x.subject === 'person' ? hidden : hiddenFam).has(x.subject_id)),
+    quality: quality.filter((x) => (x.subject === 'event' ? events.has(x.subject_id) : !(x.subject === 'person' ? hidden : hiddenFam).has(x.subject_id))),
   };
 }
 
@@ -89,7 +97,7 @@ export default async function sourceRoutes(app) {
     return { ...shown, citations: await q(`${CITATIONS} and c.source_id = $1 order by c.created_at, c.id`, [s.id]) };
   });
 
-  // Источники и достоверность сведений человека и его браков.
+  // Источники и достоверность сведений человека, его браков и событий его ленты жизни.
   app.get('/api/persons/:id/sources', { preHandler: need('viewer') }, async (req) => {
     const id = req.params.id;
     const guest = isGuest(req.user);
@@ -97,10 +105,14 @@ export default async function sourceRoutes(app) {
     if (hidden.has(id)) return { quality: [], citations: [], sources: [] };
     const fams = (await q('select id, partner1, partner2 from families where partner1 = $1 or partner2 = $1', [id]))
       .filter((f) => !hidden.has(f.partner1) && !hidden.has(f.partner2)).map((f) => f.id);
-    const whose = (t) => `((${t}.subject = 'person' and ${t}.subject_id = $1) or (${t}.subject = 'family' and ${t}.subject_id = any($2::uuid[])))`;
+    const events = (await visibleEvents(req.user, await q(
+      'select e.id from life_events e join event_persons ep on ep.event_id = e.id where ep.person_id = $1 and e.deleted_at is null', [id],
+    ))).map((e) => e.id);
+    const whose = (t) => `((${t}.subject = 'person' and ${t}.subject_id = $1) or (${t}.subject = 'family' and ${t}.subject_id = any($2::uuid[]))
+      or (${t}.subject = 'event' and ${t}.subject_id = any($3::uuid[])))`;
     const [citations, quality] = await Promise.all([
-      q(`${CITATIONS} and ${whose('c')} order by c.created_at, c.id`, [id, fams]),
-      q(`select subject, subject_id, fact, quality from fact_quality x where ${whose('x')}`, [id, fams]),
+      q(`${CITATIONS} and ${whose('c')} order by c.created_at, c.id`, [id, fams, events]),
+      q(`select subject, subject_id, fact, quality from fact_quality x where ${whose('x')}`, [id, fams, events]),
     ]);
     const sources = await visible(req, await q(`${LIST} where s.id = any($1::uuid[]) and s.deleted_at is null order by s.created_at, s.id`,
       [[...new Set(citations.map((c) => c.source_id))]]));

@@ -2,10 +2,11 @@
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { canEdit } from '../store.js';
-import { citeText, factLabel, kindNote, sourceTitle } from '@shared/sources.js';
+import { citeText, kindNote, sourceTitle } from '@shared/sources.js';
+import { citeWhat } from '../sources.js';
 import SourceView from './SourceView.vue';
 
-// Раздел «Источники» в карточке: на что опираются сведения человека и его браков.
+// Раздел «Источники» в карточке: на что опираются сведения человека, его браков и событий его жизни.
 // Открытый источник — поверх карточки, адрес ?source=<id>: кнопка «Назад» на телефоне его закрывает.
 const props = defineProps({ person: Object, data: Object });
 const emit = defineEmits(['cite', 'changed']);
@@ -16,7 +17,7 @@ const router = useRouter();
 const items = computed(() => (props.data?.sources || []).map((s) => ({
   ...s,
   facts: [...new Set(props.data.citations.filter((c) => c.source_id === s.id)
-    .map((c) => (c.subject === 'family' ? 'брак' : factLabel(c.subject, c.fact).toLowerCase())))].join(', '),
+    .map(citeWhat))].join(', '),
 })));
 
 function show(id) {

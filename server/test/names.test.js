@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { patronymicFrom, surnameFor, guessSex, kinshipTerm, lifespan, isPrivate, exactDate, yearsText, upcomingDates } from '../../shared/names.js';
-import { gedDate } from '../src/routes/export.js';
+import { patronymicFrom, surnameFor, guessSex, kinshipTerm, lifespan, isPrivate, exactDate, yearsText, upcomingDates, parsePeriod } from '../../shared/names.js';
+import { gedDate, gedPeriod } from '../src/routes/export.js';
 
 test('отчества', () => {
   const cases = [['Иван', 'Иванович', 'Ивановна'], ['Андрей', 'Андреевич', 'Андреевна'], ['Юрий', 'Юрьевич', 'Юрьевна'],
@@ -73,4 +73,40 @@ test('точные даты и ближайшие памятные дни', () =
   // Через Новый год и 29 февраля.
   const dec = upcomingDates([{ given: 'Е', living: true, birth_date: '05.01.2000' }, { given: 'Ж', living: true, birth_date: '29.02.2000' }], new Date(2026, 11, 28), 70);
   assert.deepEqual(dec.map((x) => [x.day, x.month, x.years, x.inDays]), [[5, 1, 27, 8], [28, 2, 27, 62]]);
+});
+
+test('даты и периоды ленты жизни: по первому году, приблизительные и периоды, без даты', () => {
+  const cases = [
+    ['1941–1945', { from: '1941', to: '1945', since: false, year: 1941 }],
+    ['1941-1945', { from: '1941', to: '1945', since: false, year: 1941 }],
+    ['с 1950 по 1962', { from: '1950', to: '1962', since: false, year: 1950 }],
+    ['с 1950 до 1962', { from: '1950', to: '1962', since: false, year: 1950 }],
+    ['с 22.06.1941 по 9.05.1945', { from: '22.06.1941', to: '9.05.1945', since: false, year: 1941 }],
+    ['с 1950', { from: '1950', to: '', since: true, year: 1950 }],
+    ['около 1930', { from: 'около 1930', to: '', since: false, year: 1930 }],
+    ['между 1880 и 1885', { from: '1880', to: '1885', since: false, year: 1880 }],
+    ['1960-е', { from: '1960-е', to: '', since: false, year: 1960 }],
+    ['сентябрь 1941', { from: 'сентябрь 1941', to: '', since: false, year: 1941 }],
+  ];
+  for (const [text, want] of cases) {
+    const { key, ...got } = parsePeriod(text);
+    assert.deepEqual(got, want, text);
+  }
+  assert.equal(parsePeriod(''), null);
+  assert.equal(parsePeriod('после войны'), null);
+  // Порядок: год, потом месяц и день; без месяца — в начале года.
+  const order = ['около 1930', 'с 22.06.1941 по 9.05.1945', '1941', 'март 1942', '05.1943', '12.03.1943', 'лето 1960']
+    .sort((a, b) => parsePeriod(a).key - parsePeriod(b).key);
+  assert.deepEqual(order, ['около 1930', '1941', 'с 22.06.1941 по 9.05.1945', 'март 1942', '12.03.1943', '05.1943', 'лето 1960']);
+});
+
+test('период в GEDCOM: FROM … TO …', () => {
+  assert.equal(gedPeriod('1941–1945'), 'FROM 1941 TO 1945');
+  assert.equal(gedPeriod('с 22.06.1941 по 9.05.1945'), 'FROM 22 JUN 1941 TO 9 MAY 1945');
+  assert.equal(gedPeriod('с 1950'), 'FROM 1950');
+  assert.equal(gedPeriod('около 1941 – 1945'), 'FROM 1941 TO 1945');
+  assert.equal(gedPeriod('май 1942 – 1945'), 'FROM 1942 TO 1945');
+  assert.equal(gedPeriod('около 1930'), 'ABT 1930');
+  assert.equal(gedPeriod('между 1880 и 1885'), 'BET 1880 AND 1885');
+  assert.equal(gedPeriod('12.03.1943'), '12 MAR 1943');
 });

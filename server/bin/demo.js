@@ -13,6 +13,7 @@ import { toMp3 } from '../src/audio.js';
 import { snapshot } from '../src/album.js';
 import { snapshot as storySnapshot } from '../src/stories.js';
 import { createSource, cite, setQuality } from '../src/sources.js';
+import { createEvent } from '../src/timeline.js';
 import { demoImage, demoLetter, demoVoice } from './demo-media.js';
 
 if (process.env.NODE_ENV === 'production') { console.error('Не запускайте на рабочей базе'); process.exit(1); }
@@ -151,6 +152,29 @@ await tx(async (db) => {
   await cite(db, ed.id, { source_id: s.id, ...person(vas, 'death_date'), page: 'строка 14' });
   await setQuality(db, ed.id, person(vas, 'death_date'), 'document');
 });
+// Лента жизни. Война и награда Петра — с источником; переезд в Калинин всей семьёй (с живой Людмилой — гостю не виден);
+// учёба Юрия добавлена Еленой — новое для Сергея.
+await tx(async (db) => {
+  const war = await createEvent(db, u.id, [petr], { kind: 'war', date: '1941–1945', title: 'Великая Отечественная, Калининский фронт',
+    unit: '243-я стрелковая дивизия', rank: 'старший сержант', body: 'Ушёл добровольцем летом 1941-го. Был ранен под Ржевом, после госпиталя вернулся в часть.' });
+  const award = await createEvent(db, u.id, [petr], { kind: 'award', date: '05.1943', title: 'Медаль «За отвагу»', place: 'под Ржевом',
+    body: 'За то, что вынес с поля боя раненого командира взвода.' });
+  const s = await createSource(db, u.id, { kind: 'pamyat', title: 'Наградной лист', url: 'https://pamyat-naroda.ru/',
+    archive: 'ЦАМО', fond: '33', opis: '682524', delo: '213', sheet: '87' });
+  for (const id of [war.id, award.id]) {
+    await cite(db, u.id, { source_id: s.id, subject: 'event', subject_id: id, fact: 'event' });
+    await setQuality(db, u.id, { subject: 'event', subject_id: id, fact: 'event' }, 'document');
+  }
+});
+await tx(async (db) => {
+  await createEvent(db, u.id, [petr], { kind: 'study', date: 'с 1926 по 1929', title: 'школа крестьянской молодёжи', place: 'с. Горки' });
+  await createEvent(db, u.id, [petr], { kind: 'work', date: 'с 1946 по 1972', title: 'завод «Пролетарка», мастер цеха', place: 'г. Калинин' });
+  await createEvent(db, u.id, [petr, klav, yuri, lyuda], { kind: 'move', date: 'около 1952', place: 'г. Калинин', title: 'из д. Горки',
+    body: 'Дали комнату в бараке на Пролетарке, через пять лет — квартиру.' });
+  await createEvent(db, u.id, [vas], { kind: 'army', date: '1937–1939', place: 'Ленинградский военный округ', rank: 'рядовой' });
+});
+await tx((db) => createEvent(db, ed.id, [yuri], { kind: 'study', date: '1963–1968', title: 'Калининский политехнический институт',
+  place: 'г. Калинин', body: 'Инженер-механик, учился на вечернем, днём работал на заводе.' }));
 // Обсуждение: Сергей писал давно, Елена — после его прошлого визита.
 const say = (person, user, body, ago) => pool.query(
   'insert into comments (person_id, user_id, body, created_at) values ($1, $2, $3, now() - $4::interval)', [person, user, body, ago]);

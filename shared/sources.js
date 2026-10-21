@@ -45,14 +45,15 @@ export function kindNote(s) {
   return s?.title && !plain(s.title).startsWith(plain(label)) ? label : '';
 }
 
-// Сведения, к которым привязываются источники и достоверность. У человека — его поля, у семьи — брак.
-// Потом сюда добавятся события хронологии (subject 'event').
+// Сведения, к которым привязываются источники и достоверность. У человека — его поля, у семьи — брак,
+// у события ленты жизни — само событие.
 export const FACTS = {
   person: {
     name: 'Имя', birth_date: 'Дата рождения', birth_place: 'Место рождения', death_date: 'Дата смерти', death_place: 'Место смерти',
     burial_place: 'Место захоронения', occupation: 'Род занятий', other: 'Другое',
   },
   family: { marriage: 'Брак' },
+  event: { event: 'Событие' },
 };
 export const factLabel = (subject, fact) => FACTS[subject]?.[fact] || 'Другое';
 

@@ -1,17 +1,19 @@
 // Источники и достоверность сведений. Каждое изменение пишется в журнал так, чтобы его можно было отменить (см. revert.js).
 // Записи журнала: entity 'source' — add, update, delete, restore; 'citation' (привязка источника к сведению) — add,
 // update (уточнение), remove; 'quality' (достоверность сведения, entity_id — человек или семья) — set.
-// Сведение — subject ('person' или 'family'), его id и fact (см. FACTS в shared/sources.js).
+// Сведение — subject ('person', 'family' или 'event' — событие ленты жизни), его id и fact (см. FACTS в shared/sources.js).
 import { logChange } from './changes.js';
 import { HttpError, alive } from './tree.js';
+import { liveEvent, participants } from './timeline.js';
 import { SOURCE_FIELDS, KINDS, FACTS, QUALITY, sourceTitle } from '../../shared/sources.js';
 
 // Что пишется в журнал об источнике: по этому снимку строится подпись в ленте.
 export const snapshot = (s) => ({ kind: s.kind, title: sourceTitle(s) });
 
-// Кого касается сведение: сам человек или супруги.
+// Кого касается сведение: сам человек, супруги или участники события.
 export async function subjectPersons(db, subject, id) {
   if (subject === 'person') return [id];
+  if (subject === 'event') return participants(db, id);
   const f = (await db.q('select partner1, partner2 from families where id = $1', [id]))[0];
   return f ? [f.partner1, f.partner2].filter(Boolean) : [];
 }
@@ -19,9 +21,12 @@ export async function subjectPersons(db, subject, id) {
 // Кого касается источник: люди всех его привязок.
 export async function sourcePersons(db, sourceId) {
   const rows = await db.q(
-    `select c.subject, c.subject_id, f.partner1, f.partner2 from citations c
-     left join families f on c.subject = 'family' and f.id = c.subject_id where c.source_id = $1`, [sourceId]);
-  return [...new Set(rows.flatMap((r) => (r.subject === 'person' ? [r.subject_id] : [r.partner1, r.partner2])).filter(Boolean))].sort();
+    `select c.subject_id as id from citations c where c.source_id = $1 and c.subject = 'person'
+     union select unnest(array[f.partner1, f.partner2]) from citations c join families f on c.subject = 'family' and f.id = c.subject_id
+       where c.source_id = $1
+     union select ep.person_id from citations c join event_persons ep on c.subject = 'event' and ep.event_id = c.subject_id
+       where c.source_id = $1`, [sourceId]);
+  return rows.map((r) => r.id).filter(Boolean).sort();
 }
 
 // Сведение есть в дереве: человек не удалён, семья на месте.
@@ -29,6 +34,7 @@ export async function checkFact(db, subject, id, fact) {
   if (!FACTS[subject]?.[fact]) throw new HttpError(400, 'Непонятно, к какому сведению это относится');
   if (subject === 'person' && !(await alive(db, id))) throw new HttpError(404, 'Человек не найден');
   if (subject === 'family' && !(await db.q('select 1 from families where id = $1', [id]))[0]) throw new HttpError(404, 'Семья не найдена');
+  if (subject === 'event') await liveEvent(db, id);
 }
 
 export async function liveSource(db, id) {

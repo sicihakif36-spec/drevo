@@ -9,16 +9,17 @@ import { recentComments } from './comments.js';
 export default async function feedRoutes(app) {
   app.get('/api/feed', { preHandler: need('viewer') }, async (req) => {
     const guest = isGuest(req.user);
+    const hidden = new Set(guest ? await privateIds() : []);
     const [ops, comments, [u]] = await Promise.all([
       listOps({ limit: 50, standing: true }),
-      recentComments({ hidden: guest ? await privateIds() : [], limit: 50 }),
+      recentComments({ hidden: [...hidden], limit: 50 }),
       q('select feed_seen_at, now() as now from users where id = $1', [req.user.id]),
     ]);
     const items = [
       ...ops.map(({ user_id: who, reverted, ...op }) => ({
         kind: 'op',
         ...op,
-        entries: guest ? op.entries.map(trimEntry) : op.entries,
+        entries: guest ? op.entries.map((e) => trimEntry(e, hidden)) : op.entries,
         fresh: who !== req.user.id && op.at > u.feed_seen_at,
       })),
       ...comments.map(({ user_id: who, created_at: at, body, ...c }) => ({

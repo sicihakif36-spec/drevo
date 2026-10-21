@@ -1,6 +1,7 @@
 // Подписи к журналу правок: одно действие пользователя — одна или несколько строк.
 import { fullName } from '@shared/names.js';
 import { KINDS, QUALITY, factLabel } from '@shared/sources.js';
+import { eventTitle } from '@shared/events.js';
 
 export const FIELDS = [
   ['surname', 'Фамилия'], ['given', 'Имя'], ['patronymic', 'Отчество'], ['birth_surname', 'Фамилия при рождении'],
@@ -120,6 +121,27 @@ function storyLine(e, name) {
   return null;
 }
 
+// События ленты жизни: «добавил(а) событие «Служба в армии»: Смирнов Пётр Иванович».
+// Гостю приходит только вид события, а у события с живым — и без вида: «добавил(а) событие: …».
+const EVENT_FIELD = { kind: 'вид', date: 'дату', place: 'место', title: 'название', body: 'описание', unit: 'часть', rank: 'звание' };
+function eventLine(e, name) {
+  const x = e.after || e.before || {};
+  const title = x.kind ? ` «${eventTitle(x)}»` : '';
+  const who = (e.persons || []).map(name).join(', ');
+  switch (e.action) {
+    case 'add': return `добавил(а) событие${title}${who ? `: ${who}` : ''}`;
+    case 'delete': return `удалил(а) событие${title}${who ? `: ${who}` : ''}`;
+    case 'restore': return `вернул(а) событие${title}${who ? `: ${who}` : ''}`;
+    case 'update': {
+      const what = Object.keys(e.before || {}).map((k) => EVENT_FIELD[k] || k).join(', ');
+      return `изменил(а) событие${title}${what ? `: ${what}` : ''}`;
+    }
+    case 'link': return `добавил(а) участника события${title}: ${name(e.after?.person_id)}`;
+    case 'unlink': return `убрал(а) участника события${title}: ${name(e.before?.person_id)}`;
+  }
+  return null;
+}
+
 // Источники: «добавил(а) источник «Метрическая книга…» — дата рождения: Смирнов Пётр Иванович».
 // Гостю названия не приходят — тогда вид источника: «источник (Ревизская сказка)», а у достоверности — без самой отметки.
 const SOURCE_FIELD = {
@@ -172,6 +194,7 @@ export function opLines(op, name) {
     ...op.entries.map((e) => {
       if (e.entity === 'person') return e.action === 'photo' && withFiles ? null : personLine(e, name);
       if (e.entity === 'story') return storyLine(e, name);
+      if (e.entity === 'event') return eventLine(e, name);
       return e.entity === 'family' ? familyLine(e, name) : null;
     }),
   ].filter(Boolean);
@@ -180,7 +203,10 @@ export function opLines(op, name) {
 
 // «было: …» для правок карточки.
 // У истории — только заголовок и дата: текст длинный, а запись голоса словами не покажешь. У источника — без скана и оборота.
-const WAS = { story: ['title', 'date'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'url'] };
+// У события — без вида и описания.
+const WAS = {
+  story: ['title', 'date'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'url'], event: ['date', 'place', 'title', 'unit', 'rank'],
+};
 export function opWas(op) {
   return op.entries
     .filter((e) => e.entity !== 'family' && e.action === 'update')

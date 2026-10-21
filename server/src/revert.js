@@ -9,10 +9,13 @@ import { MEDIA_FIELDS, deleteMedia, restoreMedia, tag, untag } from './album.js'
 import { STORY_FIELDS, deleteStory, restoreStory, updateStory, linkPerson, unlinkPerson } from './stories.js';
 import { SOURCE_FIELDS } from '../../shared/sources.js';
 import { deleteSource, restoreSource, updateSource, cite, uncite, updateCitation, setQuality } from './sources.js';
+import { EVENT_FIELDS } from '../../shared/events.js';
+import { deleteEvent, restoreEvent, updateEvent, addParticipant, removeParticipant } from './timeline.js';
 
 const LATER = 'После этой правки были другие. Сначала отмените более поздние правки.';
 const GONE = 'Этот человек удалён. Сначала верните его.';
 const SOURCE_GONE = 'Этот источник удалён. Сначала верните его.';
+const EVENT_GONE = 'Это событие удалено. Сначала верните его.';
 const pick = (o, cols) => Object.fromEntries(cols.map((c) => [c, o[c]]));
 
 async function undoPerson(db, userId, e) {
@@ -159,6 +162,48 @@ async function undoStory(db, userId, e) {
   throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
 }
 
+async function undoEvent(db, userId, e) {
+  const ev = (await db.q('select * from life_events where id = $1 for update', [e.entity_id]))[0];
+  if (!ev) throw new HttpError(404, 'Событие не найдено');
+  switch (e.action) {
+    case 'add':
+    case 'restore':
+      if (ev.deleted_at) throw new HttpError(409, 'Это событие уже удалено');
+      return deleteEvent(db, userId, ev.id);
+    case 'delete':
+      return restoreEvent(db, userId, ev.id);
+  }
+  if (ev.deleted_at) throw new HttpError(409, EVENT_GONE);
+  switch (e.action) {
+    case 'update': {
+      const before = e.before || {};
+      const id = await updateEvent(db, userId, ev.id, pick(before, Object.keys(before).filter((c) => EVENT_FIELDS.includes(c))));
+      if (!id) throw new HttpError(409, 'Здесь уже всё как было до этой правки');
+      return id;
+    }
+    case 'link': {
+      const id = await removeParticipant(db, userId, ev.id, e.after.person_id);
+      if (!id) throw new HttpError(409, LATER);
+      return id;
+    }
+    case 'unlink': {
+      if (!(await alive(db, e.before.person_id))) throw new HttpError(409, GONE);
+      const id = await addParticipant(db, userId, ev.id, e.before.person_id);
+      if (!id) throw new HttpError(409, LATER);
+      return id;
+    }
+  }
+  throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
+}
+
+// Сведение, к которому вернётся источник или отметка, на месте: человек и событие не удалены.
+async function factThere(db, subject, id) {
+  if (subject === 'person' && !(await alive(db, id))) throw new HttpError(409, GONE);
+  if (subject === 'event' && !(await db.q('select 1 from life_events where id = $1 and deleted_at is null', [id]))[0]) {
+    throw new HttpError(409, EVENT_GONE);
+  }
+}
+
 async function undoSource(db, userId, e) {
   const s = (await db.q('select * from sources where id = $1 for update', [e.entity_id]))[0];
   if (!s) throw new HttpError(404, 'Источник не найден');
@@ -191,7 +236,7 @@ async function undoCitation(db, userId, e) {
       return id;
     }
     case 'remove': {
-      if (x.subject === 'person' && !(await alive(db, x.subject_id))) throw new HttpError(409, GONE);
+      await factThere(db, x.subject, x.subject_id);
       const c = await cite(db, userId, x, e.entity_id);
       if (!c) throw new HttpError(409, LATER);
       return c.changeId;
@@ -207,7 +252,7 @@ async function undoCitation(db, userId, e) {
 
 async function undoQuality(db, userId, e) {
   const { subject, fact } = e.before;
-  if (subject === 'person' && !(await alive(db, e.entity_id))) throw new HttpError(409, GONE);
+  await factThere(db, subject, e.entity_id);
   const cur = (await db.q('select quality from fact_quality where subject = $1 and subject_id = $2 and fact = $3',
     [subject, e.entity_id, fact]))[0]?.quality ?? null;
   if (cur !== e.after.quality) throw new HttpError(409, LATER);
@@ -225,6 +270,7 @@ export async function revertOp(db, userId, changeId) {
     if (e.entity === 'family') families.push(e.entity_id);
     const undo = {
       person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory, source: undoSource, citation: undoCitation, quality: undoQuality,
+      event: undoEvent,
     }[e.entity];
     const id = await undo(db, userId, e);
     first ??= id;

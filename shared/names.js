@@ -23,6 +23,29 @@ export function parseDate(text) {
   return { year, approx, text: String(text).trim() };
 }
 
+// Дата или период в свободной форме для ленты жизни: «1941–1945», «с 1950 по 1962», «с 1950», «около 1930», «март 1942».
+// -> { from, to, since, year, key }: from и to — начало и конец периода текстом (to пустой — одна дата), since — «с 1950» без конца,
+// year — первый год, key — для сортировки по году, месяцу и дню. Без года — null.
+const MONTH_WORDS = [/янв/, /фев/, /март/, /апр/, /ма[йяе]/, /июн/, /июл/, /авг/, /сен/, /окт/, /ноя/, /дек/];
+function dateKey(text) {
+  const t = text.toLowerCase();
+  const y = t.match(/\d{3,4}/);
+  if (!y) return null;
+  let m = t.match(/(\d{1,2})\.(\d{1,2})\.\d{3,4}/);
+  if (m) return { year: Number(y[0]), key: Number(y[0]) * 10000 + Number(m[2]) * 100 + Number(m[1]) };
+  m = t.match(/(?:^|\D)(\d{1,2})\.\d{3,4}/);
+  const month = m ? Number(m[1]) : MONTH_WORDS.findIndex((w) => w.test(t)) + 1;
+  return { year: Number(y[0]), key: Number(y[0]) * 10000 + (month <= 12 ? month : 0) * 100 };
+}
+export function parsePeriod(text) {
+  const t = String(text || '').trim();
+  const m = t.match(/^(?:с|со|между)?\s*(.*?\d{3,4}.*?)\s*(?:[–—-]|\s(?:по|до|и)\s)\s*(.*\d{3,4}.*)$/i);
+  const since = !m && /^со?\s.*\d{3,4}/i.test(t);
+  const from = m ? m[1] : since ? t.replace(/^со?\s+/i, '') : t;
+  const k = dateKey(from);
+  return k && { from, to: m ? m[2] : '', since, ...k };
+}
+
 // Точная дата «12.03.1890» -> { day, month, year }. Неточные («около 1890», «1890», «ст. ст.») — null.
 export function exactDate(text) {
   const m = String(text || '').trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);

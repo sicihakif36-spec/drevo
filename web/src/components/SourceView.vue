@@ -3,7 +3,8 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { store, canEdit, toast, onLive } from '../store.js';
 import { api, photoUrl, thumbUrl } from '../api.js';
 import { fullName } from '@shared/names.js';
-import { KINDS, citeText, factLabel, kindNote, sourceTitle } from '@shared/sources.js';
+import { KINDS, citeText, kindNote, sourceTitle } from '@shared/sources.js';
+import { citeWhat } from '../sources.js';
 import SourceForm from './SourceForm.vue';
 
 // Источник поверх карточки: все поля, скан, к каким сведениям каких людей он привязан; правка и удаление.
@@ -31,7 +32,7 @@ onUnmounted(onLive((events) => { if (mode.value === 'view' && events.some((e) =>
 const rows = computed(() => (s.value?.citations || []).map((c) => ({
   ...c,
   who: c.persons.map((id) => store.idx?.persons.get(id)).filter(Boolean),
-  what: c.subject === 'family' ? 'брак' : factLabel(c.subject, c.fact).toLowerCase(),
+  what: citeWhat(c),
 })));
 const pdf = computed(() => s.value?.media_kind === 'doc' && !s.value.media_thumb);
 

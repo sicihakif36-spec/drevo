@@ -1,7 +1,10 @@
 import { need } from '../auth.js';
 import { loadTreeData } from './print.js';
 import { sourceData } from './sources.js';
+import { eventData } from './timeline.js';
 import { citeText, sourceTitle, QUALITY, KINDS } from '../../../shared/sources.js';
+import { EVENT_KINDS } from '../../../shared/events.js';
+import { parsePeriod } from '../../../shared/names.js';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -26,13 +29,26 @@ export function gedDate(text) {
   return `(${t.replace(/[()]/g, '')})`;
 }
 
+// Период «1941–1945», «с 1950 по 1962» -> «FROM 1941 TO 1945», «с 1950» -> «FROM 1950»; одна дата — как gedDate.
+// Начало и конец без «около»: в периоде GEDCOM его не бывает. Непонятное («май 1945») — одним годом.
+export function gedPeriod(text) {
+  const p = parsePeriod(text);
+  if (!p || !(p.to || p.since) || /между/i.test(text)) return gedDate(text);
+  const part = (t) => {
+    const d = gedDate(t).replace(/^(ABT|BEF|AFT) /, '');
+    return d.startsWith('(') ? String(parsePeriod(t).year) : d;
+  };
+  return p.to ? `FROM ${part(p.from)} TO ${part(p.to)}` : `FROM ${part(p.from)}`;
+}
+
 // Сведение -> событие GEDCOM, под которым стоят его источники. «Другое» — источник у самого человека.
 const FACT_TAG = {
   name: 'NAME', birth_date: 'BIRT', birth_place: 'BIRT', death_date: 'DEAT', death_place: 'DEAT', burial_place: 'BURI',
-  occupation: 'OCCU', marriage: 'MARR', other: '',
+  occupation: 'OCCU', marriage: 'MARR', other: '', event: 'EVEN',
 };
 
-// data.sources, data.citations, data.quality — источники (routes/sources.js, sourceData); без них — только дерево.
+// data.sources, data.citations, data.quality — источники (routes/sources.js, sourceData), data.events — события ленты жизни
+// (routes/timeline.js, eventData); без них — только дерево.
 export function toGedcom(data) {
   const ids = new Map(data.persons.map((p, i) => [p.id, `@I${i + 1}@`]));
   const fids = new Map(data.families.map((f, i) => [f.id, `@F${i + 1}@`]));
@@ -107,6 +123,20 @@ export function toGedcom(data) {
       sources(2, p.id, 'OCCU');
     }
     if (p.notes) note(1, p.notes);
+    // События ленты жизни: у каждого участника своей записью. Вид без своего тега — EVEN или _MILT с TYPE.
+    for (const ev of data.events || []) {
+      if (!ev.persons.includes(p.id)) continue;
+      const k = EVENT_KINDS[ev.kind] || EVENT_KINDS.other;
+      const value = k.gedcom === 'RESI' ? '' : ev.title;
+      L.push(`1 ${k.gedcom}${value ? ` ${flat(value)}` : ''}`);
+      if (['EVEN', '_MILT'].includes(k.gedcom)) line(2, 'TYPE', k.label);
+      line(2, 'DATE', gedPeriod(ev.date));
+      line(2, 'PLAC', ev.place);
+      const text = [!value && ev.title && `${k.title}: ${ev.title}`, ev.unit && `Часть: ${ev.unit}`, ev.rank && `Звание: ${ev.rank}`, ev.body]
+        .filter(Boolean).join('\n');
+      if (text) note(2, text);
+      sources(2, ev.id, 'EVEN');
+    }
     sources(1, p.id, '');
     for (const f of data.families) if (f.partner1 === p.id || f.partner2 === p.id) L.push(`1 FAMS ${fids.get(f.id)}`);
     for (const c of data.children) if (c.child_id === p.id && fids.has(c.family_id)) L.push(`1 FAMC ${fids.get(c.family_id)}`);
@@ -143,7 +173,7 @@ export function toGedcom(data) {
 
 export default async function exportRoutes(app) {
   app.get('/api/export.ged', { preHandler: need('viewer') }, async (req, reply) => {
-    const data = { ...(await loadTreeData(req.user)), ...(await sourceData(req.user)) };
+    const data = { ...(await loadTreeData(req.user)), ...(await sourceData(req.user)), ...(await eventData(req.user)) };
     const date = new Date().toISOString().slice(0, 10);
     reply.header('Content-Type', 'text/plain; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="drevo-${date}.ged"`);

@@ -8,6 +8,7 @@ import ChangeList from '../components/ChangeList.vue';
 import Discussion from '../components/Discussion.vue';
 import Album from '../components/Album.vue';
 import Stories from '../components/Stories.vue';
+import Life from '../components/Life.vue';
 import Sources from '../components/Sources.vue';
 import FactBadge from '../components/FactBadge.vue';
 import FactSheet from '../components/FactSheet.vue';
@@ -53,6 +54,7 @@ async function loadSources() {
 watch(() => `${props.id}:${Boolean(p.value)}:${Boolean(p.value?.hidden)}`, () => { sources.value = null; sheet.value = null; loadSources(); }, { immediate: true });
 const siblings = computed(() => (p.value ? siblingsOf(idx.value, p.value.id).map((id) => idx.value.persons.get(id)).filter(Boolean) : []));
 
+const scrollTo = (x, y) => window.scrollTo(x, y);
 function startEdit() {
   Object.assign(form, Object.fromEntries([...FIELDS.map(([k]) => [k, p.value[k]]), ['sex', p.value.sex], ['living', p.value.living]]));
   editing.value = true;
@@ -225,6 +227,8 @@ onUnmounted(onLive((events) => {
       <div v-if="!siblings.length && !canEdit()" class="muted">Не указаны</div>
       <div v-if="canEdit()" class="row"><button @click="openAdd({ to: p.id, type: 'sibling' })">+ Брат / сестра</button></div>
     </div>
+
+    <Life :person="p" :sources="sources" @edit="startEdit(); scrollTo(0, 0)" @changed="loadSources" />
 
     <Album ref="album" :person="p" />
 
