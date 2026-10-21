@@ -48,9 +48,9 @@ function added(id) {
         Люди
       </router-link>
       <a class="plus" href="#" v-if="store.me.role !== 'viewer'" @click.prevent="plus" aria-label="Добавить человека"><span>+</span></a>
-      <router-link to="/print">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2"/><path d="M6 14h12v7H6z"/></svg>
-        Печать
+      <router-link to="/feed">
+        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3.5" width="16" height="17" rx="2.5"/><path d="M8 8.5h8M8 12.5h8M8 16.5h5"/></svg><i v-if="store.tree?.feed_new" class="dot" aria-label="Есть новое"></i></span>
+        Лента
       </router-link>
       <router-link to="/more">
         <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>

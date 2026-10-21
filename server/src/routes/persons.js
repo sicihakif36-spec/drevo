@@ -1,6 +1,6 @@
 import { q, tx } from '../db.js';
 import { need } from '../auth.js';
-import { logChange, listOps } from '../changes.js';
+import { logChange, listOps, countNew } from '../changes.js';
 import { revertOp } from '../revert.js';
 import { HttpError, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
 import { hideLiving, isGuest } from '../privacy.js';
@@ -30,17 +30,19 @@ async function insertPerson(db, data, userId) {
 
 export default async function personRoutes(app) {
   app.get('/api/tree', { preHandler: need('viewer') }, async (req) => {
-    const [persons, families, children, settings] = await Promise.all([
+    const [persons, families, children, settings, feedNew] = await Promise.all([
       q('select * from persons where deleted_at is null order by surname, given'),
       q('select * from families order by created_at'),
       q('select * from family_children'),
       q('select key, value from settings'),
+      countNew(req.user.id),
     ]);
     const data = { persons, families, children };
     return {
       ...(isGuest(req.user) ? hideLiving(data) : data),
       settings: Object.fromEntries(settings.map((s) => [s.key, s.value])),
       me: req.user,
+      feed_new: feedNew,
     };
   });
 

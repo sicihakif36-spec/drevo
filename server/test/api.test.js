@@ -225,3 +225,64 @@ test('несуществующий человек: понятная ошибка
   const someone = await add({ given: 'Кто-то', sex: 'M' });
   assert.equal((await call(ownerCookie, 'POST', '/api/relations', { personId: none, to: someone.id, type: 'father' })).statusCode, 404);
 });
+
+test('лента: что нового, без отменённого, гостю — без скрытых данных', async () => {
+  const editor = await login('editor');
+  const guest = await login('viewer');
+  const feed = async (cookie) => (await call(cookie, 'GET', '/api/feed')).json();
+  const newCount = async (cookie) => (await call(cookie, 'GET', '/api/tree')).json().feed_new;
+  const seen = async (cookie) => call(cookie, 'POST', '/api/feed/seen', { at: (await feed(cookie)).now });
+  for (const c of [ownerCookie, editor, guest]) assert.equal((await seen(c)).statusCode, 200);
+  assert.equal(await newCount(ownerCookie), 0);
+
+  // Свои действия — не новость, чужие — новость.
+  const kid = await add({ given: 'Лентовый', sex: 'M', birth_date: '05.05.2015', birth_place: 'Тверь', notes: 'секрет' });
+  assert.equal(await newCount(ownerCookie), 0);
+  assert.equal(await newCount(editor), 1);
+  const r = await call(editor, 'PATCH', `/api/persons/${kid.id}`, { birth_place: 'Калинин', occupation: 'школьник' });
+  assert.equal(r.statusCode, 200);
+  const mom = (await call(editor, 'POST', '/api/persons', { person: { given: 'Мама', sex: 'F', birth_date: '1985' }, relation: { to: kid.id, type: 'mother' } })).json();
+  await call(ownerCookie, 'PATCH', `/api/families/${(await tree()).families.find((f) => f.partner1 === mom.id || f.partner2 === mom.id).id}`, { start_date: '2010' });
+  const photo = await upload(kid.id);
+  assert.equal(await newCount(ownerCookie), 2);
+  assert.equal(await newCount(guest), 5);
+
+  let f = await feed(ownerCookie);
+  assert.equal(f.items.filter((i) => i.fresh).length, 2);
+  assert.ok(f.items.every((i) => i.kind === 'op' && i.user_name));
+  const upd = f.items.find((i) => i.entries.some((e) => e.entity === 'person' && e.action === 'update'));
+  assert.equal(upd.entries[0].after.birth_place, 'Калинин', 'участникам записи отдаются целиком');
+
+  // Гостю: имена, названия полей и связи, без значений.
+  const g = await feed(guest);
+  assert.equal(g.items.filter((i) => i.fresh).length, 5);
+  const text = JSON.stringify(g.items);
+  for (const s of ['05.05.2015', 'Тверь', 'Калинин', 'школьник', 'секрет', '1985', '2010', photo]) assert.ok(!text.includes(s), s);
+  const entries = g.items.flatMap((i) => i.entries);
+  assert.deepEqual(entries.find((e) => e.entity_id === kid.id && e.action === 'create').after, { surname: '', given: 'Лентовый', patronymic: '', sex: 'M' });
+  assert.deepEqual(entries.find((e) => e.action === 'update' && e.entity === 'person').after, { birth_place: null, occupation: null });
+  assert.deepEqual(entries.find((e) => e.action === 'photo').after, { photo_id: true });
+  const link = entries.find((e) => e.action === 'add_child' || e.action === 'set_partner');
+  assert.ok(link.after.partners.includes(mom.id));
+
+  // Отменённое действие и сама отмена в ленту не попадают, пара не считается новостью.
+  const before = (await feed(guest)).items.length;
+  const gone = await add({ given: 'Ошибочный', sex: 'M' });
+  assert.equal(await newCount(guest), 6);
+  assert.equal((await revert(await lastOp())).statusCode, 200);
+  assert.equal(await newCount(guest), 5);
+  f = await feed(guest);
+  assert.equal(f.items.length, before);
+  assert.ok(!f.items.some((i) => i.entries.some((e) => e.entity_id === gone.id)));
+
+  // Просмотрено: новое пропадает; правки после отметки остаются новыми.
+  const { now } = await feed(editor);
+  await call(ownerCookie, 'PATCH', `/api/persons/${kid.id}`, { occupation: 'ученик' });
+  assert.equal((await call(editor, 'POST', '/api/feed/seen', { at: now })).statusCode, 200);
+  assert.equal(await newCount(editor), 1);
+  assert.equal((await feed(editor)).items.filter((i) => i.fresh).length, 1);
+  await seen(editor);
+  assert.equal(await newCount(editor), 0);
+  assert.equal((await call(editor, 'POST', '/api/feed/seen', { at: 'вчера' })).statusCode, 200);
+  assert.equal((await app.inject({ url: '/api/feed' })).statusCode, 401);
+});

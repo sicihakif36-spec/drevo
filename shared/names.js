@@ -23,6 +23,53 @@ export function parseDate(text) {
   return { year, approx, text: String(text).trim() };
 }
 
+// Точная дата «12.03.1890» -> { day, month, year }. Неточные («около 1890», «1890», «ст. ст.») — null.
+export function exactDate(text) {
+  const m = String(text || '').trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!m) return null;
+  const [day, month, year] = m.slice(1).map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(month, year)) return null;
+  return { day, month, year };
+}
+
+const daysInMonth = (month, year) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+// «1 год», «3 года», «28 лет».
+export function yearsText(n) {
+  const a = n % 10;
+  const b = n % 100;
+  const word = a === 1 && b !== 11 ? 'год' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'года' : 'лет';
+  return `${n} ${word}`;
+}
+
+// Памятные даты на days дней вперёд, сегодняшние первыми: дни рождения живых (kind 'birthday'),
+// годовщины рождения и смерти ушедших ('birth', 'death'). years — сколько лет исполняется, round — круглая дата.
+export function upcomingDates(persons, today = new Date(), days = 30) {
+  const DAY = 86400000;
+  const start = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const out = [];
+  for (const p of persons) {
+    const dates = p.living ? [['birthday', p.birth_date]] : [['birth', p.birth_date], ['death', p.death_date]];
+    for (const [kind, text] of dates) {
+      const d = exactDate(text);
+      if (!d) continue;
+      for (const y of [today.getFullYear(), today.getFullYear() + 1]) {
+        // 29 февраля в невисокосный год отмечаем 28-го.
+        const day = Math.min(d.day, daysInMonth(d.month, y));
+        const at = Date.UTC(y, d.month - 1, day);
+        const inDays = Math.round((at - start) / DAY);
+        if (inDays < 0) continue;
+        const years = y - d.year;
+        if (inDays <= days && years > 0) {
+          out.push({ person: p, kind, day, month: d.month, inDays, years, round: years % (kind === 'birthday' ? 10 : 50) === 0 });
+        }
+        break;
+      }
+    }
+  }
+  return out.sort((a, b) => a.inDays - b.inDays || fullName(a.person).localeCompare(fullName(b.person), 'ru'));
+}
+
 export function lifespan(p) {
   const b = parseDate(p.birth_date);
   const d = parseDate(p.death_date);

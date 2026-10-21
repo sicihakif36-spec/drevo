@@ -11,6 +11,7 @@ import userRoutes from './routes/users.js';
 import mediaRoutes from './routes/media.js';
 import printRoutes from './routes/print.js';
 import exportRoutes from './routes/export.js';
+import feedRoutes from './routes/feed.js';
 
 export async function buildApp(opts = {}) {
   const app = Fastify({ logger: opts.logger ?? { level: 'info' }, trustProxy: true, bodyLimit: 256 * 1024 });
@@ -29,6 +30,7 @@ export async function buildApp(opts = {}) {
   await app.register(mediaRoutes);
   await app.register(printRoutes);
   await app.register(exportRoutes);
+  await app.register(feedRoutes);
 
   app.get('/api/health', async () => {
     await pool.query('select 1');
