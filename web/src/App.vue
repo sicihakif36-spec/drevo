@@ -1,15 +1,24 @@
 <script setup>
 import { computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { store, loadMe, loadTree } from './store.js';
+import { store, loadMe, loadTree, canEdit } from './store.js';
 import AddPersonSheet from './components/AddPersonSheet.vue';
 import { addState, openAdd } from './components/addState.js';
+import { syncPush } from './push.js';
 
 const route = useRoute();
 const router = useRouter();
 const isPublic = computed(() => route.meta.public);
 
-loadMe().then(() => { if (store.me) loadTree(); });
+loadMe().then(() => {
+  if (!store.me) return;
+  loadTree();
+  syncPush();
+});
+// Нажали на уведомление, а приложение уже открыто: service worker просит перейти в нужное место.
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  if (e.data?.type === 'drevo-open') router.push(new URL(e.data.url).hash.slice(1) || '/');
+});
 watch(() => store.me?.id, (id, old) => { if (id && id !== old && !store.tree) loadTree(); });
 
 function plus() {
@@ -47,10 +56,10 @@ function added(id) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.8a3.4 3.4 0 0 1 0 6.4M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/></svg>
         Люди
       </router-link>
-      <a class="plus" href="#" v-if="store.me.role !== 'viewer'" @click.prevent="plus" aria-label="Добавить человека"><span>+</span></a>
-      <router-link to="/print">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2"/><path d="M6 14h12v7H6z"/></svg>
-        Печать
+      <a class="plus" href="#" v-if="canEdit()" @click.prevent="plus" aria-label="Добавить человека"><span>+</span></a>
+      <router-link to="/feed">
+        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3.5" width="16" height="17" rx="2.5"/><path d="M8 8.5h8M8 12.5h8M8 16.5h5"/></svg><i v-if="store.tree?.feed_new" class="dot" aria-label="Есть новое"></i></span>
+        Лента
       </router-link>
       <router-link to="/more">
         <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>

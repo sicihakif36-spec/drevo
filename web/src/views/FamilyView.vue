@@ -3,7 +3,14 @@ import { onMounted, ref } from 'vue';
 import { store, toast } from '../store.js';
 import { api } from '../api.js';
 
-const ROLES = [['editor', 'Участник: добавляет и правит'], ['viewer', 'Гость: только смотрит'], ['owner', 'Владелец: всё, включая приглашения']];
+// Кто что увидит и сможет.
+const ROLES = [
+  ['editor', 'Участник', 'видит всё, дополняет и правит'],
+  ['relative', 'Родственник', 'видит всё, не правит, может обсуждать'],
+  ['viewer', 'Гость', 'у живых видит только имена'],
+  ['owner', 'Владелец', 'всё, включая приглашения'],
+];
+const HINT = Object.fromEntries(ROLES.map(([k, l, t]) => [k, `${l} — ${t}`]));
 const label = ref('');
 const role = ref('editor');
 const link = ref(null);
@@ -47,9 +54,13 @@ const when = (t) => (t ? new Date(t).toLocaleDateString('ru-RU', { day: 'numeric
     <div class="card">
       <b>Пригласить</b>
       <label class="field"><span>Кого (для себя, например «Бабушка Валя»)</span><input v-model="label" /></label>
-      <label class="field"><span>Права</span>
-        <select v-model="role"><option v-for="[k, t] in ROLES" :key="k" :value="k">{{ t }}</option></select>
-      </label>
+      <div class="field"><span class="muted small">Права</span>
+        <div class="roles" role="radiogroup" aria-label="Права">
+          <button v-for="[k, l, t] in ROLES" :key="k" type="button" role="radio" :aria-checked="role === k" :class="{ on: role === k }" @click="role = k">
+            <b>{{ l }}</b><span>{{ t }}</span>
+          </button>
+        </div>
+      </div>
       <button class="primary block" @click="create">Создать ссылку</button>
     </div>
 
@@ -65,10 +76,11 @@ const when = (t) => (t ? new Date(t).toLocaleDateString('ru-RU', { day: 'numeric
       <div v-for="u in users" :key="u.id" class="user">
         <div class="grow">
           <div class="ellipsis"><b>{{ u.name }}</b><span v-if="u.disabled" class="muted"> · доступ закрыт</span></div>
+          <div class="small">{{ HINT[u.role] }}</div>
           <div class="muted small">последний вход: {{ when(u.last_seen_at) }}</div>
           <div class="row wrap" style="margin-top:6px" v-if="u.id !== store.me.id">
             <select :value="u.role" @change="setRole(u, $event.target.value)" style="width:auto;min-height:38px;padding:6px 10px">
-              <option value="owner">владелец</option><option value="editor">участник</option><option value="viewer">гость</option>
+              <option v-for="[k, l] in ROLES" :key="k" :value="k">{{ l.toLowerCase() }}</option>
             </select>
             <button class="chip" @click="loginLink(u)">Вход на новом телефоне</button>
             <button class="chip" @click="toggle(u)">{{ u.disabled ? 'Вернуть доступ' : 'Закрыть доступ' }}</button>
@@ -80,7 +92,7 @@ const when = (t) => (t ? new Date(t).toLocaleDateString('ru-RU', { day: 'numeric
     <h2 v-if="invites.length">Неиспользованные ссылки</h2>
     <div class="list" v-if="invites.length">
       <div v-for="i in invites" :key="i.id">
-        <div class="grow">{{ i.label || 'без подписи' }} <span class="muted small">· до {{ when(i.expires_at) }}</span></div>
+        <div class="grow">{{ i.label || 'без подписи' }} <span class="muted small">· {{ ROLES.find((r) => r[0] === i.role)?.[1].toLowerCase() }} · до {{ when(i.expires_at) }}</span></div>
         <button class="danger" @click="drop(i)">Отозвать</button>
       </div>
     </div>
@@ -89,4 +101,9 @@ const when = (t) => (t ? new Date(t).toLocaleDateString('ru-RU', { day: 'numeric
 
 <style scoped>
 .user { align-items: flex-start !important; }
+.roles { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.roles button { display: block; text-align: left; background: var(--card); border: 2px solid var(--line); min-height: 56px; padding: 8px 12px; }
+.roles button.on { border-color: var(--accent); background: var(--accent-soft); }
+.roles b { display: block; font-size: 17px; }
+.roles span { display: block; font-size: 14px; color: var(--muted); font-weight: 400; }
 </style>

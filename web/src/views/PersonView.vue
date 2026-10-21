@@ -1,10 +1,24 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { store, loadTree, canEdit, toast } from '../store.js';
-import { api, photoUrl, shrinkImage } from '../api.js';
+import { store, loadTree, canEdit, canTalk, toast, onLive } from '../store.js';
+import { api, photoUrl } from '../api.js';
 import { openAdd } from '../components/addState.js';
-import { fullName, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields } from '@shared/names.js';
+import ChangeList from '../components/ChangeList.vue';
+import Discussion from '../components/Discussion.vue';
+import Album from '../components/Album.vue';
+import Stories from '../components/Stories.vue';
+import Life from '../components/Life.vue';
+import MarriageSheet from '../components/MarriageSheet.vue';
+import Sources from '../components/Sources.vue';
+import FactBadge from '../components/FactBadge.vue';
+import FactSheet from '../components/FactSheet.vue';
+import DateInput from '../components/DateInput.vue';
+import PlaceInput from '../components/PlaceInput.vue';
+import { placeKey } from '@shared/places.js';
+import { factInfo, personFacts } from '../sources.js';
+import { FIELDS } from '../history.js';
+import { fullName, dateText, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields } from '@shared/names.js';
 
 const props = defineProps({ id: String });
 const router = useRouter();
@@ -16,14 +30,8 @@ const error = ref('');
 const form = reactive({});
 const history = ref([]);
 const showHistory = ref(false);
-const fileInput = ref(null);
-
-const FIELDS = [
-  ['surname', 'Фамилия'], ['given', 'Имя'], ['patronymic', 'Отчество'], ['birth_surname', 'Фамилия при рождении'],
-  ['birth_date', 'Дата рождения'], ['birth_place', 'Место рождения'], ['death_date', 'Дата смерти'], ['death_place', 'Место смерти'],
-  ['burial_place', 'Место захоронения'], ['occupation', 'Род занятий'], ['notes', 'Заметки и воспоминания'],
-];
-const FIELD_LABEL = Object.fromEntries([...FIELDS, ['sex', 'Пол'], ['living', 'Жив(а)'], ['photo_id', 'Фото']]);
+const album = ref(null);
+const marriage = ref(null); // { family, spouse } — окно «Брак»
 
 const kin = computed(() => p.value && kinship(idx.value, store.me?.person_id, p.value.id));
 const missing = computed(() => (p.value ? missingFields(p.value, idx.value) : []));
@@ -32,8 +40,35 @@ const marriages = computed(() => (p.value ? spousesOf(idx.value, p.value.id).map
   const fam = idx.value.families.get(s.familyId);
   return { ...s, fam, spouse: s.spouseId && idx.value.persons.get(s.spouseId), kids: fam.children.map((c) => idx.value.persons.get(c)).filter(Boolean) };
 }) : []));
+// Источники и достоверность сведений: значки у дат и мест, окно сведения, раздел «Источники».
+const sources = ref(null);
+const sheet = ref(null); // { fact } — открытое окно сведения; fact null — сначала выбрать сведение
+const facts = computed(() => (p.value ? personFacts(p.value, marriages.value) : []));
+const fact = (subject, id, key) => facts.value.find((f) => f.subject === subject && f.id === id && f.fact === key);
+const info = (subject, id, key) => factInfo(sources.value, subject, id, key);
+async function loadSources() {
+  const id = props.id;
+  if (!p.value || p.value.hidden) {
+    sources.value = { quality: [], citations: [], sources: [] };
+    return;
+  }
+  const data = await api('GET', `/api/persons/${id}/sources`).catch(() => null);
+  if (props.id === id) sources.value = data;
+}
+// Дерево перечитывается при каждой правке — источники заново грузим только для другого человека.
+watch(() => `${props.id}:${Boolean(p.value)}:${Boolean(p.value?.hidden)}`, () => { sources.value = null; sheet.value = null; loadSources(); }, { immediate: true });
+// Как место из справочника называется сейчас.
+const now = (text) => store.tree?.places?.find((x) => placeKey(x.title) === placeKey(text))?.now || '';
+// «жена · брак 1945, с. Горки · развод 1962».
+function bond(m) {
+  const f = m.fam;
+  const who = m.spouse.sex === 'F' ? 'жена' : 'муж';
+  const start = f.start_date || f.place ? `${f.kind === 'partners' ? 'вместе с' : 'брак'} ${[dateText(f.start_date), f.place].filter(Boolean).join(', ')}` : '';
+  return [who, start, f.ended === 'divorce' && `развод${f.end_date ? ` ${dateText(f.end_date)}` : ''}`].filter(Boolean).join(' · ');
+}
 const siblings = computed(() => (p.value ? siblingsOf(idx.value, p.value.id).map((id) => idx.value.persons.get(id)).filter(Boolean) : []));
 
+const scrollTo = (x, y) => window.scrollTo(x, y);
 function startEdit() {
   Object.assign(form, Object.fromEntries([...FIELDS.map(([k]) => [k, p.value[k]]), ['sex', p.value.sex], ['living', p.value.living]]));
   editing.value = true;
@@ -55,17 +90,10 @@ async function save() {
   }
 }
 
-async function uploadPhoto(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const fd = new FormData();
-  fd.append('file', await shrinkImage(file), 'photo.jpg');
-  try {
-    await api('POST', `/api/persons/${p.value.id}/photo`, fd);
-    await loadTree();
-    toast('Фото добавлено');
-  } catch (err) { toast(err.message); }
-  e.target.value = '';
+// Фото в шапке: открыть его в альбоме, а если фото нет — добавить.
+function headPhoto() {
+  if (p.value.photo_id) album.value.show(p.value.photo_id);
+  else if (canEdit()) album.value.add();
 }
 
 async function removePerson() {
@@ -93,24 +121,20 @@ function showOnTree() {
   router.push('/');
 }
 
+async function reloadHistory() {
+  if (p.value) history.value = await api('GET', `/api/persons/${p.value.id}/history`);
+}
 async function loadHistory() {
   showHistory.value = !showHistory.value;
-  if (showHistory.value) history.value = await api('GET', `/api/persons/${p.value.id}/history`);
+  if (showHistory.value) await reloadHistory();
 }
-async function revert(h) {
-  await api('POST', `/api/changes/${h.id}/revert`);
-  await loadTree();
-  history.value = await api('GET', `/api/persons/${p.value.id}/history`);
-  toast('Правка отменена');
-}
-const ACTION = { create: 'добавил(а) человека', update: 'изменил(а)', delete: 'удалил(а)', restore: 'восстановил(а)', photo: 'сменил(а) фото' };
-function describe(h) {
-  if (h.action !== 'update') return ACTION[h.action] || h.action;
-  return 'изменил(а): ' + Object.keys(h.after || {}).map((k) => FIELD_LABEL[k] || k).join(', ');
-}
-const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 watch(() => props.id, () => { editing.value = false; showHistory.value = false; });
+onUnmounted(onLive((events) => {
+  if (!events.some((e) => e.kind === 'tree')) return;
+  loadSources();
+  if (showHistory.value) return reloadHistory();
+}));
 </script>
 
 <template>
@@ -123,14 +147,14 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
     </div>
 
     <div class="head">
-      <div class="photo" :class="p.sex" @click="canEdit() && fileInput.click()">
+      <div class="photo" :class="p.sex" @click="headPhoto">
         <img v-if="p.photo_id" :src="photoUrl(p.photo_id)" alt="" />
         <span v-else>{{ canEdit() ? '+ фото' : (p.given || '?')[0] }}</span>
       </div>
-      <input ref="fileInput" type="file" accept="image/*" hidden @change="uploadPhoto" />
       <h1>{{ fullName(p) }}</h1>
       <div class="muted">{{ [lifespan(p), kin].filter(Boolean).join(' · ') }}</div>
       <div v-if="p.birth_surname && p.birth_surname !== p.surname" class="muted small">урождённая(-ый) {{ p.birth_surname }}</div>
+      <FactBadge v-if="!p.hidden" :info="info('person', p.id, 'name')" :editable="canEdit()" @open="sheet = { fact: fact('person', p.id, 'name') }" />
     </div>
 
     <div v-if="missing.length && canEdit() && !editing" class="banner">Не хватает: {{ missing.join(', ') }}</div>
@@ -145,11 +169,15 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
         <button type="button" :class="{ on: !form.living }" @click="form.living = false">Умер(ла)</button>
       </div>
       <template v-for="[k, label] in FIELDS" :key="k">
-        <label class="field" v-if="form.living ? !['death_date', 'death_place', 'burial_place'].includes(k) : true">
-          <span>{{ label }}</span>
-          <textarea v-if="k === 'notes'" v-model="form[k]" />
-          <input v-else v-model="form[k]" :placeholder="k.endsWith('_date') ? 'например: 12.03.1890, около 1890, до 1917' : ''" />
-        </label>
+        <template v-if="form.living ? !['death_date', 'death_place', 'burial_place'].includes(k) : true">
+          <DateInput v-if="k.endsWith('_date')" v-model="form[k]" :label="label" placeholder="например: 12.03.1890, около 1890, до 1917" />
+          <PlaceInput v-else-if="k.endsWith('_place')" v-model="form[k]" :label="label" placeholder="например: д. Горки" />
+          <label v-else class="field">
+            <span>{{ label }}</span>
+            <textarea v-if="k === 'notes'" v-model="form[k]" />
+            <input v-else v-model="form[k]" />
+          </label>
+        </template>
       </template>
       <p class="error" v-if="error">{{ error }}</p>
       <div class="row">
@@ -161,11 +189,17 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
     <div v-else class="list">
       <template v-for="[k, label] in FIELDS" :key="k">
         <div v-if="p[k] && !['surname', 'given', 'patronymic', 'birth_surname'].includes(k)" class="fact">
-          <div class="muted small">{{ label }}</div>
-          <div class="pre">{{ p[k] }}</div>
+          <div class="grow">
+            <div class="muted small">{{ label }}</div>
+            <router-link v-if="k.endsWith('_place')" :to="{ path: '/place', query: { text: p[k] } }" class="placelink">{{ p[k] }}</router-link>
+            <div v-else class="pre">{{ k.endsWith('_date') ? dateText(p[k]) : p[k] }}</div>
+            <div v-if="k.endsWith('_place') && now(p[k])" class="muted small">сейчас: {{ now(p[k]) }}</div>
+          </div>
+          <FactBadge v-if="fact('person', p.id, k)" :info="info('person', p.id, k)" :editable="canEdit()" @open="sheet = { fact: fact('person', p.id, k) }" />
         </div>
       </template>
-      <div v-if="!FIELDS.some(([k]) => p[k] && !['surname', 'given', 'patronymic'].includes(k))" class="muted">Подробностей пока нет.</div>
+      <div v-if="p.hidden" class="muted small">Даты, места и фото живых родственников видны только участникам дерева.</div>
+      <div v-else-if="!FIELDS.some(([k]) => p[k] && !['surname', 'given', 'patronymic'].includes(k))" class="muted">Подробностей пока нет.</div>
     </div>
 
     <h2>Родители</h2>
@@ -186,12 +220,18 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
       <template v-for="m in marriages" :key="m.familyId">
         <router-link v-if="m.spouse" :to="`/person/${m.spouse.id}`">
           <div class="avatar" :class="m.spouse.sex">{{ (m.spouse.given || '?')[0] }}</div>
-          <div class="grow"><div class="ellipsis">{{ fullName(m.spouse) }}</div><div class="muted small">{{ m.spouse.sex === 'F' ? 'жена' : 'муж' }}<template v-if="m.fam.start_date"> · брак {{ m.fam.start_date }}</template></div></div>
+          <div class="grow"><div class="ellipsis">{{ fullName(m.spouse) }}</div><div class="muted small">{{ bond(m) }}</div></div>
+          <FactBadge v-if="!editing && !m.spouse.hidden && !p.hidden" :info="info('family', m.familyId, 'marriage')" :editable="canEdit()"
+            @open="sheet = { fact: fact('family', m.familyId, 'marriage') }" />
           <button v-if="editing" class="danger" @click.prevent="unlink(m.familyId, m.spouse.id, 'супруг')">✕</button>
         </router-link>
+        <button v-if="m.spouse && canEdit() && !editing" class="bond" @click="marriage = { family: m.fam, spouse: m.spouse }">
+          <span class="grow">{{ m.fam.start_date || m.fam.place ? 'Изменить' : 'Указать' }} {{ m.fam.kind === 'partners' ? 'сведения о союзе' : 'дату и место брака' }}</span>
+          <span class="muted">›</span>
+        </button>
         <router-link v-for="c in m.kids" :key="c.id" :to="`/person/${c.id}`" class="kid">
           <div class="avatar" :class="c.sex">{{ (c.given || '?')[0] }}</div>
-          <div class="grow"><div class="ellipsis">{{ fullName(c) }}</div><div class="muted small">{{ c.sex === 'F' ? 'дочь' : 'сын' }} · {{ lifespan(c) }}</div></div>
+          <div class="grow"><div class="ellipsis">{{ fullName(c) }}</div><div class="muted small">{{ [c.sex === 'F' ? 'дочь' : 'сын', lifespan(c)].filter(Boolean).join(' · ') }}</div></div>
           <button v-if="editing" class="danger" @click.prevent="unlink(m.familyId, c.id, 'ребёнок')">✕</button>
         </router-link>
       </template>
@@ -212,26 +252,31 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
       <div v-if="canEdit()" class="row"><button @click="openAdd({ to: p.id, type: 'sibling' })">+ Брат / сестра</button></div>
     </div>
 
+    <Life :person="p" :sources="sources" @edit="startEdit(); scrollTo(0, 0)" @changed="loadSources" />
+
+    <Album ref="album" :person="p" />
+
+    <Stories :person="p" />
+
+    <Sources :person="p" :data="sources" @cite="sheet = { fact: null }" @changed="loadSources" />
+
+    <Discussion :person="p" />
+
     <h2>Ещё</h2>
     <div class="list">
       <a href="#" @click.prevent="showOnTree">Показать в центре дерева</a>
       <a href="#" v-if="store.me?.person_id !== p.id" @click.prevent="setMe">Это я (считать родство от этого человека)</a>
       <a :href="`/api/print.pdf?root=${p.id}&mode=hourglass`" target="_blank">Распечатать дерево вокруг этого человека</a>
-      <a href="#" @click.prevent="loadHistory">История правок</a>
+      <a href="#" v-if="canTalk()" @click.prevent="loadHistory">История правок</a>
       <a href="#" v-if="canEdit()" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
     </div>
 
-    <div v-if="showHistory" class="list" style="margin-top:10px">
-      <div v-for="h in history" :key="h.id" class="hist">
-        <div class="grow">
-          <div class="small"><b>{{ h.user_name || 'Кто-то' }}</b> {{ describe(h) }}</div>
-          <div class="muted small">{{ when(h.at) }}<template v-if="h.action === 'update'"> · было: {{ Object.values(h.before || {}).map((v) => v === '' ? '—' : String(v)).join(', ') }}</template></div>
-        </div>
-        <button v-if="canEdit() && h.action === 'update' && !h.reverted_by" @click="revert(h)">Вернуть</button>
-        <span v-else-if="h.reverted_by" class="muted small">отменено</span>
-      </div>
-      <div v-if="!history.length" class="muted">Правок пока нет</div>
-    </div>
+    <FactSheet v-if="sheet" :key="sheet.fact ? sheet.fact.subject + sheet.fact.id + sheet.fact.fact : 'pick'" :fact="sheet.fact" :facts="facts"
+      :data="sources" :person="p" @close="sheet = null" @changed="loadSources" />
+
+    <MarriageSheet v-if="marriage" :family="marriage.family" :spouse="marriage.spouse" @close="marriage = null" />
+
+    <ChangeList v-if="showHistory" :ops="history" style="margin-top:10px" @reverted="reloadHistory" />
   </div>
 </template>
 
@@ -242,9 +287,12 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
 .photo.M { background: var(--male-soft); color: var(--male); }
 .photo.F { background: var(--female-soft); color: var(--female); }
 .photo img { width: 100%; height: 100%; object-fit: cover; }
-.fact { display: block !important; }
+.fact { align-items: flex-start !important; }
+.fact .badge { margin-top: 6px; }
+.head .badge { margin-top: 8px; }
 .pre { white-space: pre-wrap; }
+.placelink { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
 .kid { padding-left: 32px !important; }
+.bond { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; padding-left: 72px !important; color: var(--accent); font-size: 15px; min-height: 44px !important; }
 .danger-link { color: var(--danger) !important; }
-.hist { gap: 8px; }
 </style>

@@ -3,7 +3,8 @@ import { q } from './db.js';
 import { config } from './config.js';
 
 export const COOKIE = 'drevo_s';
-const RANK = { viewer: 1, editor: 2, owner: 3 };
+// Родственник видит всё, как участник, но дерево не правит: need('editor') его не пускает.
+const RANK = { viewer: 1, relative: 2, editor: 3, owner: 4 };
 
 export const hash = (t) => crypto.createHash('sha256').update(t).digest('hex');
 export const newToken = () => crypto.randomBytes(32).toString('base64url');

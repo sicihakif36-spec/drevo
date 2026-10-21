@@ -1,7 +1,7 @@
 import { q } from '../db.js';
 import { need, createInvite, startSession, hash, COOKIE } from '../auth.js';
 
-const ROLES = ['owner', 'editor', 'viewer'];
+const ROLES = ['owner', 'editor', 'relative', 'viewer'];
 const attempts = new Map();
 
 function limited(ip) {
@@ -39,9 +39,12 @@ export default async function userRoutes(app) {
     return { ok: true };
   });
 
-  app.patch('/api/me', { preHandler: need('viewer') }, async (req) => {
+  app.patch('/api/me', { preHandler: need('viewer') }, async (req, reply) => {
     const name = req.body?.name !== undefined ? String(req.body.name).trim().slice(0, 80) : undefined;
     const personId = req.body?.person_id;
+    if (personId && !(await q('select 1 from persons where id = $1 and deleted_at is null', [personId]))[0]) {
+      return reply.code(404).send({ error: 'Человек не найден' });
+    }
     if (name) await q('update users set name = $1 where id = $2', [name, req.user.id]);
     if (personId !== undefined) await q('update users set person_id = $1 where id = $2', [personId || null, req.user.id]);
     return (await q('select id, name, role, person_id from users where id = $1', [req.user.id]))[0];

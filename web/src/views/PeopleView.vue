@@ -1,12 +1,19 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { store } from '../store.js';
 import { photoUrl } from '../api.js';
 import { fullName, lifespan, missingFields } from '@shared/names.js';
 
+const route = useRoute();
+const router = useRouter();
 const query = ref('');
-const filter = ref('all');
 const FILTERS = [['all', 'Все'], ['nophoto', 'Без фото'], ['nodates', 'Без дат'], ['noparents', 'Без родителей'], ['living', 'Живые'], ['dead', 'Ушедшие']];
+// Фильтр живёт в адресе (/people?f=nophoto): на него ведут подсказки в ленте.
+const filter = computed(() => (FILTERS.some(([k]) => k === route.query.f) ? route.query.f : 'all'));
+const setFilter = (k) => router.replace({ query: k === 'all' ? {} : { f: k } });
+// Пришли по подсказке: выбранный фильтр может оказаться за краем экрана.
+onMounted(() => document.querySelector('.chip.on')?.scrollIntoView({ inline: 'center', block: 'nearest' }));
 
 const people = computed(() => {
   if (!store.idx) return [];
@@ -30,7 +37,7 @@ const people = computed(() => {
     <h1>Люди <span class="muted small">{{ store.tree?.persons.length || 0 }}</span></h1>
     <input v-model="query" placeholder="Поиск по имени, фамилии, месту" />
     <div class="chips" style="margin:10px 0">
-      <button v-for="[k, label] in FILTERS" :key="k" class="chip" :class="{ on: filter === k }" @click="filter = k">{{ label }}</button>
+      <button v-for="[k, label] in FILTERS" :key="k" class="chip" :class="{ on: filter === k }" @click="setFilter(k)">{{ label }}</button>
     </div>
     <div class="list">
       <router-link v-for="p in people" :key="p.id" :to="`/person/${p.id}`">

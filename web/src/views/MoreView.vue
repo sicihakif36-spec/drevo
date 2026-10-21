@@ -1,10 +1,11 @@
 <script setup>
 import { onMounted, ref } from 'vue';
-import { store, isOwner, loadTree, toast } from '../store.js';
+import { store, isOwner, canTalk, canEdit, loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { fullName } from '@shared/names.js';
+import { disablePush } from '../push.js';
 
-const ROLE = { owner: 'владелец', editor: 'участник', viewer: 'гость (только просмотр)' };
+const ROLE = { owner: 'владелец', editor: 'участник', relative: 'родственник: видит всё, не правит', viewer: 'гость (только просмотр)' };
 const title = ref(store.title);
 const installEvent = ref(null);
 const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -27,6 +28,8 @@ async function rename() {
 }
 async function logout() {
   if (!confirm('Выйти на этом устройстве? Войти снова можно будет только по новой ссылке.')) return;
+  // Этот телефон больше не получает уведомлений.
+  await disablePush().catch(() => {});
   await api('POST', '/api/logout');
   location.reload();
 }
@@ -47,10 +50,16 @@ async function logout() {
       <button v-else class="primary" @click="installEvent.prompt()">Установить</button>
     </div>
 
+    <div class="list" style="margin-top:12px">
+      <router-link to="/notify">Уведомления</router-link>
+    </div>
+
     <h2>Дерево</h2>
     <div class="list">
       <router-link to="/print">Печать и PDF</router-link>
-      <router-link to="/changes">Последние правки</router-link>
+      <router-link to="/places">Места</router-link>
+      <router-link v-if="canTalk()" to="/changes">Последние правки</router-link>
+      <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
       <a href="/api/export.ged" download>Скачать всё дерево (GEDCOM)</a>
       <router-link v-if="isOwner()" to="/family">Родственники и приглашения</router-link>
     </div>
@@ -62,7 +71,9 @@ async function logout() {
 
     <h2>О датах</h2>
     <div class="card small">
-      Даты можно писать как удобно: <b>12.03.1890</b>, <b>1890</b>, <b>около 1890</b>, <b>до 1917</b>, <b>между 1880 и 1885</b>. Для старых записей можно добавить «ст. ст.».
+      Даты можно писать как удобно: <b>12.03.1890</b>, <b>1890</b>, <b>около 1890</b>, <b>до 1917</b>, <b>между 1880 и 1885</b>.
+      Даты до 14 февраля 1918 года в старых документах — по старому стилю: отметьте галочку «по старому стилю» под датой,
+      и она покажется в обоих стилях: <b>12 (24) марта 1890</b>. Годовщины считаются по новому стилю.
     </div>
 
     <div style="margin-top:24px"><button class="danger block" @click="logout">Выйти на этом устройстве</button></div>

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import pg from 'pg';
 import { config } from './config.js';
 
@@ -12,7 +13,8 @@ export async function tx(fn) {
   const client = await pool.connect();
   try {
     await client.query('begin');
-    const res = await fn({ q: async (t, p) => (await client.query(t, p)).rows });
+    // op — общий номер записей журнала за это действие: откат отменяет его целиком.
+    const res = await fn({ q: async (t, p) => (await client.query(t, p)).rows, op: crypto.randomUUID() });
     await client.query('commit');
     return res;
   } catch (e) {

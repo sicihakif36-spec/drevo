@@ -1,5 +1,10 @@
 name: drevo
 
+# Журналы контейнеров: не больше 3 файлов по 10 МБ, иначе за годы они займут весь диск.
+x-logging: &logging
+  driver: json-file
+  options: { max-size: 10m, max-file: "3" }
+
 services:
   db:
     # Тот же закреплённый образ, что у «Мы рядом»: уже есть на сервере.
@@ -18,6 +23,7 @@ services:
       retries: 20
     mem_limit: 256m
     cpus: 1
+    logging: *logging
 
   app:
     build:
@@ -34,8 +40,11 @@ services:
       - "127.0.0.1:8095:8095"
     volumes:
       - media:/data
-    mem_limit: 384m
+    # Замер на дереве из 4373 человек с 2166 фото: печать всего дерева плакатом A0 — до 500 МБ,
+    # вместе с переводом 15-минутной записи в MP3 (ffmpeg, +20 МБ). При 384 МБ контейнер падал. Обычно — 60–100 МБ.
+    mem_limit: 768m
     cpus: 1
+    logging: *logging
 
 volumes:
   db:
