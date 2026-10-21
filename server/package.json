@@ -18,6 +18,10 @@
     "fastify": "5.12.7",
     "pdfkit": "0.20.2",
     "pg": "8.23.1",
-    "web-push": "3.6.7"
+    "web-push": "3.6.7",
+    "yazl": "3.3.1"
+  },
+  "devDependencies": {
+    "yauzl": "3.2.0"
   }
 }

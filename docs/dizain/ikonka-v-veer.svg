@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Вариант В «Веер предков»: вы в центре, выше — родители, ещё выше — бабушки и дедушки.
+       Безопасная зона — круг радиусом 180. -->
+  <rect width="512" height="512" fill="#0f5c55"/>
+  <path d="M88 315a168 168 0 0 1 336 0z" fill="#d6efeb"/>
+  <path d="M144 315a112 112 0 0 1 224 0z" fill="#ffffff"/>
+  <path d="M200 315a56 56 0 0 1 112 0z" fill="#f2c14e"/>
+  <g fill="none" stroke="#0f5c55" stroke-width="10">
+    <path d="M141 315a115 115 0 0 1 230 0M197 315a59 59 0 0 1 118 0"/>
+    <path d="M256 256V140M175 234l-50-50M337 234l50-50"/>
+  </g>
+  <rect x="84" y="330" width="344" height="16" rx="8" fill="#d6efeb"/>
+</svg>

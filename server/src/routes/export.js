@@ -56,10 +56,22 @@ const FACT_TAG = {
 
 // data.sources, data.citations, data.quality — источники (routes/sources.js, sourceData), data.events — события ленты жизни
 // (routes/timeline.js, eventData), data.places — справочник мест; без них — только дерево.
+// Для полного архива (src/archive.js): data.objects — файлы рядом с выгрузкой { id, file, form, type, title, persons, main }
+// (main — у кого из persons это главное фото),
+// data.stories — истории { id, title, date, body, persons }, у каждого человека записью NOTE.
 export function toGedcom(data) {
   const ids = new Map(data.persons.map((p, i) => [p.id, `@I${i + 1}@`]));
   const fids = new Map(data.families.map((f, i) => [f.id, `@F${i + 1}@`]));
   const sids = new Map((data.sources || []).map((s, i) => [s.id, `@S${i + 1}@`]));
+  const oids = new Map((data.objects || []).map((o, i) => [o.id, `@O${i + 1}@`]));
+  const nids = new Map((data.stories || []).map((s, i) => [s.id, `@N${i + 1}@`]));
+  const byPerson = (list) => {
+    const m = new Map();
+    for (const x of list || []) for (const id of x.persons) m.set(id, m.get(id) || []).get(id).push(x);
+    return m;
+  };
+  const objectsOf = byPerson(data.objects);
+  const storiesOf = byPerson(data.stories);
   const L = ['0 HEAD', '1 SOUR DREVO', '2 NAME Древо', '1 GEDC', '2 VERS 5.5.1', '2 FORM LINEAGE-LINKED', '1 CHAR UTF-8', '1 LANG Russian'];
   const flat = (v) => String(v).replace(/\r?\n/g, ' ');
   const line = (lvl, tag, val) => { if (val) L.push(`${lvl} ${tag} ${flat(val)}`); };
@@ -151,6 +163,14 @@ export function toGedcom(data) {
       sources(2, ev.id, 'EVEN');
     }
     sources(1, p.id, '');
+    // Файлы: главное фото первым, с пометкой _PRIM (её понимают Gramps, MyHeritage, RootsMagic).
+    const isMain = (o) => Boolean(o.main?.includes(p.id));
+    const own = [...(objectsOf.get(p.id) || [])].sort((a, b) => isMain(b) - isMain(a));
+    for (const o of own) {
+      L.push(`1 OBJE ${oids.get(o.id)}`);
+      if (isMain(o)) L.push('2 _PRIM Y');
+    }
+    for (const s of storiesOf.get(p.id) || []) L.push(`1 NOTE ${nids.get(s.id)}`);
     for (const f of data.families) if (f.partner1 === p.id || f.partner2 === p.id) L.push(`1 FAMS ${fids.get(f.id)}`);
     for (const c of data.children) if (c.child_id === p.id && fids.has(c.family_id)) L.push(`1 FAMC ${fids.get(c.family_id)}`);
   }
@@ -179,6 +199,21 @@ export function toGedcom(data) {
     line(1, '_TYPE', KINDS[s.kind]?.label);
     const text = [s.url, s.note].filter(Boolean).join('\n');
     if (text) note(1, text);
+    if (s.media_id && oids.has(s.media_id)) L.push(`1 OBJE ${oids.get(s.media_id)}`);
+  }
+  // Файлы — путь внутри архива, через «/»: так его понимают программы и на Windows, и на Mac.
+  for (const o of data.objects || []) {
+    L.push(`0 ${oids.get(o.id)} OBJE`);
+    L.push(`1 FILE ${o.file}`);
+    L.push(`2 FORM ${o.form}`);
+    line(3, 'TYPE', o.type);
+    line(2, 'TITL', o.title);
+  }
+  // Истории: заголовок, дата и текст одной заметкой.
+  for (const s of data.stories || []) {
+    const parts = [[s.title, s.date].filter(Boolean).join(', '), s.body].filter(Boolean).join('\n').split(/\r?\n/);
+    L.push(`0 ${nids.get(s.id)} NOTE ${parts[0] || ''}`.trimEnd());
+    for (const part of parts.slice(1)) L.push(`1 CONT ${part}`.trimEnd());
   }
   L.push('0 TRLR');
   return L.join('\n') + '\n';

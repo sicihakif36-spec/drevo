@@ -5,12 +5,12 @@ import { api } from '../api.js';
 import { addState, closeAdd } from './addState.js';
 import DateInput from './DateInput.vue';
 import PlaceInput from './PlaceInput.vue';
-import { fullName, lifespan, patronymicFrom, surnameFor, guessSex, parentsOf, spousesOf } from '@shared/names.js';
+import { fullName, nameGenitive, lifespan, patronymicFrom, surnameFor, guessSex, parentsOf, spousesOf } from '@shared/names.js';
 
 const emit = defineEmits(['done']);
 const REL = [
-  ['father', 'Отец'], ['mother', 'Мать'], ['spouse', 'Супруг(а)'],
-  ['child', 'Ребёнок'], ['sibling', 'Брат / сестра'],
+  ['father', 'Отец'], ['mother', 'Мать'], ['spouse', 'Муж или жена'],
+  ['child', 'Ребёнок'], ['sibling', 'Брат или сестра'],
 ];
 
 const idx = computed(() => store.idx);
@@ -92,6 +92,9 @@ const duplicates = computed(() => {
 
 const title = computed(() => {
   if (type.value === 'self') return 'Начнём с вас';
+  // Когда пол уже ясен — «Жена», «Брат», а не «Муж или жена».
+  const bySex = { spouse: { M: 'Муж', F: 'Жена' }, sibling: { M: 'Брат', F: 'Сестра' }, child: { M: 'Сын', F: 'Дочь' } };
+  if (bySex[type.value]?.[f.sex]) return bySex[type.value][f.sex];
   const r = REL.find((x) => x[0] === type.value);
   return r ? r[1] : 'Кого добавить?';
 });
@@ -128,7 +131,7 @@ const candidates = computed(() => {
   <div class="sheet-backdrop" @click="closeAdd" />
   <div class="sheet" role="dialog" aria-modal="true">
     <div class="row"><h1 class="grow">{{ title }}</h1><button class="ghost" @click="closeAdd" aria-label="Закрыть">✕</button></div>
-    <p class="muted small" v-if="target && type" style="margin-top:-8px">Кому: {{ fullName(target) }}</p>
+    <p class="muted" v-if="target && type" style="margin-top:-0.5rem">Родственник для: {{ fullName(target) }}</p>
 
     <template v-if="!to && type !== 'self'">
       <p class="muted">Кому добавляем родственника?</p>
@@ -139,8 +142,8 @@ const candidates = computed(() => {
     </template>
 
     <template v-else-if="!type">
-      <p class="muted">Кем приходится {{ target?.given ? 'для ' + target.given : '' }}?</p>
-      <div class="grid2">
+      <p class="who">Кто это для {{ nameGenitive(target) }}?</p>
+      <div class="grid2 rel">
         <button v-for="[k, label] in REL" :key="k" @click="type = k">{{ label }}</button>
       </div>
     </template>
@@ -169,7 +172,7 @@ const candidates = computed(() => {
           <button type="button" :class="{ on: !f.living }" @click="f.living = false">{{ f.sex === 'F' ? 'Умерла' : 'Умер' }}</button>
         </div>
       </div>
-      <div class="grid2">
+      <div>
         <DateInput v-model="f.birth_date" label="Рождение" placeholder="1950 или около 1890" />
         <DateInput v-if="!f.living" v-model="f.death_date" label="Смерть" placeholder="год или дата" />
       </div>
@@ -179,7 +182,7 @@ const candidates = computed(() => {
         Похоже, этот человек уже есть в дереве:
         <div v-for="d in duplicates" :key="d.id" class="row" style="margin-top:6px">
           <span class="grow">{{ fullName(d) }} <span class="small">{{ lifespan(d) }}</span></span>
-          <button type="button" @click="save(d.id)" :disabled="saving">Это он(а)</button>
+          <button type="button" @click="save(d.id)" :disabled="saving">{{ d.sex === 'F' ? 'Это она' : d.sex === 'M' ? 'Это он' : 'Это тот же человек' }}</button>
         </div>
       </div>
       <p class="error" v-if="error">{{ error }}</p>
@@ -188,3 +191,8 @@ const candidates = computed(() => {
     </form>
   </div>
 </template>
+
+<style scoped>
+.who { font-size: 1.111rem; font-weight: 700; margin: 0.5rem 0 0.667rem; }
+.rel button { min-height: 3.333rem; }
+</style>

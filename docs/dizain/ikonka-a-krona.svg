@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Вариант А «Крона». Фон во весь квадрат: форму (круг, скругление) задаёт телефон.
+       Рисунок — внутри круга радиусом 180 от центра (безопасная зона маски Android). -->
+  <rect width="512" height="512" fill="#46682a"/>
+  <g fill="#f6f1e7">
+    <circle cx="256" cy="166" r="78"/>
+    <circle cx="256" cy="228" r="104"/>
+    <circle cx="174" cy="246" r="76"/>
+    <circle cx="338" cy="246" r="76"/>
+    <path d="M232 300h48v74c0 14 10 24 30 30h-116c20-6 38-16 38-30z"/>
+    <rect x="164" y="398" width="184" height="20" rx="10"/>
+  </g>
+  <g fill="none" stroke="#46682a" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 330V190M256 268l-62-40M256 248l62-44"/>
+  </g>
+</svg>

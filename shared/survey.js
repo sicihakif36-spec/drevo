@@ -1,11 +1,11 @@
 // Анкета для родственника: что спрашиваем и в каком порядке. Одно описание для страницы по ссылке,
-// для загрузки ответов в дерево и для бумажного бланка (шаг 5): бланк печатает те же шаги и поля,
-// у «много» — несколько пустых мест (paper).
+// для загрузки ответов в дерево и для бумажного бланка (server/src/blank.js): бланк печатает те же шаги и поля,
+// у «много» — несколько пустых мест (paper). Подписи только для бумаги — paperLabel, paperHint, paperLines.
 import { parseDate, patronymicFrom, surnameFor } from './names.js';
 
 // Кем приходится человек тому, кто заполняет. many — сколько можно указать, sex — пол заранее.
 export const ROLES = {
-  self: { label: 'Вы' },
+  self: { label: 'Вы', paperLabel: 'Тот, кого опрашиваем' },
   spouse: { label: 'Муж или жена', many: 5, add: 'Ещё муж или жена', paper: 2 },
   child: { label: 'Ребёнок', many: 20, add: 'Добавить ребёнка', paper: 4 },
   father: { label: 'Отец', sex: 'M' },
@@ -26,8 +26,10 @@ export const STEPS = [
   { key: 'grand_f', title: 'Бабушка и дедушка по отцу', roles: ['ff', 'fm'], hint: 'Родители вашего отца.' },
   { key: 'grand_m', title: 'Бабушка и дедушка по матери', roles: ['mf', 'mm'], hint: 'Родители вашей матери.' },
   { key: 'siblings', title: 'Братья и сёстры', roles: ['sibling'], hint: 'Родные, двоюродных не нужно.' },
+  // На бланке рассказ — последней страницей, вся она в линиях.
   { key: 'story', title: 'Что ещё помните', story: true, hint: 'Расскажите своими словами: откуда семья, где жили, кем работали, что пережили, семейные истории.' },
-  { key: 'photos', title: 'Фотографии', photos: true, hint: 'Старые семейные фото, если они есть в телефоне. Можно подписать, кто на фото.' },
+  { key: 'photos', title: 'Фотографии', photos: true, hint: 'Старые семейные фото, если они есть в телефоне. Можно подписать, кто на фото.',
+    paperHint: 'Какие есть старые фото и документы, у кого хранятся. Потом их можно снять на телефон и добавить в анкету.', paperLines: 4 },
 ];
 
 // Поля о каждом человеке, в порядке на экране и на бумаге. dead — только у умерших.
@@ -43,7 +45,7 @@ export const FIELDS = [
   { key: 'death_date', label: 'Дата смерти', kind: 'date', dead: true, placeholder: 'год или дата' },
   { key: 'death_place', label: 'Место смерти', kind: 'place', dead: true },
   { key: 'occupation', label: 'Род занятий', placeholder: 'кем работал(а), где служил(а)' },
-  { key: 'notes', label: 'Что ещё знаете', kind: 'text' },
+  { key: 'notes', label: 'Что ещё знаете', kind: 'text', paperLines: 2 },
 ];
 
 export const TEXT_FIELDS = FIELDS.filter((f) => !f.kind || ['date', 'place', 'text'].includes(f.kind)).map((f) => f.key);

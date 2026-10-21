@@ -9,7 +9,7 @@ const emit = defineEmits(['select', 'placeholder', 'open']);
 
 const el = ref(null);
 const size = reactive({ w: 360, h: 600 });
-const view = reactive({ x: 0, y: 0, k: 0.65 });
+const view = reactive({ x: 0, y: 0, k: 0.95 });
 const MIN = 0.06;
 const MAX = 3;
 
@@ -141,11 +141,22 @@ watch(() => props.focusId, (id) => centerOn(id));
 
 const nodeIndex = computed(() => new Map(props.layout.nodes.map((n, i) => [n, i])));
 const person = (n) => props.idx.persons.get(n.id);
-const relLabel = { father: '+ отец', mother: '+ мать' };
+const relLabel = { father: 'Добавить отца', mother: 'Добавить мать' };
 const textW = (n) => BOX.w - (detail.value === 2 && person(n).photo_id ? BOX.h : 10) - 8;
-function fit(str, w, fs) {
-  const max = Math.floor(w / (fs * 0.56));
-  return str && str.length > max ? str.slice(0, Math.max(1, max - 1)) + '…' : str;
+
+// Обрезка по настоящей ширине текста; когда шрифт догрузится — пересчитать.
+const fontsReady = ref(0);
+document.fonts?.ready.then(() => fontsReady.value++);
+const measure = document.createElement('canvas').getContext('2d');
+const FONT = getComputedStyle(document.body).fontFamily || 'sans-serif';
+function fit(str, w, fs, bold) {
+  if (!str) return str;
+  fontsReady.value; // зависимость: перерисовать после загрузки шрифта
+  measure.font = `${bold ? 700 : 400} ${fs}px ${FONT}`;
+  if (measure.measureText(str).width <= w) return str;
+  let n = str.length - 1;
+  while (n > 1 && measure.measureText(str.slice(0, n) + '…').width > w) n--;
+  return str.slice(0, n) + '…';
 }
 </script>
 
@@ -167,10 +178,10 @@ function fit(str, w, fs) {
             <template v-if="detail > 0">
               <image v-if="detail === 2 && person(n).photo_id" :href="photoUrl(person(n).photo_id)" x="6" y="6" :width="BOX.h - 12" :height="BOX.h - 12" preserveAspectRatio="xMidYMid slice" clip-path="url(#ph)" />
               <g :transform="`translate(${detail === 2 && person(n).photo_id ? BOX.h : 10}, 0)`">
-                <text y="26" class="t1" :class="{ big: detail === 1 }">{{ fit(shortName(person(n)).last || shortName(person(n)).first, textW(n), detail === 1 ? 22 : 16) }}</text>
-                <text v-if="detail === 2 && shortName(person(n)).last" y="46" class="t2">{{ fit(shortName(person(n)).first, textW(n), 14) }}</text>
-                <text v-if="detail === 2" y="65" class="t3">{{ lifespan(person(n)) }}</text>
-                <text v-if="detail === 1" y="58" class="t1 big">{{ fit(person(n).given, textW(n), 22) }}</text>
+                <text :y="detail === 1 ? 30 : 25" class="t1" :class="{ big: detail === 1 }">{{ fit(shortName(person(n)).last || shortName(person(n)).first, textW(n), detail === 1 ? 24 : 18, true) }}</text>
+                <text v-if="detail === 2 && shortName(person(n)).last" y="46" class="t2">{{ fit(shortName(person(n)).first, textW(n), 16) }}</text>
+                <text v-if="detail === 2" y="66" class="t3">{{ fit(lifespan(person(n)), textW(n), 15) }}</text>
+                <text v-if="detail === 1" y="62" class="t1 big">{{ fit(person(n).given, textW(n), 24, true) }}</text>
               </g>
             </template>
           </template>
@@ -183,19 +194,18 @@ function fit(str, w, fs) {
 <style scoped>
 .canvas { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; overflow: hidden; cursor: grab; }
 svg { display: block; }
-.edge { fill: none; stroke: var(--muted); stroke-width: 2; }
-.edge.dashed { stroke-dasharray: 6 6; opacity: .6; }
-.box { fill: var(--card); stroke: var(--line); stroke-width: 2; }
+.edge { fill: none; stroke: var(--edge); stroke-width: 2.5; }
+.edge.dashed { stroke-dasharray: 7 6; }
+.box { fill: var(--card); stroke: var(--field); stroke-width: 2.5; }
 .box.M { fill: var(--male-soft); stroke: var(--male); }
 .box.F { fill: var(--female-soft); stroke: var(--female); }
-.box.dead { stroke-dasharray: none; opacity: .92; }
 .box.root { stroke-width: 4; }
-.box.sel { stroke: var(--accent); stroke-width: 5; }
-.ph { fill: transparent; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 8 6; }
-.ph-t { fill: var(--muted); font-size: 17px; }
+.box.sel { stroke: var(--accent); stroke-width: 6; }
+.ph { fill: transparent; stroke: var(--field); stroke-width: 2.5; stroke-dasharray: 8 6; }
+.ph-t { fill: var(--muted); font-size: 18px; font-weight: 700; }
 text { fill: var(--text); pointer-events: none; }
-.t1 { font-size: 16px; font-weight: 700; }
-.t1.big { font-size: 22px; }
-.t2 { font-size: 14px; }
-.t3 { font-size: 13px; fill: var(--muted); }
+.t1 { font-size: 18px; font-weight: 700; }
+.t1.big { font-size: 24px; }
+.t2 { font-size: 16px; }
+.t3 { font-size: 15px; }
 </style>

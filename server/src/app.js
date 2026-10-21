@@ -11,6 +11,7 @@ import userRoutes from './routes/users.js';
 import mediaRoutes, { MAX_FILE } from './routes/media.js';
 import printRoutes from './routes/print.js';
 import exportRoutes from './routes/export.js';
+import archiveRoutes from './routes/archive.js';
 import feedRoutes from './routes/feed.js';
 import commentRoutes from './routes/comments.js';
 import storyRoutes from './routes/stories.js';
@@ -18,6 +19,7 @@ import sourceRoutes from './routes/sources.js';
 import timelineRoutes from './routes/timeline.js';
 import placeRoutes from './routes/places.js';
 import surveyRoutes from './routes/surveys.js';
+import cardRoutes from './routes/cards.js';
 import { eventsPlugin } from './events.js';
 import { pushPlugin } from './push.js';
 
@@ -40,6 +42,7 @@ export async function buildApp(opts = {}) {
   await app.register(mediaRoutes);
   await app.register(printRoutes);
   await app.register(exportRoutes);
+  await app.register(archiveRoutes);
   await app.register(feedRoutes);
   await app.register(commentRoutes);
   await app.register(storyRoutes);
@@ -47,6 +50,7 @@ export async function buildApp(opts = {}) {
   await app.register(timelineRoutes);
   await app.register(placeRoutes);
   await app.register(surveyRoutes);
+  await app.register(cardRoutes);
   eventsPlugin(app, { ping: opts.eventsPing });
 
   app.get('/api/health', async () => {

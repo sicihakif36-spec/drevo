@@ -1,7 +1,7 @@
-// Лента жизни человека: сведения из дерева (рождение, браки, рождение детей, смерть, захоронение) и свои события вперемешку по годам.
+// Лента жизни человека (телефон и печать карточки): сведения из дерева (рождение, браки, рождение детей, смерть, захоронение) и свои события вперемешку по годам.
 // Приблизительные даты и периоды встают по первому году, без даты — в конце.
-import { fullName, parsePeriod, birthYear, spousesOf, yearsText } from '@shared/names.js';
-import { EVENT_KINDS, eventTitle } from '@shared/events.js';
+import { fullName, parsePeriod, birthYear, spousesOf, yearsText } from './names.js';
+import { EVENT_KINDS, eventTitle } from './events.js';
 
 // Пункт: { key, at — разбор даты, title, date, place, note, age, go — куда ведёт нажатие, event — своё событие }.
 // go: 'edit' — карточка человека, { person } — карточка другого, { family, spouse } — окно «Брак».

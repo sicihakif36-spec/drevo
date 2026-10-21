@@ -3,7 +3,7 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { store, canEdit, onLive } from '../store.js';
 import { api } from '../api.js';
-import { lifeItems } from '../life.js';
+import { lifeItems } from '@shared/life.js';
 import { dateText } from '@shared/names.js';
 import { factInfo } from '../sources.js';
 import FactBadge from './FactBadge.vue';

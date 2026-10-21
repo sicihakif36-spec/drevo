@@ -12,14 +12,14 @@ import { PAPER, planPages } from '../../../shared/printplan.js';
 
 const require = createRequire(import.meta.url);
 const fontDir = path.join(path.dirname(require.resolve('dejavu-fonts-ttf/package.json')), 'ttf');
-const FONTS = {
+export const FONTS = {
   regular: path.join(fontDir, 'DejaVuSans.ttf'),
   bold: path.join(fontDir, 'DejaVuSans-Bold.ttf'),
   serif: path.join(fontDir, 'DejaVuSerif.ttf'),
   serifBold: path.join(fontDir, 'DejaVuSerif-Bold.ttf'),
 };
 
-const THEMES = {
+export const THEMES = {
   classic: { font: 'serif', bold: 'serifBold', M: ['#eef3fa', '#5b7db1'], F: ['#fbeef2', '#b15b7d'], U: ['#f2f2f2', '#888888'], line: '#6b5a45', title: '#4a3826' },
   modern: { font: 'regular', bold: 'bold', M: ['#e3f0ff', '#2f6fd6'], F: ['#ffe6ef', '#d63f78'], U: ['#eeeeee', '#777777'], line: '#555555', title: '#222222' },
   bw: { font: 'regular', bold: 'bold', M: ['#ffffff', '#000000'], F: ['#ffffff', '#000000'], U: ['#ffffff', '#000000'], line: '#000000', title: '#000000' },

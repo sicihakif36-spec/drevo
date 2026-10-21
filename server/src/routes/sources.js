@@ -84,6 +84,27 @@ export async function sourceData(user) {
   };
 }
 
+// Источники и достоверность сведений человека, его браков и событий его ленты жизни; гостю — по правилам карточки.
+export async function personSources(user, id) {
+  const hidden = new Set(isGuest(user) ? await privateIds() : []);
+  if (hidden.has(id)) return { quality: [], citations: [], sources: [] };
+  const fams = (await q('select id, partner1, partner2 from families where partner1 = $1 or partner2 = $1', [id]))
+    .filter((f) => !hidden.has(f.partner1) && !hidden.has(f.partner2)).map((f) => f.id);
+  const events = (await visibleEvents(user, await q(
+    'select e.id from life_events e join event_persons ep on ep.event_id = e.id where ep.person_id = $1 and e.deleted_at is null', [id],
+  ))).map((e) => e.id);
+  const whose = (t) => `((${t}.subject = 'person' and ${t}.subject_id = $1) or (${t}.subject = 'family' and ${t}.subject_id = any($2::uuid[]))
+    or (${t}.subject = 'event' and ${t}.subject_id = any($3::uuid[])))`;
+  const [citations, quality] = await Promise.all([
+    q(`${CITATIONS} and ${whose('c')} order by c.created_at, c.id`, [id, fams, events]),
+    q(`select subject, subject_id, fact, quality from fact_quality x where ${whose('x')}`, [id, fams, events]),
+  ]);
+  const sources = await visible({ user }, await q(`${LIST} where s.id = any($1::uuid[]) and s.deleted_at is null order by s.created_at, s.id`,
+    [[...new Set(citations.map((c) => c.source_id))]]));
+  const shown = new Set(sources.map((s) => s.id));
+  return { quality, citations: citations.filter((c) => shown.has(c.source_id)), sources };
+}
+
 export default async function sourceRoutes(app) {
   // Все источники — чтобы выбрать уже записанный.
   app.get('/api/sources', { preHandler: need('viewer') }, async (req) => visible(req,
@@ -97,28 +118,7 @@ export default async function sourceRoutes(app) {
     return { ...shown, citations: await q(`${CITATIONS} and c.source_id = $1 order by c.created_at, c.id`, [s.id]) };
   });
 
-  // Источники и достоверность сведений человека, его браков и событий его ленты жизни.
-  app.get('/api/persons/:id/sources', { preHandler: need('viewer') }, async (req) => {
-    const id = req.params.id;
-    const guest = isGuest(req.user);
-    const hidden = new Set(guest ? await privateIds() : []);
-    if (hidden.has(id)) return { quality: [], citations: [], sources: [] };
-    const fams = (await q('select id, partner1, partner2 from families where partner1 = $1 or partner2 = $1', [id]))
-      .filter((f) => !hidden.has(f.partner1) && !hidden.has(f.partner2)).map((f) => f.id);
-    const events = (await visibleEvents(req.user, await q(
-      'select e.id from life_events e join event_persons ep on ep.event_id = e.id where ep.person_id = $1 and e.deleted_at is null', [id],
-    ))).map((e) => e.id);
-    const whose = (t) => `((${t}.subject = 'person' and ${t}.subject_id = $1) or (${t}.subject = 'family' and ${t}.subject_id = any($2::uuid[]))
-      or (${t}.subject = 'event' and ${t}.subject_id = any($3::uuid[])))`;
-    const [citations, quality] = await Promise.all([
-      q(`${CITATIONS} and ${whose('c')} order by c.created_at, c.id`, [id, fams, events]),
-      q(`select subject, subject_id, fact, quality from fact_quality x where ${whose('x')}`, [id, fams, events]),
-    ]);
-    const sources = await visible(req, await q(`${LIST} where s.id = any($1::uuid[]) and s.deleted_at is null order by s.created_at, s.id`,
-      [[...new Set(citations.map((c) => c.source_id))]]));
-    const shown = new Set(sources.map((s) => s.id));
-    return { quality, citations: citations.filter((c) => shown.has(c.source_id)), sources };
-  });
+  app.get('/api/persons/:id/sources', { preHandler: need('viewer') }, async (req) => personSources(req.user, req.params.id));
 
   // Новый источник; cite — сразу привязать к сведению (одно действие в журнале).
   app.post('/api/sources', { preHandler: need('editor') }, async (req) => {

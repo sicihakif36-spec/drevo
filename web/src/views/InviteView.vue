@@ -31,7 +31,7 @@ async function enter() {
     <h1>Добро пожаловать в семейное древо</h1>
     <div class="card">
       <p>Вас пригласили в закрытое семейное дерево. Здесь вся семья вместе записывает родных, даты и фотографии.</p>
-      <label class="field"><span>Как вас подписать (например, «Тётя Лена»)</span><input v-model="name" autocomplete="name" /></label>
+      <label class="field"><span>Как вас зовут в семье?</span><input v-model="name" autocomplete="name" placeholder="Например: тётя Лена" /></label>
       <p class="error" v-if="error">{{ error }}</p>
       <button class="primary block" :disabled="busy" @click="enter">{{ busy ? 'Вхожу…' : 'Войти' }}</button>
       <p class="muted small">Ссылка срабатывает один раз. После входа добавьте приложение на главный экран, чтобы открывать его как обычное.</p>
