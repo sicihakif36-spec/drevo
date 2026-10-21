@@ -258,7 +258,10 @@ test('лента: что нового, без отменённого, гостю
   const g = await feed(guest);
   assert.equal(g.items.filter((i) => i.fresh).length, 5);
   const text = JSON.stringify(g.items);
-  for (const s of ['05.05.2015', 'Тверь', 'Калинин', 'школьник', 'секрет', '1985', '2010', photo]) assert.ok(!text.includes(s), s);
+  assert.ok(!text.includes(photo), 'фото');
+  // Без номеров записей: случайный uuid может содержать «1985» или «2010».
+  const values = text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '');
+  for (const s of ['05.05.2015', 'Тверь', 'Калинин', 'школьник', 'секрет', '1985', '2010']) assert.ok(!values.includes(s), s);
   const entries = g.items.flatMap((i) => i.entries);
   assert.deepEqual(entries.find((e) => e.entity_id === kid.id && e.action === 'create').after, { surname: '', given: 'Лентовый', patronymic: '', sex: 'M' });
   assert.deepEqual(entries.find((e) => e.action === 'update' && e.entity === 'person').after, { birth_place: null, occupation: null });
