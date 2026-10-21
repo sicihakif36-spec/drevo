@@ -4,6 +4,7 @@ import { logChange, listOps, countNew } from '../changes.js';
 import { revertOp } from '../revert.js';
 import { HttpError, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
 import { guestTree, isGuest, privateIds } from '../privacy.js';
+import { listPlaces } from './places.js';
 
 function clean(body, fields) {
   const out = {};
@@ -31,17 +32,20 @@ async function insertPerson(db, data, userId) {
 export default async function personRoutes(app) {
   app.get('/api/tree', { preHandler: need('viewer') }, async (req) => {
     const guest = isGuest(req.user);
-    const [persons, families, children, settings, feedNew] = await Promise.all([
+    const [persons, families, children, settings, feedNew, places] = await Promise.all([
       q('select * from persons where deleted_at is null order by surname, given'),
       q('select * from families order by created_at'),
       q('select * from family_children'),
       q('select key, value from settings'),
       countNew(req.user.id, guest ? await privateIds() : []),
+      listPlaces(),
     ]);
     const data = { persons, families, children };
     return {
       ...(guest ? await guestTree(data) : data),
       settings: Object.fromEntries(settings.map((s) => [s.key, s.value])),
+      // Справочник мест: в нём нет данных людей, гостю тоже.
+      places,
       me: req.user,
       feed_new: feedNew,
     };
@@ -130,10 +134,10 @@ export default async function personRoutes(app) {
     });
   });
 
-  // История и откат — для тех, кто правит: в старых значениях есть данные живых, скрытые от гостей.
-  app.get('/api/persons/:id/history', { preHandler: need('editor') }, async (req) => listOps({ person: req.params.id, limit: 100 }));
+  // История — всем, кроме гостей: в старых значениях есть данные живых. Откат — только тем, кто правит.
+  app.get('/api/persons/:id/history', { preHandler: need('relative') }, async (req) => listOps({ person: req.params.id, limit: 100 }));
 
-  app.get('/api/changes', { preHandler: need('editor') }, async () => listOps({ limit: 50 }));
+  app.get('/api/changes', { preHandler: need('relative') }, async () => listOps({ limit: 50 }));
 
   // Отменить действие, в которое входит правка :id.
   app.post('/api/changes/:id/revert', { preHandler: need('editor') }, async (req) => {

@@ -3,7 +3,9 @@ import { computed, reactive, ref } from 'vue';
 import { store, canEdit, toast } from '../store.js';
 import { api } from '../api.js';
 import { factInfo } from '../sources.js';
-import { fullName, lifespan, parentsOf, spousesOf, childrenOf } from '@shared/names.js';
+import { fullName, dateText, lifespan, parentsOf, spousesOf, childrenOf } from '@shared/names.js';
+import DateInput from './DateInput.vue';
+import PlaceInput from './PlaceInput.vue';
 import { EVENT_KINDS, eventTitle } from '@shared/events.js';
 import FactBadge from './FactBadge.vue';
 import FactSheet from './FactSheet.vue';
@@ -123,8 +125,8 @@ async function remove() {
         </div>
         <template v-if="form.kind">
           <label v-if="k.main" class="field"><span>{{ k.title }}</span><input v-model="form.title" maxlength="300" :placeholder="k.hint" /></label>
-          <label class="field"><span>Когда</span><input v-model="form.date" maxlength="100" placeholder="например: 1941–1945, с 1950 по 1962, около 1930" /></label>
-          <label class="field"><span>{{ k.place || 'Где' }}</span><input v-model="form.place" maxlength="300" placeholder="например: г. Калинин" /></label>
+          <DateInput v-model="form.date" label="Когда" placeholder="например: 1941–1945, с 1950 по 1962, около 1930" />
+          <PlaceInput v-model="form.place" :label="k.place || 'Где'" placeholder="например: г. Калинин" />
           <label class="field"><span>Описание</span><textarea v-model="form.body" maxlength="20000" rows="4" placeholder="Что известно об этом" /></label>
 
           <button v-if="!more" type="button" class="block more" @click="more = true">Ещё: {{ [!k.main && k.title.toLowerCase(), k.military && 'часть и звание', !e && 'другие участники'].filter(Boolean).join(', ') }}</button>
@@ -167,8 +169,9 @@ async function remove() {
         <div class="muted">{{ EVENT_KINDS[e.kind]?.label }}</div>
         <h1>{{ k.main && e.title ? e.title : eventTitle(e) }}</h1>
         <div class="facts">
-          <div v-if="e.date"><span class="muted small">Когда</span>{{ e.date }}</div>
-          <div v-if="e.place"><span class="muted small">{{ k.place || 'Где' }}</span>{{ e.place }}</div>
+          <div v-if="e.date"><span class="muted small">Когда</span>{{ dateText(e.date) }}</div>
+          <div v-if="e.place"><span class="muted small">{{ k.place || 'Где' }}</span>
+            <router-link :to="{ path: '/place', query: { text: e.place } }" class="placelink">{{ e.place }}</router-link></div>
           <div v-if="e.title && !k.main"><span class="muted small">{{ k.title }}</span>{{ e.title }}</div>
           <div v-if="e.unit"><span class="muted small">Часть</span>{{ e.unit }}</div>
           <div v-if="e.rank"><span class="muted small">Звание</span>{{ e.rank }}</div>
@@ -229,6 +232,7 @@ h1 { font-size: 24px; overflow-wrap: anywhere; margin-top: 2px; }
 .facts span { display: block; }
 .body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 18px; line-height: 1.55; margin-top: 16px; }
 .added { margin-top: 14px; }
+.placelink { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
 .who { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
 .found { margin-top: 8px; }
 .pick { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; }

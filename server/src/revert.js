@@ -11,6 +11,8 @@ import { SOURCE_FIELDS } from '../../shared/sources.js';
 import { deleteSource, restoreSource, updateSource, cite, uncite, updateCitation, setQuality } from './sources.js';
 import { EVENT_FIELDS } from '../../shared/events.js';
 import { deleteEvent, restoreEvent, updateEvent, addParticipant, removeParticipant } from './timeline.js';
+import { PLACE_FIELDS } from '../../shared/places.js';
+import { deletePlace, restorePlace, updatePlace } from './places.js';
 
 const LATER = 'После этой правки были другие. Сначала отмените более поздние правки.';
 const GONE = 'Этот человек удалён. Сначала верните его.';
@@ -196,6 +198,28 @@ async function undoEvent(db, userId, e) {
   throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
 }
 
+// Место справочника. Новое название у людей возвращают их собственные записи в том же действии — здесь только само место.
+async function undoPlace(db, userId, e) {
+  const p = (await db.q('select * from places where id = $1 for update', [e.entity_id]))[0];
+  if (!p) throw new HttpError(404, 'Место не найдено');
+  switch (e.action) {
+    case 'add':
+    case 'restore':
+      if (p.deleted_at) throw new HttpError(409, 'Это место уже удалено');
+      return deletePlace(db, userId, p.id);
+    case 'delete':
+      return restorePlace(db, userId, p.id);
+    case 'update': {
+      if (p.deleted_at) throw new HttpError(409, 'Это место удалено. Сначала верните его.');
+      const before = e.before || {};
+      const id = await updatePlace(db, userId, p.id, pick(before, Object.keys(before).filter((c) => PLACE_FIELDS.includes(c))), { carry: false });
+      if (!id) throw new HttpError(409, 'Здесь уже всё как было до этой правки');
+      return id;
+    }
+  }
+  throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
+}
+
 // Сведение, к которому вернётся источник или отметка, на месте: человек и событие не удалены.
 async function factThere(db, subject, id) {
   if (subject === 'person' && !(await alive(db, id))) throw new HttpError(409, GONE);
@@ -270,7 +294,7 @@ export async function revertOp(db, userId, changeId) {
     if (e.entity === 'family') families.push(e.entity_id);
     const undo = {
       person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory, source: undoSource, citation: undoCitation, quality: undoQuality,
-      event: undoEvent,
+      event: undoEvent, place: undoPlace,
     }[e.entity];
     const id = await undo(db, userId, e);
     first ??= id;

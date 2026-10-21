@@ -14,6 +14,7 @@ import { snapshot } from '../src/album.js';
 import { snapshot as storySnapshot } from '../src/stories.js';
 import { createSource, cite, setQuality } from '../src/sources.js';
 import { createEvent } from '../src/timeline.js';
+import { createPlace } from '../src/places.js';
 import { demoImage, demoLetter, demoVoice } from './demo-media.js';
 
 if (process.env.NODE_ENV === 'production') { console.error('Не запускайте на рабочей базе'); process.exit(1); }
@@ -35,8 +36,9 @@ const soon = (n, year) => {
   d.setDate(d.getDate() + n);
   return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${year}`;
 };
-const ivan = await P({ sex: 'M', surname: 'Смирнов', given: 'Иван', patronymic: 'Фёдорович', b: 'около 1880', d: '1942', place: 'д. Горки, Тверская губ.' });
-const agr = await P({ sex: 'F', surname: 'Смирнова', given: 'Аграфена', patronymic: 'Петровна', birth_surname: 'Кузнецова', b: '1884', d: soon(7, 1976) });
+// У Ивана дата рождения по старому стилю: покажется как «12 (24) марта 1880».
+const ivan = await P({ sex: 'M', surname: 'Смирнов', given: 'Иван', patronymic: 'Фёдорович', b: '12.03.1880 ст. ст.', d: '1942', place: 'д. Горки' });
+const agr = await P({ sex: 'F', surname: 'Смирнова', given: 'Аграфена', patronymic: 'Петровна', birth_surname: 'Кузнецова', b: '1884', d: soon(7, 1976), place: 'г. Старица' });
 const nik = await P({ sex: 'M', surname: 'Орлов', given: 'Николай', patronymic: 'Степанович', b: '1890', d: '1944' });
 const pel = await P({ sex: 'F', surname: 'Орлова', given: 'Пелагея', patronymic: 'Ивановна', b: 'до 1895', d: '1971' });
 const petr = await P({ sex: 'M', surname: 'Смирнов', given: 'Пётр', patronymic: 'Иванович', b: '12.06.1912', d: soon(0, 1985), place: 'д. Горки' });
@@ -175,6 +177,14 @@ await tx(async (db) => {
 });
 await tx((db) => createEvent(db, ed.id, [yuri], { kind: 'study', date: '1963–1968', title: 'Калининский политехнический институт',
   place: 'г. Калинин', body: 'Инженер-механик, учился на вечернем, днём работал на заводе.' }));
+// Справочник мест: «д. Горки» и «г. Старица» в карточках станут полными старыми названиями.
+await tx(async (db) => {
+  await createPlace(db, u.id, { kind: 'village', name: 'Горки', volost: 'Ивановская', uezd: 'Старицкий', gubernia: 'Тверская',
+    now: 'Старицкий район, Тверская область', note: 'Церковь Троицы, приход села Горки.' }, 'д. Горки');
+  await createPlace(db, u.id, { kind: 'town', name: 'Старица', uezd: 'Старицкий', gubernia: 'Тверская', now: 'г. Старица, Тверская область' }, 'г. Старица');
+});
+// Родственница: видит всё, обсуждает, не правит.
+await pool.query("insert into users (name, role, feed_seen_at) values ('Бабушка Валя', 'relative', now() - interval '1 day')");
 // Обсуждение: Сергей писал давно, Елена — после его прошлого визита.
 const say = (person, user, body, ago) => pool.query(
   'insert into comments (person_id, user_id, body, created_at) values ($1, $2, $3, now() - $4::interval)', [person, user, body, ago]);

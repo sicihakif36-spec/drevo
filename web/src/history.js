@@ -188,8 +188,32 @@ function sourceLines(entries, name) {
   return lines;
 }
 
+// Места справочника: «добавил(а) место «деревня Горки, Старицкий уезд, Тверская губерния»». Новое название само
+// записывается в карточки — одной строкой: «записал(а) новое название места: Смирнов Иван Петрович, …».
+const PLACE_FIELD = {
+  kind: 'вид', name: 'название', volost: 'волость', uezd: 'уезд', gubernia: 'губернию', country: 'страну', now: 'как сейчас', note: 'заметку',
+};
+function placeLines(entries, name) {
+  const lines = [];
+  for (const e of entries.filter((x) => x.entity === 'place')) {
+    const x = e.after || e.before || {};
+    const t = x.title ? ` «${x.title}»` : '';
+    if (e.action === 'add') lines.push(`добавил(а) место${t} в справочник`);
+    if (e.action === 'delete') lines.push(`убрал(а) место${t} из справочника`);
+    if (e.action === 'restore') lines.push(`вернул(а) место${t} в справочник`);
+    if (e.action === 'update') {
+      const what = Object.keys(e.before || {}).filter((k) => PLACE_FIELD[k]).map((k) => PLACE_FIELD[k]).join(', ');
+      lines.push(`изменил(а) место${t}${what ? `: ${what}` : ''}`);
+    }
+  }
+  const who = [...new Set(entries.filter((e) => e.entity !== 'place').flatMap((e) => e.persons || []))].filter(Boolean).map(name);
+  if (who.length) lines.push(`записал(а) название места в карточки: ${who.join(', ')}`);
+  return lines;
+}
+
 // Строки действия. Служебные записи (пустая семья создана или убрана) не показываем.
 export function opLines(op, name) {
+  if (op.entries.some((e) => e.entity === 'place')) return placeLines(op.entries, name);
   // Первое фото само становится главным, удалённое перестаёт им быть — отдельной строкой это не показываем.
   const withFiles = op.entries.some((e) => e.entity === 'media' && ['add', 'delete', 'restore'].includes(e.action));
   const lines = [
@@ -209,11 +233,13 @@ export function opLines(op, name) {
 // У истории — только заголовок и дата: текст длинный, а запись голоса словами не покажешь. У источника — без скана и оборота.
 // У события — без вида и описания.
 const WAS = {
-  story: ['title', 'date'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'url'], event: ['date', 'place', 'title', 'unit', 'rank'],
+  story: ['title', 'date'], place: ['title', 'now'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'url'], event: ['date', 'place', 'title', 'unit', 'rank'],
 };
 export function opWas(op) {
+  // У правки места — только само место: в карточках было его прежнее название.
+  const withPlace = op.entries.some((e) => e.entity === 'place');
   return op.entries
-    .filter((e) => e.entity !== 'family' && e.action === 'update')
+    .filter((e) => (!withPlace || e.entity === 'place') && e.entity !== 'family' && e.action === 'update')
     .map((e) => Object.entries(e.before || {}).filter(([k]) => !WAS[e.entity] || WAS[e.entity].includes(k)).map(([, v]) => v))
     .filter((vals) => vals.length)
     .map((vals) => 'было: ' + vals.map((v) => (v === '' ? '—' : String(v))).join(', '));

@@ -4,21 +4,27 @@ import { sourceData } from './sources.js';
 import { eventData } from './timeline.js';
 import { citeText, sourceTitle, QUALITY, KINDS } from '../../../shared/sources.js';
 import { EVENT_KINDS } from '../../../shared/events.js';
-import { parsePeriod } from '../../../shared/names.js';
+import { parsePeriod, isOldStyle, withOldStyle } from '../../../shared/names.js';
+import { placeKey } from '../../../shared/places.js';
+import { listPlaces } from './places.js';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 // «12.03.1890» -> «12 MAR 1890», «около 1890» -> «ABT 1890», иначе фраза в скобках.
+// По старому стилю — с пометкой календаря: «12.03.1890 ст. ст.» -> «@#DJULIAN@ 12 MAR 1890».
 export function gedDate(text) {
-  const t = String(text || '').trim();
-  if (!t) return '';
+  const written = String(text || '').trim();
+  if (!written) return '';
+  const cal = isOldStyle(written) ? '@#DJULIAN@ ' : '';
+  const t = withOldStyle(written, false);
   const low = t.toLowerCase();
   let prefix = '';
   if (/^(около|ок\.|~|примерно)/.test(low)) prefix = 'ABT ';
   else if (/^до\b/.test(low)) prefix = 'BEF ';
   else if (/^после\b/.test(low)) prefix = 'AFT ';
   const between = low.match(/между\s+(\d{3,4})\s+и\s+(\d{3,4})/);
-  if (between) return `BET ${between[1]} AND ${between[2]}`;
+  if (between) return `BET ${cal}${between[1]} AND ${cal}${between[2]}`;
+  prefix += cal;
   const core = t.replace(/^(около|ок\.|~|примерно|до|после)\s*/i, '');
   let m = core.match(/^(\d{1,2})\.(\d{1,2})\.(\d{3,4})$/);
   if (m && Number(m[2]) >= 1 && Number(m[2]) <= 12) return `${prefix}${Number(m[1])} ${MONTHS[Number(m[2]) - 1]} ${m[3]}`;
@@ -26,7 +32,7 @@ export function gedDate(text) {
   if (m && Number(m[1]) >= 1 && Number(m[1]) <= 12) return `${prefix}${MONTHS[Number(m[1]) - 1]} ${m[2]}`;
   m = core.match(/^(\d{3,4})$/);
   if (m) return `${prefix}${m[1]}`;
-  return `(${t.replace(/[()]/g, '')})`;
+  return `(${written.replace(/[()]/g, '')})`;
 }
 
 // Период «1941–1945», «с 1950 по 1962» -> «FROM 1941 TO 1945», «с 1950» -> «FROM 1950»; одна дата — как gedDate.
@@ -36,6 +42,7 @@ export function gedPeriod(text) {
   if (!p || !(p.to || p.since) || /между/i.test(text)) return gedDate(text);
   const part = (t) => {
     const d = gedDate(t).replace(/^(ABT|BEF|AFT) /, '');
+    // Год из непонятной фразы — без пометки календаря: «(весна 1890 ст. ст.)» -> «1890».
     return d.startsWith('(') ? String(parsePeriod(t).year) : d;
   };
   return p.to ? `FROM ${part(p.from)} TO ${part(p.to)}` : `FROM ${part(p.from)}`;
@@ -48,7 +55,7 @@ const FACT_TAG = {
 };
 
 // data.sources, data.citations, data.quality — источники (routes/sources.js, sourceData), data.events — события ленты жизни
-// (routes/timeline.js, eventData); без них — только дерево.
+// (routes/timeline.js, eventData), data.places — справочник мест; без них — только дерево.
 export function toGedcom(data) {
   const ids = new Map(data.persons.map((p, i) => [p.id, `@I${i + 1}@`]));
   const fids = new Map(data.families.map((f, i) => [f.id, `@F${i + 1}@`]));
@@ -89,11 +96,17 @@ export function toGedcom(data) {
       L.push(`${lvl + 1} QUAY ${QUALITY[qy].quay}`);
     }
   };
+  // Место из справочника — с тем, как это сейчас.
+  const now = new Map((data.places || []).filter((x) => x.now).map((x) => [placeKey(x.title), x.now]));
+  const plac = (lvl, place) => {
+    line(lvl, 'PLAC', place);
+    if (place && now.has(placeKey(place))) line(lvl + 1, 'NOTE', `сейчас: ${now.get(placeKey(place))}`);
+  };
   const event = (tag, date, place, subjectId) => {
     if (!date && !place) return;
     L.push(`1 ${tag}`);
     line(2, 'DATE', gedDate(date));
-    line(2, 'PLAC', place);
+    plac(2, place);
     sources(2, subjectId, tag);
   };
   for (const p of data.persons) {
@@ -131,7 +144,7 @@ export function toGedcom(data) {
       L.push(`1 ${k.gedcom}${value ? ` ${flat(value)}` : ''}`);
       if (['EVEN', '_MILT'].includes(k.gedcom)) line(2, 'TYPE', k.label);
       line(2, 'DATE', gedPeriod(ev.date));
-      line(2, 'PLAC', ev.place);
+      plac(2, ev.place);
       const text = [!value && ev.title && `${k.title}: ${ev.title}`, ev.unit && `Часть: ${ev.unit}`, ev.rank && `Звание: ${ev.rank}`, ev.body]
         .filter(Boolean).join('\n');
       if (text) note(2, text);
@@ -173,7 +186,7 @@ export function toGedcom(data) {
 
 export default async function exportRoutes(app) {
   app.get('/api/export.ged', { preHandler: need('viewer') }, async (req, reply) => {
-    const data = { ...(await loadTreeData(req.user)), ...(await sourceData(req.user)), ...(await eventData(req.user)) };
+    const data = { ...(await loadTreeData(req.user)), ...(await sourceData(req.user)), ...(await eventData(req.user)), places: await listPlaces() };
     const date = new Date().toISOString().slice(0, 10);
     reply.header('Content-Type', 'text/plain; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="drevo-${date}.ged"`);

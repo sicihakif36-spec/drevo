@@ -12,6 +12,8 @@ import InviteView from './views/InviteView.vue';
 import ChangesView from './views/ChangesView.vue';
 import FeedView from './views/FeedView.vue';
 import NotifyView from './views/NotifyView.vue';
+import PlaceView from './views/PlaceView.vue';
+import PlacesView from './views/PlacesView.vue';
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -25,6 +27,8 @@ const router = createRouter({
     { path: '/family', component: FamilyView },
     { path: '/changes', component: ChangesView },
     { path: '/notify', component: NotifyView },
+    { path: '/place', component: PlaceView },
+    { path: '/places', component: PlacesView },
     { path: '/invite/:token', component: InviteView, props: true, meta: { public: true } },
   ],
   scrollBehavior: (to, from) => (to.path === from.path ? false : { top: 0 }),

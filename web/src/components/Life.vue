@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { store, canEdit, onLive } from '../store.js';
 import { api } from '../api.js';
 import { lifeItems } from '../life.js';
+import { dateText } from '@shared/names.js';
 import { factInfo } from '../sources.js';
 import FactBadge from './FactBadge.vue';
 import EventView from './EventView.vue';
@@ -89,7 +90,7 @@ function tap(x) {
 // Год слева — первый, у периода тоже; без года — «без даты».
 const year = (x) => (x.at ? String(x.at.year) : 'без даты');
 // Дата словами — если в ней есть что-то кроме года.
-const when = (x) => (x.date && x.date !== year(x) ? x.date : '');
+const when = (x) => (x.date && x.date !== year(x) ? dateText(x.date) : '');
 </script>
 
 <template>

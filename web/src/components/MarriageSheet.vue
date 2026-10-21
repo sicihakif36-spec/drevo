@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router';
 import { loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { fullName } from '@shared/names.js';
+import DateInput from './DateInput.vue';
+import PlaceInput from './PlaceInput.vue';
 
 // Окно «Брак» снизу: вид связи, дата и место, чем закончился (развод — с датой). Сохраняются только изменённые поля.
 const props = defineProps({ family: Object, spouse: Object });
@@ -51,18 +53,12 @@ function openSpouse() {
     <div class="field"><span class="lbl">Вид связи</span>
       <div class="seg"><button v-for="[k, l] in KINDS" :key="k" type="button" :class="{ on: form.kind === k }" @click="form.kind = k">{{ l }}</button></div>
     </div>
-    <label class="field"><span>{{ married ? 'Дата брака' : 'С какого времени вместе' }}</span>
-      <input v-model="form.start_date" maxlength="100" placeholder="например: 12.05.1945, около 1945" />
-    </label>
-    <label class="field"><span>{{ married ? 'Где венчались или расписались' : 'Где жили' }}</span>
-      <input v-model="form.place" maxlength="300" placeholder="например: Троицкая церковь с. Горки" />
-    </label>
+    <DateInput v-model="form.start_date" :label="married ? 'Дата брака' : 'С какого времени вместе'" placeholder="например: 12.05.1945, около 1945" />
+    <PlaceInput v-model="form.place" :label="married ? 'Где венчались или расписались' : 'Где жили'" placeholder="например: Троицкая церковь с. Горки" />
     <div class="field"><span class="lbl">Чем закончился</span>
       <div class="seg"><button v-for="[k, l] in ENDS" :key="k" type="button" :class="{ on: form.ended === k }" @click="form.ended = k">{{ l }}</button></div>
     </div>
-    <label v-if="form.ended === 'divorce'" class="field"><span>Дата развода</span>
-      <input v-model="form.end_date" maxlength="100" placeholder="например: 1962" />
-    </label>
+    <DateInput v-if="form.ended === 'divorce'" v-model="form.end_date" label="Дата развода" placeholder="например: 1962" />
 
     <p class="error" v-if="error">{{ error }}</p>
     <div class="row">

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { store, loadTree, canEdit, toast, onLive } from '../store.js';
+import { store, loadTree, canEdit, canTalk, toast, onLive } from '../store.js';
 import { api, photoUrl } from '../api.js';
 import { openAdd } from '../components/addState.js';
 import ChangeList from '../components/ChangeList.vue';
@@ -13,9 +13,12 @@ import MarriageSheet from '../components/MarriageSheet.vue';
 import Sources from '../components/Sources.vue';
 import FactBadge from '../components/FactBadge.vue';
 import FactSheet from '../components/FactSheet.vue';
+import DateInput from '../components/DateInput.vue';
+import PlaceInput from '../components/PlaceInput.vue';
+import { placeKey } from '@shared/places.js';
 import { factInfo, personFacts } from '../sources.js';
 import { FIELDS } from '../history.js';
-import { fullName, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields } from '@shared/names.js';
+import { fullName, dateText, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields } from '@shared/names.js';
 
 const props = defineProps({ id: String });
 const router = useRouter();
@@ -54,12 +57,14 @@ async function loadSources() {
 }
 // Дерево перечитывается при каждой правке — источники заново грузим только для другого человека.
 watch(() => `${props.id}:${Boolean(p.value)}:${Boolean(p.value?.hidden)}`, () => { sources.value = null; sheet.value = null; loadSources(); }, { immediate: true });
+// Как место из справочника называется сейчас.
+const now = (text) => store.tree?.places?.find((x) => placeKey(x.title) === placeKey(text))?.now || '';
 // «жена · брак 1945, с. Горки · развод 1962».
 function bond(m) {
   const f = m.fam;
   const who = m.spouse.sex === 'F' ? 'жена' : 'муж';
-  const start = f.start_date || f.place ? `${f.kind === 'partners' ? 'вместе с' : 'брак'} ${[f.start_date, f.place].filter(Boolean).join(', ')}` : '';
-  return [who, start, f.ended === 'divorce' && `развод${f.end_date ? ` ${f.end_date}` : ''}`].filter(Boolean).join(' · ');
+  const start = f.start_date || f.place ? `${f.kind === 'partners' ? 'вместе с' : 'брак'} ${[dateText(f.start_date), f.place].filter(Boolean).join(', ')}` : '';
+  return [who, start, f.ended === 'divorce' && `развод${f.end_date ? ` ${dateText(f.end_date)}` : ''}`].filter(Boolean).join(' · ');
 }
 const siblings = computed(() => (p.value ? siblingsOf(idx.value, p.value.id).map((id) => idx.value.persons.get(id)).filter(Boolean) : []));
 
@@ -164,11 +169,15 @@ onUnmounted(onLive((events) => {
         <button type="button" :class="{ on: !form.living }" @click="form.living = false">Умер(ла)</button>
       </div>
       <template v-for="[k, label] in FIELDS" :key="k">
-        <label class="field" v-if="form.living ? !['death_date', 'death_place', 'burial_place'].includes(k) : true">
-          <span>{{ label }}</span>
-          <textarea v-if="k === 'notes'" v-model="form[k]" />
-          <input v-else v-model="form[k]" :placeholder="k.endsWith('_date') ? 'например: 12.03.1890, около 1890, до 1917' : ''" />
-        </label>
+        <template v-if="form.living ? !['death_date', 'death_place', 'burial_place'].includes(k) : true">
+          <DateInput v-if="k.endsWith('_date')" v-model="form[k]" :label="label" placeholder="например: 12.03.1890, около 1890, до 1917" />
+          <PlaceInput v-else-if="k.endsWith('_place')" v-model="form[k]" :label="label" placeholder="например: д. Горки" />
+          <label v-else class="field">
+            <span>{{ label }}</span>
+            <textarea v-if="k === 'notes'" v-model="form[k]" />
+            <input v-else v-model="form[k]" />
+          </label>
+        </template>
       </template>
       <p class="error" v-if="error">{{ error }}</p>
       <div class="row">
@@ -182,7 +191,9 @@ onUnmounted(onLive((events) => {
         <div v-if="p[k] && !['surname', 'given', 'patronymic', 'birth_surname'].includes(k)" class="fact">
           <div class="grow">
             <div class="muted small">{{ label }}</div>
-            <div class="pre">{{ p[k] }}</div>
+            <router-link v-if="k.endsWith('_place')" :to="{ path: '/place', query: { text: p[k] } }" class="placelink">{{ p[k] }}</router-link>
+            <div v-else class="pre">{{ k.endsWith('_date') ? dateText(p[k]) : p[k] }}</div>
+            <div v-if="k.endsWith('_place') && now(p[k])" class="muted small">сейчас: {{ now(p[k]) }}</div>
           </div>
           <FactBadge v-if="fact('person', p.id, k)" :info="info('person', p.id, k)" :editable="canEdit()" @open="sheet = { fact: fact('person', p.id, k) }" />
         </div>
@@ -256,7 +267,7 @@ onUnmounted(onLive((events) => {
       <a href="#" @click.prevent="showOnTree">Показать в центре дерева</a>
       <a href="#" v-if="store.me?.person_id !== p.id" @click.prevent="setMe">Это я (считать родство от этого человека)</a>
       <a :href="`/api/print.pdf?root=${p.id}&mode=hourglass`" target="_blank">Распечатать дерево вокруг этого человека</a>
-      <a href="#" v-if="canEdit()" @click.prevent="loadHistory">История правок</a>
+      <a href="#" v-if="canTalk()" @click.prevent="loadHistory">История правок</a>
       <a href="#" v-if="canEdit()" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
     </div>
 
@@ -280,6 +291,7 @@ onUnmounted(onLive((events) => {
 .fact .badge { margin-top: 6px; }
 .head .badge { margin-top: 8px; }
 .pre { white-space: pre-wrap; }
+.placelink { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
 .kid { padding-left: 32px !important; }
 .bond { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; padding-left: 72px !important; color: var(--accent); font-size: 15px; min-height: 44px !important; }
 .danger-link { color: var(--danger) !important; }

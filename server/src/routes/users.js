@@ -1,7 +1,7 @@
 import { q } from '../db.js';
 import { need, createInvite, startSession, hash, COOKIE } from '../auth.js';
 
-const ROLES = ['owner', 'editor', 'viewer'];
+const ROLES = ['owner', 'editor', 'relative', 'viewer'];
 const attempts = new Map();
 
 function limited(ip) {

@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { api } from '../api.js';
+import { canEdit } from '../store.js';
 import ChangeList from '../components/ChangeList.vue';
 
 const ops = ref([]);
@@ -15,7 +16,7 @@ onMounted(load);
 <template>
   <div class="page">
     <h1>Последние правки</h1>
-    <p class="muted small">Любое действие можно отменить, а отменённое вернуть.</p>
+    <p class="muted small" v-if="canEdit()">Любое действие можно отменить, а отменённое вернуть.</p>
     <ChangeList v-if="loaded" :ops="ops" @reverted="load" />
     <div v-else class="muted">Загрузка…</div>
   </div>

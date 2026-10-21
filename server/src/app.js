@@ -16,6 +16,7 @@ import commentRoutes from './routes/comments.js';
 import storyRoutes from './routes/stories.js';
 import sourceRoutes from './routes/sources.js';
 import timelineRoutes from './routes/timeline.js';
+import placeRoutes from './routes/places.js';
 import { eventsPlugin } from './events.js';
 import { pushPlugin } from './push.js';
 
@@ -43,6 +44,7 @@ export async function buildApp(opts = {}) {
   await app.register(storyRoutes);
   await app.register(sourceRoutes);
   await app.register(timelineRoutes);
+  await app.register(placeRoutes);
   eventsPlugin(app, { ping: opts.eventsPing });
 
   app.get('/api/health', async () => {

@@ -3,6 +3,8 @@ import { computed, reactive, ref, watch } from 'vue';
 import { store, loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { addState, closeAdd } from './addState.js';
+import DateInput from './DateInput.vue';
+import PlaceInput from './PlaceInput.vue';
 import { fullName, lifespan, patronymicFrom, surnameFor, guessSex, parentsOf, spousesOf } from '@shared/names.js';
 
 const emit = defineEmits(['done']);
@@ -168,10 +170,10 @@ const candidates = computed(() => {
         </div>
       </div>
       <div class="grid2">
-        <label class="field"><span>Рождение</span><input v-model="f.birth_date" placeholder="1950 или около 1890" inputmode="text" /></label>
-        <label class="field" v-if="!f.living"><span>Смерть</span><input v-model="f.death_date" placeholder="год или дата" /></label>
+        <DateInput v-model="f.birth_date" label="Рождение" placeholder="1950 или около 1890" />
+        <DateInput v-if="!f.living" v-model="f.death_date" label="Смерть" placeholder="год или дата" />
       </div>
-      <label class="field"><span>Место рождения</span><input v-model="f.birth_place" placeholder="Город, село" /></label>
+      <PlaceInput v-model="f.birth_place" label="Место рождения" placeholder="Город, село" />
 
       <div v-if="duplicates.length && type !== 'self'" class="banner">
         Похоже, этот человек уже есть в дереве:

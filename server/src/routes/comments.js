@@ -1,5 +1,5 @@
 // Обсуждение у карточки: комментарии и воспоминания. Это не правка дерева, в журнал не пишется.
-// Пишут участники и владелец; изменить можно только своё, удалить — своё, а владелец — любое.
+// Пишут участники, родственники и владелец; изменить можно только своё, удалить — своё, а владелец — любое.
 // Гость читает обсуждение, кроме карточек живых (там бывают телефоны и адреса, как в заметках).
 import { q } from '../db.js';
 import { need } from '../auth.js';
@@ -48,7 +48,7 @@ export default async function commentRoutes(app) {
     return q(`${SELECT} and c.person_id = $1 order by c.created_at`, [p.id]);
   });
 
-  app.post('/api/persons/:id/comments', { preHandler: need('editor') }, async (req) => {
+  app.post('/api/persons/:id/comments', { preHandler: need('relative') }, async (req) => {
     const body = text(req.body);
     const p = await person(req.params.id);
     const { id } = (await q('insert into comments (person_id, user_id, body) values ($1, $2, $3) returning id', [p.id, req.user.id, body]))[0];
@@ -56,7 +56,7 @@ export default async function commentRoutes(app) {
     return (await q(`${SELECT} and c.id = $1`, [id]))[0];
   });
 
-  app.patch('/api/comments/:id', { preHandler: need('editor') }, async (req) => {
+  app.patch('/api/comments/:id', { preHandler: need('relative') }, async (req) => {
     const body = text(req.body);
     const c = await own(req, false);
     if (body === c.body) return c;
@@ -64,7 +64,7 @@ export default async function commentRoutes(app) {
     return (await q(`${SELECT} and c.id = $1`, [c.id]))[0];
   });
 
-  app.delete('/api/comments/:id', { preHandler: need('editor') }, async (req) => {
+  app.delete('/api/comments/:id', { preHandler: need('relative') }, async (req) => {
     const c = await own(req, true);
     await q('update comments set deleted_at = now() where id = $1', [c.id]);
     return { ok: true };

@@ -39,7 +39,7 @@ function moscow(now) {
 export function digestText(name, sex, entries, ops) {
   const n = { added: 0, removed: 0, photos: 0, docs: 0, dropPhotos: 0, dropDocs: 0, cards: new Set(), files: new Set(),
     stories: 0, dropStories: 0, storyEdits: new Set(), sources: 0, dropSources: 0, sourceEdits: new Set(), cited: new Set(), quality: 0,
-    events: 0, dropEvents: 0, eventEdits: new Set() };
+    events: 0, dropEvents: 0, eventEdits: new Set(), places: 0, dropPlaces: 0, placeEdits: new Set() };
   let links = 0;
   for (const op of ops) {
     const mine = entries.filter((e) => e.op === op);
@@ -47,7 +47,10 @@ export function digestText(name, sex, entries, ops) {
     const withFiles = mine.some((e) => e.entity === 'media' && ['add', 'delete'].includes(e.action));
     // Новый источник сразу привязывается к сведению: это часть добавления, а не правка.
     const newSources = new Set(mine.filter((e) => e.entity === 'source' && e.action === 'add').map((e) => e.entity_id));
+    // Новое название места само меняется в карточках: это часть правки места, а не правка карточек.
+    const withPlace = mine.some((e) => e.entity === 'place');
     for (const e of mine) {
+      if (withPlace && e.entity !== 'place') continue;
       if (e.entity === 'media') {
         if (e.action === 'add') n[e.after?.kind === 'doc' ? 'docs' : 'photos']++;
         else if (e.action === 'delete') n[e.before?.kind === 'doc' ? 'dropDocs' : 'dropPhotos']++;
@@ -68,6 +71,10 @@ export function digestText(name, sex, entries, ops) {
         const id = (e.after || e.before)?.source_id;
         if (e.action !== 'add') n.sourceEdits.add(id);
         else if (!newSources.has(id)) n.cited.add(id);
+      } else if (e.entity === 'place') {
+        if (e.action === 'add') n.places++;
+        else if (e.action === 'delete') n.dropPlaces++;
+        else n.placeEdits.add(e.entity_id);
       } else if (e.entity === 'quality') {
         n.quality++;
       } else if (e.entity === 'person') {
@@ -82,15 +89,16 @@ export function digestText(name, sex, entries, ops) {
   const stories = (k) => k && plural(k, 'историю', 'истории', 'историй');
   const sources = (k) => k && plural(k, 'источник', 'источника', 'источников');
   const events = (k) => k && plural(k, 'событие', 'события', 'событий');
+  const places = (k) => k && plural(k, 'место', 'места', 'мест');
   const groups = [
     [verb('добавил', sex), [n.added && plural(n.added, 'человека', 'человек', 'человек'), n.photos && `${n.photos} фото`, docs(n.docs), stories(n.stories),
-      events(n.events), sources(n.sources)]],
+      events(n.events), sources(n.sources), places(n.places)]],
     [verb('изменил', sex), [n.cards.size && plural(n.cards.size, 'карточку', 'карточки', 'карточек'), n.files.size && `${n.files.size} фото`,
-      stories(n.storyEdits.size), events(n.eventEdits.size), sources(n.sourceEdits.size), links && plural(links, 'связь', 'связи', 'связей')]],
+      stories(n.storyEdits.size), events(n.eventEdits.size), sources(n.sourceEdits.size), places(n.placeEdits.size), links && plural(links, 'связь', 'связи', 'связей')]],
     [verb('указал', sex), [sources(n.cited.size)]],
     [verb('отметил', sex), [n.quality && `достоверность ${plural(n.quality, 'сведения', 'сведений', 'сведений')}`]],
     [verb('удалил', sex), [n.removed && plural(n.removed, 'человека', 'человек', 'человек'), n.dropPhotos && `${n.dropPhotos} фото`, docs(n.dropDocs), stories(n.dropStories),
-      events(n.dropEvents), sources(n.dropSources)]],
+      events(n.dropEvents), sources(n.dropSources), places(n.dropPlaces)]],
   ].map(([v, items]) => [v, items.filter(Boolean)]).filter(([, items]) => items.length);
   const what = groups.map(([v, items]) => `${v} ${items.length > 1 ? `${items.slice(0, -1).join(', ')} и ${items.at(-1)}` : items[0]}`).join(', ');
   return `${name || 'Кто-то'} ${what || `${verb('сделал', sex)} ${plural(ops.length, 'правку', 'правки', 'правок')}`}`;

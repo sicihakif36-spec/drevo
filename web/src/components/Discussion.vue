@@ -1,7 +1,7 @@
 <script setup>
 import { nextTick, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { store, canEdit, isOwner, toast, onLive } from '../store.js';
+import { store, canTalk, isOwner, toast, onLive } from '../store.js';
 import { api } from '../api.js';
 
 // Обсуждение у карточки: воспоминания и комментарии родственников.
@@ -91,14 +91,14 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
       </form>
       <template v-else>
         <div class="pre">{{ c.body }}</div>
-        <div v-if="canEdit() && (mine(c) || isOwner())" class="row">
+        <div v-if="canTalk() && (mine(c) || isOwner())" class="row">
           <button v-if="mine(c)" class="ghost" @click="startEdit(c)">Изменить</button>
           <button class="danger" @click="remove(c)">Удалить</button>
         </div>
       </template>
     </div>
-    <div v-if="loaded && !comments.length" class="muted">{{ canEdit() ? 'Пока никто не писал. Поделитесь воспоминанием или спросите родных.' : 'Пока никто не писал.' }}</div>
-    <form v-if="loaded && canEdit()" class="new" @submit.prevent="send">
+    <div v-if="loaded && !comments.length" class="muted">{{ canTalk() ? 'Пока никто не писал. Поделитесь воспоминанием или спросите родных.' : 'Пока никто не писал.' }}</div>
+    <form v-if="loaded && canTalk()" class="new" @submit.prevent="send">
       <textarea v-model="draft" maxlength="5000" placeholder="Воспоминание, вопрос или уточнение" />
       <button class="primary block" :disabled="sending || !draft.trim()">{{ sending ? 'Отправляю…' : 'Отправить' }}</button>
     </form>

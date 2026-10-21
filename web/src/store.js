@@ -45,7 +45,11 @@ export async function loadTree() {
   }
 }
 
-export const canEdit = () => store.me && store.me.role !== 'viewer';
+// Правят дерево владелец и участник. Родственник видит всё, как участник, и обсуждает, но не правит; гость у живых видит только имена.
+export const canEdit = () => ['owner', 'editor'].includes(store.me?.role);
+export const isGuest = () => store.me?.role === 'viewer';
+// Обсуждать и смотреть историю правок — все, кроме гостей.
+export const canTalk = () => Boolean(store.me) && !isGuest();
 export const isOwner = () => store.me?.role === 'owner';
 
 // Обновления у всех сразу: сервер сообщает о правках (GET /api/events), телефон перечитывает нужное.
