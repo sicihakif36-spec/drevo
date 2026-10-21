@@ -45,7 +45,7 @@ const hints = computed(() => {
 });
 
 const name = computed(() => namer(items.value.filter((i) => i.kind === 'op'), store.idx));
-const feed = computed(() => items.value.map((i) => ({ ...i, lines: opLines(i, name.value) })));
+const feed = computed(() => items.value.map((i) => (i.kind === 'op' ? { ...i, lines: opLines(i, name.value) } : { ...i, who: name.value(i.person_id) })));
 const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 </script>
 
@@ -80,12 +80,22 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
     <div v-if="error" class="error">{{ error }}</div>
     <div v-else-if="!loaded" class="muted">Загрузка…</div>
     <div v-else class="list">
-      <div v-for="it in feed" :key="it.kind + it.id" :class="{ fresh: it.fresh }">
-        <div class="grow">
-          <div class="small"><b>{{ it.user_name || 'Кто-то' }}</b> <span class="muted">· {{ when(it.at) }}</span><span v-if="it.fresh" class="badge">новое</span></div>
-          <div v-for="(l, i) in it.lines" :key="i">{{ l }}</div>
+      <template v-for="it in feed" :key="it.kind + it.id">
+        <router-link v-if="it.kind === 'comment'" :to="`/person/${it.person_id}?talk=1`" :class="{ fresh: it.fresh }">
+          <div class="grow">
+            <div class="small"><b>{{ it.user_name || 'Кто-то' }}</b> <span class="muted">· {{ when(it.at) }}</span><span v-if="it.fresh" class="badge">новое</span></div>
+            <div>написал(а) в обсуждении: {{ it.who }}</div>
+            <div class="quote">{{ it.body }}</div>
+          </div>
+          <span class="muted">›</span>
+        </router-link>
+        <div v-else :class="{ fresh: it.fresh }">
+          <div class="grow">
+            <div class="small"><b>{{ it.user_name || 'Кто-то' }}</b> <span class="muted">· {{ when(it.at) }}</span><span v-if="it.fresh" class="badge">новое</span></div>
+            <div v-for="(l, i) in it.lines" :key="i">{{ l }}</div>
+          </div>
         </div>
-      </div>
+      </template>
       <div v-if="!feed.length" class="muted">Пока ничего не происходило</div>
     </div>
   </div>
@@ -97,5 +107,6 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 .round { background: var(--accent-soft); }
 .accent { color: var(--accent); font-weight: 600; }
 .fresh { box-shadow: inset 3px 0 var(--accent); }
+.quote { margin-top: 2px; color: var(--muted); font-style: italic; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .badge { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 12px; }
 </style>

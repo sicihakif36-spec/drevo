@@ -59,6 +59,12 @@ await tx(async (db) => {
   await db.q("update persons set notes = 'Пекла лучшие пироги в деревне.' where id = $1", [agr]);
   await logChange(db, ed.id, 'person', agr, 'update', { notes: '' }, { notes: 'Пекла лучшие пироги в деревне.' });
 });
+// Обсуждение: Сергей писал давно, Елена — после его прошлого визита.
+const say = (person, user, body, ago) => pool.query(
+  'insert into comments (person_id, user_id, body, created_at) values ($1, $2, $3, now() - $4::interval)', [person, user, body, ago]);
+await say(agr, u.id, 'Кто помнит, где стоял её дом в Горках?', '3 days');
+await say(agr, ed.id, 'Дом стоял у колодца, напротив церкви.\nБабушка рассказывала, что окна были синие.', '2 hours');
+await say(petr, ed.id, 'Дедушка Петя всю жизнь хранил письма с фронта от брата Василия. Они у мамы в шкатулке.', '1 hour');
 const { url } = await createInvite({ role: 'owner', label: 'Сергей', forUser: u.id });
 console.log(url);
 await pool.end();

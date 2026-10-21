@@ -5,6 +5,7 @@ import { store, loadTree, canEdit, toast } from '../store.js';
 import { api, photoUrl, shrinkImage } from '../api.js';
 import { openAdd } from '../components/addState.js';
 import ChangeList from '../components/ChangeList.vue';
+import Discussion from '../components/Discussion.vue';
 import { FIELDS } from '../history.js';
 import { fullName, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields } from '@shared/names.js';
 
@@ -198,6 +199,8 @@ watch(() => props.id, () => { editing.value = false; showHistory.value = false; 
       <div v-if="!siblings.length && !canEdit()" class="muted">Не указаны</div>
       <div v-if="canEdit()" class="row"><button @click="openAdd({ to: p.id, type: 'sibling' })">+ Брат / сестра</button></div>
     </div>
+
+    <Discussion :person="p" />
 
     <h2>Ещё</h2>
     <div class="list">

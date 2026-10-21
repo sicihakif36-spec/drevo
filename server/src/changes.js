@@ -39,15 +39,20 @@ export async function listOps({ person = null, limit = 50, standing = false } = 
   return out;
 }
 
-// Сколько действий других людей появилось после того, как человек открывал ленту.
-export async function countNew(userId) {
+// Сколько действий и комментариев других людей появилось после того, как человек открывал ленту.
+// hidden — люди, чьи обсуждения ему не видны (см. privateIds).
+export async function countNew(userId, hidden = []) {
   const rows = await q(
-    `select count(*)::int as n from (
+    `with seen as (select feed_seen_at as at from users where id = $1)
+     select (select count(*) from (
        select c.op from changes c
-       where c.at > (select feed_seen_at from users where id = $1) and c.user_id is distinct from $1
+       where c.at > (select at from seen) and c.user_id is distinct from $1
        group by c.op having ${STANDS}
-     ) s`,
-    [userId],
+     ) s) + (select count(*) from comments c join persons p on p.id = c.person_id
+       where c.created_at > (select at from seen) and c.user_id <> $1
+         and c.deleted_at is null and p.deleted_at is null and not (c.person_id = any($2::uuid[]))
+     ) as n`,
+    [userId, hidden],
   );
-  return rows[0].n;
+  return Number(rows[0].n);
 }

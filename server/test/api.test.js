@@ -286,3 +286,75 @@ test('лента: что нового, без отменённого, гостю
   assert.equal((await call(editor, 'POST', '/api/feed/seen', { at: 'вчера' })).statusCode, 200);
   assert.equal((await app.inject({ url: '/api/feed' })).statusCode, 401);
 });
+
+test('обсуждение: кто пишет, правит и удаляет; гостю — без живых; в ленте и подсчёте новых', async () => {
+  const editor = await login('editor');
+  const other = await login('editor');
+  const guest = await login('viewer');
+  const feed = async (cookie) => (await call(cookie, 'GET', '/api/feed')).json();
+  const newCount = async (cookie) => (await call(cookie, 'GET', '/api/tree')).json().feed_new;
+  const seen = async (cookie) => call(cookie, 'POST', '/api/feed/seen', { at: (await feed(cookie)).now });
+  const list = (cookie, id) => call(cookie, 'GET', `/api/persons/${id}/comments`);
+  const write = (cookie, id, body) => call(cookie, 'POST', `/api/persons/${id}/comments`, { body });
+  const gone = await add({ given: 'Прадед', sex: 'M', living: false, birth_date: '1900', death_date: '1970' });
+  const living = await add({ given: 'Внучка', sex: 'F', birth_date: '2000' });
+  for (const c of [ownerCookie, editor, other, guest]) await seen(c);
+
+  // Участник пишет и правит своё; пустое и слишком длинное — отказ.
+  let r = await write(editor, gone.id, '  Воевал под Ржевом.\nВернулся в 1945.  ');
+  assert.equal(r.statusCode, 200, r.body);
+  const c1 = r.json();
+  assert.equal(c1.body, 'Воевал под Ржевом.\nВернулся в 1945.');
+  assert.equal(c1.updated_at, null);
+  assert.equal((await write(editor, gone.id, '   ')).statusCode, 400);
+  assert.equal((await write(editor, gone.id, 'а'.repeat(5001))).statusCode, 400);
+  r = await call(editor, 'PATCH', `/api/comments/${c1.id}`, { body: 'Воевал под Ржевом, вернулся в 1945.' });
+  assert.equal(r.statusCode, 200);
+  assert.ok(r.json().updated_at);
+  const c2 = (await write(editor, living.id, 'Её телефон 8-900-000-00-00')).json();
+  const c3 = (await write(other, gone.id, 'Помню его пасеку.')).json();
+
+  // Гость не пишет; чужое не правится и не удаляется участником; владелец удаляет чужое, но не правит.
+  assert.equal((await write(guest, gone.id, 'привет')).statusCode, 403);
+  assert.equal((await call(other, 'PATCH', `/api/comments/${c1.id}`, { body: 'чужое' })).statusCode, 403);
+  assert.equal((await call(other, 'DELETE', `/api/comments/${c1.id}`)).statusCode, 403);
+  assert.equal((await call(ownerCookie, 'PATCH', `/api/comments/${c3.id}`, { body: 'чужое' })).statusCode, 403);
+  assert.equal((await call(ownerCookie, 'DELETE', `/api/comments/${c3.id}`)).statusCode, 200);
+  assert.equal((await call(other, 'PATCH', `/api/comments/${c3.id}`, { body: 'снова' })).statusCode, 404);
+  const own = (await write(other, gone.id, 'Ошибся, удалю.')).json();
+  assert.equal((await call(other, 'DELETE', `/api/comments/${own.id}`)).statusCode, 200);
+
+  // Гость читает обсуждение ушедшего, но не живого.
+  r = await list(guest, gone.id);
+  assert.equal(r.statusCode, 200);
+  assert.deepEqual(r.json().map((c) => c.id), [c1.id]);
+  assert.equal((await list(guest, living.id)).statusCode, 403);
+  assert.equal((await list(editor, living.id)).json().length, 1);
+
+  // Лента и подсчёт: чужие комментарии — новые, свои — нет; гостю — без комментариев живых.
+  assert.equal(await newCount(editor), 0);
+  assert.equal(await newCount(other), 2);
+  assert.equal(await newCount(ownerCookie), 2);
+  assert.equal(await newCount(guest), 1);
+  let f = await feed(ownerCookie);
+  const fc = f.items.filter((i) => i.kind === 'comment');
+  assert.deepEqual(fc.map((i) => i.id), [c2.id, c1.id]);
+  assert.ok(fc.every((i) => i.fresh && i.user_name && i.person_id));
+  assert.ok(f.items.slice(1).every((i, n) => i.at <= f.items[n].at), 'по времени, новые сверху');
+  const g = await feed(guest);
+  assert.deepEqual(g.items.filter((i) => i.kind === 'comment').map((i) => i.id), [c1.id]);
+  assert.ok(!JSON.stringify(g.items).includes('8-900'));
+  assert.ok((await feed(other)).items.length <= 50);
+
+  // Комментарии удалённого человека не видны нигде, после возврата — снова видны.
+  const del = (await call(ownerCookie, 'DELETE', `/api/persons/${gone.id}`)).json();
+  assert.equal((await list(ownerCookie, gone.id)).statusCode, 404);
+  assert.equal((await call(editor, 'PATCH', `/api/comments/${c1.id}`, { body: 'x' })).statusCode, 404);
+  assert.equal((await write(editor, gone.id, 'x')).statusCode, 404);
+  f = await feed(ownerCookie);
+  assert.ok(!f.items.some((i) => i.id === c1.id));
+  await seen(guest);
+  assert.equal((await call(ownerCookie, 'POST', `/api/changes/${del.changeId}/revert`)).statusCode, 200);
+  assert.equal((await list(ownerCookie, gone.id)).json().length, 1);
+  assert.ok((await feed(ownerCookie)).items.some((i) => i.id === c1.id));
+});

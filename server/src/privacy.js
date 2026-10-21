@@ -1,5 +1,6 @@
 // Гости (только просмотр) видят у живых родственников лишь имена: без дат, мест, заметок и фото.
 import { isPrivate } from '../../shared/names.js';
+import { q } from './db.js';
 
 const HIDDEN = {
   birth_surname: '', birth_date: '', birth_place: '', death_date: '', death_place: '', burial_place: '',
@@ -37,4 +38,10 @@ export function trimEntry(e) {
   if (e.action === 'create' || e.action === 'drop') return both(familySnap);
   if (e.action === 'update') return both(fieldsOnly);
   return both((x) => pick(x, LINK));
+}
+
+// Кого гость видит без подробностей: их карточки, обсуждения и комментарии в ленте скрыты.
+export async function privateIds() {
+  const rows = await q('select id, living, birth_date from persons where living and deleted_at is null');
+  return rows.filter((p) => isPrivate(p)).map((p) => p.id);
 }

@@ -1,24 +1,36 @@
-// Лента «что нового»: последние действия, которые остались в силе. Новое — действия других людей
-// после прошлого визита. Позже сюда же добавятся обсуждения (каждый элемент ленты — со своим kind).
+// Лента «что нового»: последние действия, которые остались в силе, и комментарии вперемешку по времени.
+// Новое — действия и комментарии других людей после прошлого визита.
 import { q } from '../db.js';
 import { need } from '../auth.js';
 import { listOps } from '../changes.js';
-import { isGuest, trimEntry } from '../privacy.js';
+import { isGuest, trimEntry, privateIds } from '../privacy.js';
+import { recentComments } from './comments.js';
 
 export default async function feedRoutes(app) {
   app.get('/api/feed', { preHandler: need('viewer') }, async (req) => {
-    const [ops, [u]] = await Promise.all([
+    const guest = isGuest(req.user);
+    const [ops, comments, [u]] = await Promise.all([
       listOps({ limit: 50, standing: true }),
+      recentComments({ hidden: guest ? await privateIds() : [], limit: 50 }),
       q('select feed_seen_at, now() as now from users where id = $1', [req.user.id]),
     ]);
-    const guest = isGuest(req.user);
-    const items = ops.map(({ user_id: who, reverted, ...op }) => ({
-      kind: 'op',
-      ...op,
-      entries: guest ? op.entries.map(trimEntry) : op.entries,
-      fresh: who !== req.user.id && op.at > u.feed_seen_at,
-    }));
-    return { items, now: u.now };
+    const items = [
+      ...ops.map(({ user_id: who, reverted, ...op }) => ({
+        kind: 'op',
+        ...op,
+        entries: guest ? op.entries.map(trimEntry) : op.entries,
+        fresh: who !== req.user.id && op.at > u.feed_seen_at,
+      })),
+      ...comments.map(({ user_id: who, created_at: at, body, ...c }) => ({
+        kind: 'comment',
+        ...c,
+        at,
+        body: body.slice(0, 300),
+        fresh: who !== req.user.id && at > u.feed_seen_at,
+      })),
+    ];
+    items.sort((a, b) => b.at - a.at);
+    return { items: items.slice(0, 50), now: u.now };
   });
 
   // Лента просмотрена до момента at — того, что вернул GET /api/feed: правки, появившиеся после, останутся новыми.
