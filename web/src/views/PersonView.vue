@@ -9,6 +9,7 @@ import Discussion from '../components/Discussion.vue';
 import Album from '../components/Album.vue';
 import Stories from '../components/Stories.vue';
 import Life from '../components/Life.vue';
+import MarriageSheet from '../components/MarriageSheet.vue';
 import Sources from '../components/Sources.vue';
 import FactBadge from '../components/FactBadge.vue';
 import FactSheet from '../components/FactSheet.vue';
@@ -27,6 +28,7 @@ const form = reactive({});
 const history = ref([]);
 const showHistory = ref(false);
 const album = ref(null);
+const marriage = ref(null); // { family, spouse } — окно «Брак»
 
 const kin = computed(() => p.value && kinship(idx.value, store.me?.person_id, p.value.id));
 const missing = computed(() => (p.value ? missingFields(p.value, idx.value) : []));
@@ -52,6 +54,13 @@ async function loadSources() {
 }
 // Дерево перечитывается при каждой правке — источники заново грузим только для другого человека.
 watch(() => `${props.id}:${Boolean(p.value)}:${Boolean(p.value?.hidden)}`, () => { sources.value = null; sheet.value = null; loadSources(); }, { immediate: true });
+// «жена · брак 1945, с. Горки · развод 1962».
+function bond(m) {
+  const f = m.fam;
+  const who = m.spouse.sex === 'F' ? 'жена' : 'муж';
+  const start = f.start_date || f.place ? `${f.kind === 'partners' ? 'вместе с' : 'брак'} ${[f.start_date, f.place].filter(Boolean).join(', ')}` : '';
+  return [who, start, f.ended === 'divorce' && `развод${f.end_date ? ` ${f.end_date}` : ''}`].filter(Boolean).join(' · ');
+}
 const siblings = computed(() => (p.value ? siblingsOf(idx.value, p.value.id).map((id) => idx.value.persons.get(id)).filter(Boolean) : []));
 
 const scrollTo = (x, y) => window.scrollTo(x, y);
@@ -200,11 +209,15 @@ onUnmounted(onLive((events) => {
       <template v-for="m in marriages" :key="m.familyId">
         <router-link v-if="m.spouse" :to="`/person/${m.spouse.id}`">
           <div class="avatar" :class="m.spouse.sex">{{ (m.spouse.given || '?')[0] }}</div>
-          <div class="grow"><div class="ellipsis">{{ fullName(m.spouse) }}</div><div class="muted small">{{ m.spouse.sex === 'F' ? 'жена' : 'муж' }}<template v-if="m.fam.start_date"> · брак {{ m.fam.start_date }}</template></div></div>
+          <div class="grow"><div class="ellipsis">{{ fullName(m.spouse) }}</div><div class="muted small">{{ bond(m) }}</div></div>
           <FactBadge v-if="!editing && !m.spouse.hidden && !p.hidden" :info="info('family', m.familyId, 'marriage')" :editable="canEdit()"
             @open="sheet = { fact: fact('family', m.familyId, 'marriage') }" />
           <button v-if="editing" class="danger" @click.prevent="unlink(m.familyId, m.spouse.id, 'супруг')">✕</button>
         </router-link>
+        <button v-if="m.spouse && canEdit() && !editing" class="bond" @click="marriage = { family: m.fam, spouse: m.spouse }">
+          <span class="grow">{{ m.fam.start_date || m.fam.place ? 'Изменить' : 'Указать' }} {{ m.fam.kind === 'partners' ? 'сведения о союзе' : 'дату и место брака' }}</span>
+          <span class="muted">›</span>
+        </button>
         <router-link v-for="c in m.kids" :key="c.id" :to="`/person/${c.id}`" class="kid">
           <div class="avatar" :class="c.sex">{{ (c.given || '?')[0] }}</div>
           <div class="grow"><div class="ellipsis">{{ fullName(c) }}</div><div class="muted small">{{ [c.sex === 'F' ? 'дочь' : 'сын', lifespan(c)].filter(Boolean).join(' · ') }}</div></div>
@@ -250,6 +263,8 @@ onUnmounted(onLive((events) => {
     <FactSheet v-if="sheet" :key="sheet.fact ? sheet.fact.subject + sheet.fact.id + sheet.fact.fact : 'pick'" :fact="sheet.fact" :facts="facts"
       :data="sources" :person="p" @close="sheet = null" @changed="loadSources" />
 
+    <MarriageSheet v-if="marriage" :family="marriage.family" :spouse="marriage.spouse" @close="marriage = null" />
+
     <ChangeList v-if="showHistory" :ops="history" style="margin-top:10px" @reverted="reloadHistory" />
   </div>
 </template>
@@ -266,5 +281,6 @@ onUnmounted(onLive((events) => {
 .head .badge { margin-top: 8px; }
 .pre { white-space: pre-wrap; }
 .kid { padding-left: 32px !important; }
+.bond { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; padding-left: 72px !important; color: var(--accent); font-size: 15px; min-height: 44px !important; }
 .danger-link { color: var(--danger) !important; }
 </style>

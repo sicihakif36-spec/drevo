@@ -1,15 +1,16 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { store, canEdit, loadTree, toast, onLive } from '../store.js';
+import { store, canEdit, onLive } from '../store.js';
 import { api } from '../api.js';
 import { lifeItems } from '../life.js';
 import { factInfo } from '../sources.js';
 import FactBadge from './FactBadge.vue';
 import EventView from './EventView.vue';
+import MarriageSheet from './MarriageSheet.vue';
 
 // «Жизнь» в карточке: лента по годам. Сведения из дерева подставляются сами, нажатие ведёт туда, где они правятся;
-// свои события (учёба, служба, переезд…) открываются поверх карточки, адрес ?event=<id> (?event=new — новое).
+// брак — окно «Брак»; свои события (учёба, служба, переезд…) открываются поверх карточки, адрес ?event=<id> (?event=new — новое).
 // sources — источники и достоверность карточки (GET /api/persons/:id/sources), у событий там же.
 const props = defineProps({ person: Object, sources: Object });
 const emit = defineEmits(['edit', 'changed']);
@@ -19,7 +20,7 @@ const events = ref([]);
 const loaded = ref(false);
 const error = ref('');
 const extra = ref(null); // открытое по ссылке событие, которого нет в ленте (например, только что убрали участника)
-const marriage = ref(null); // { family, spouse, date } — окно даты брака
+const marriage = ref(null); // { family, spouse } — окно «Брак»
 
 const items = computed(() => (store.idx ? lifeItems(props.person, store.idx, events.value) : []));
 const open = computed(() => {
@@ -82,16 +83,8 @@ function tap(x) {
   if (x.event) return show(x.event.id);
   if (x.go === 'edit') return canEdit() && emit('edit');
   if (x.go.person) return router.push(`/person/${x.go.person.id}`);
-  if (canEdit()) marriage.value = { ...x.go, date: x.go.family.start_date || '' };
+  if (canEdit()) marriage.value = x.go;
   else router.push(`/person/${x.go.spouse.id}`);
-}
-async function saveMarriage() {
-  try {
-    await api('PATCH', `/api/families/${marriage.value.family.id}`, { start_date: marriage.value.date });
-    marriage.value = null;
-    await loadTree();
-    toast('Сохранено');
-  } catch (e) { toast(e.message); }
 }
 // Год слева — первый, у периода тоже; без года — «без даты».
 const year = (x) => (x.at ? String(x.at.year) : 'без даты');
@@ -124,19 +117,7 @@ const when = (x) => (x.date && x.date !== year(x) ? x.date : '');
   <EventView v-if="open || route.query.event === 'new'" :key="open?.id || 'new'" :event="open" :person="person" :sources="sources"
     @close="close" @saved="saved" @removed="removed" @changed="emit('changed')" />
 
-  <template v-if="marriage">
-    <div class="sheet-backdrop" @click="marriage = null" />
-    <form class="sheet" role="dialog" aria-modal="true" @submit.prevent="saveMarriage">
-      <h1>{{ marriage.spouse.sex === 'F' ? 'Жена' : 'Муж' }}: {{ marriage.spouse.given }} {{ marriage.spouse.patronymic }}</h1>
-      <label class="field"><span>Дата брака</span>
-        <input v-model="marriage.date" maxlength="100" placeholder="например: 12.05.1945, около 1945" />
-      </label>
-      <div class="row">
-        <button type="button" class="grow" @click="router.push(`/person/${marriage.spouse.id}`); marriage = null">Открыть карточку</button>
-        <button class="primary grow">Сохранить</button>
-      </div>
-    </form>
-  </template>
+  <MarriageSheet v-if="marriage" :family="marriage.family" :spouse="marriage.spouse" @close="marriage = null" />
 </template>
 
 <style scoped>

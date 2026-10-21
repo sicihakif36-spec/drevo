@@ -4,7 +4,7 @@ import { fullName, parsePeriod, birthYear, spousesOf, yearsText } from '@shared/
 import { EVENT_KINDS, eventTitle } from '@shared/events.js';
 
 // Пункт: { key, at — разбор даты, title, date, place, note, age, go — куда ведёт нажатие, event — своё событие }.
-// go: 'edit' — карточка человека, { person } — карточка другого, { family } — дата брака.
+// go: 'edit' — карточка человека, { person } — карточка другого, { family, spouse } — окно «Брак».
 export function lifeItems(p, idx, events) {
   const items = [];
   const push = (x) => items.push({ ...x, at: parsePeriod(x.date) });
@@ -13,7 +13,9 @@ export function lifeItems(p, idx, events) {
     const f = idx.families.get(s.familyId);
     const spouse = s.spouseId && idx.persons.get(s.spouseId);
     if (spouse) {
-      push({ key: `marriage-${f.id}`, title: `Брак: ${fullName(spouse)}`, date: f.start_date, go: { family: f, spouse } });
+      const go = { family: f, spouse };
+      push({ key: `marriage-${f.id}`, title: `${f.kind === 'partners' ? 'Вместе' : 'Брак'}: ${fullName(spouse)}`, date: f.start_date, place: f.place, go });
+      if (f.ended === 'divorce') push({ key: `divorce-${f.id}`, title: `Развод: ${fullName(spouse)}`, date: f.end_date, go });
     }
     for (const id of f.children) {
       const c = idx.persons.get(id);
@@ -43,7 +45,7 @@ export function lifeItems(p, idx, events) {
   // Без даты — в конце, в порядке добавления; рождение и смерть без даты — первым и последним пунктом.
   const rank = (x) => (x.at ? 0 : x.key === 'birth' ? -1 : x.key === 'death' || x.key === 'burial' ? 2 : 1);
   return shown
-    .filter((x) => x.at || x.event || x.place || x.key.startsWith('marriage-'))
+    .filter((x) => x.at || x.event || x.place || x.go?.family)
     .map((x, i) => ({ ...x, i }))
     .sort((a, b) => rank(a) - rank(b) || (a.at && b.at ? a.at.key - b.at.key : 0) || a.i - b.i);
 }

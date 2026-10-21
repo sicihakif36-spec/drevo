@@ -32,6 +32,7 @@ function personLine(e, name) {
   return null;
 }
 
+const FAMILY_FIELD = { kind: 'вид связи', start_date: 'дату', place: 'место', ended: 'чем закончился', end_date: 'дату развода' };
 function familyLine(e, name) {
   const adds = ['set_partner', 'add_child'].includes(e.action);
   const x = adds ? e.after || {} : e.before || {};
@@ -62,8 +63,11 @@ function familyLine(e, name) {
       const pair = couple(e.before?.family);
       return pair && `убрал(а) связь супругов: ${pair}`;
     }
-    case 'update':
-      return 'изменил(а) сведения о браке';
+    case 'update': {
+      const what = Object.keys(FAMILY_FIELD).filter((k) => k in (e.after || {})).map((k) => FAMILY_FIELD[k]).join(', ');
+      const pair = (e.persons || []).length === 2 ? `${name(e.persons[0])} и ${name(e.persons[1])}` : '';
+      return `изменил(а) сведения о браке${pair ? `: ${pair}` : ''}${what ? ` — ${what}` : ''}`;
+    }
   }
   return null;
 }

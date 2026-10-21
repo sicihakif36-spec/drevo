@@ -102,13 +102,16 @@ export default async function personRoutes(app) {
     const data = clean(req.body, FAMILY_FIELDS);
     if (data.kind && !['marriage', 'partners', 'unknown'].includes(data.kind)) data.kind = 'marriage';
     if (data.ended && !['', 'divorce', 'death'].includes(data.ended)) data.ended = '';
-    const cols = Object.keys(data);
-    if (!cols.length) return reply.code(400).send({ error: 'Нечего сохранять' });
+    if (!Object.keys(data).length) return reply.code(400).send({ error: 'Нечего сохранять' });
     return tx(async (db) => {
-      const cur = (await db.q('select * from families where id = $1', [req.params.id]))[0];
+      const cur = (await db.q('select * from families where id = $1 for update', [req.params.id]))[0];
       if (!cur) throw new HttpError(404, 'Семья не найдена');
+      // В журнал — только то, что изменилось.
+      const cols = Object.keys(data).filter((c) => data[c] !== cur[c]);
+      if (!cols.length) return cur;
       const next = (await db.q(`update families set ${cols.map((c, i) => `${c} = $${i + 2}`).join(', ')} where id = $1 returning *`, [cur.id, ...cols.map((c) => data[c])]))[0];
-      await logChange(db, req.user.id, 'family', cur.id, 'update', Object.fromEntries(cols.map((c) => [c, cur[c]])), data, [cur.partner1, cur.partner2]);
+      await logChange(db, req.user.id, 'family', cur.id, 'update', Object.fromEntries(cols.map((c) => [c, cur[c]])),
+        Object.fromEntries(cols.map((c) => [c, data[c]])), [cur.partner1, cur.partner2]);
       return next;
     });
   });

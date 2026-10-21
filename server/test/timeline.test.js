@@ -235,3 +235,35 @@ test('лента и сводка: «добавила 2 события», пра�
   const feed = (await json(owner, 'GET', '/api/feed')).items;
   assert.ok(feed.some((i) => i.kind === 'op' && i.entries[0].entity === 'event' && i.entries[0].action === 'delete'));
 });
+
+test('брак: вид связи, дата, место, развод — в журнале только изменённое, откат; гостю у живых без дат и места; GEDCOM', async () => {
+  const a = await add({ given: 'Иван', surname: 'Белов', sex: 'M', living: false, birth_date: '1900' });
+  const b = await json(owner, 'POST', '/api/persons', { person: { given: 'Мария', surname: 'Белова', sex: 'F', living: false, birth_date: '1905' },
+    relation: { to: a.id, type: 'spouse' } });
+  const fam = (await json(owner, 'GET', '/api/tree')).families.find((f) => [f.partner1, f.partner2].includes(b.id));
+  const patch = (body) => json(editor, 'PATCH', `/api/families/${fam.id}`, body);
+
+  await patch({ kind: 'marriage', start_date: '1925', place: 'Троицкая церковь с. Белое', ended: '', end_date: '' });
+  let op = await lastOp();
+  assert.deepEqual(op.entries[0].before, { start_date: '', place: '' }, 'не изменившееся в журнал не пишется');
+  await patch({ ended: 'divorce', end_date: '1940' });
+  const f = (await json(owner, 'GET', '/api/tree')).families.find((x) => x.id === fam.id);
+  assert.deepEqual([f.place, f.ended, f.end_date], ['Троицкая церковь с. Белое', 'divorce', '1940']);
+  const ged = (await call(owner, 'GET', '/api/export.ged')).body;
+  assert.match(ged, /1 MARR\n2 DATE 1925\n2 PLAC Троицкая церковь с\. Белое\n/);
+  assert.match(ged, /1 DIV\n2 DATE 1940\n/);
+  await revert(await lastOp());
+  op = await lastOp();
+  assert.equal((await json(owner, 'GET', '/api/tree')).families.find((x) => x.id === fam.id).ended, '');
+  assert.deepEqual(op.entries[0].after, { ended: '', end_date: '' });
+
+  // Брак живого: гость не видит ни даты, ни места.
+  const kid = await add({ given: 'Олег', surname: 'Белов', sex: 'M', birth_date: '1990' });
+  const wife = await json(owner, 'POST', '/api/persons', { person: { given: 'Ольга', sex: 'F', birth_date: '1992' }, relation: { to: kid.id, type: 'spouse' } });
+  const fam2 = (await json(owner, 'GET', '/api/tree')).families.find((x) => [x.partner1, x.partner2].includes(wife.id));
+  await json(owner, 'PATCH', `/api/families/${fam2.id}`, { start_date: '2015', place: 'ЗАГС Тайного района' });
+  const g = (await json(guest, 'GET', '/api/tree')).families.find((x) => x.id === fam2.id);
+  assert.deepEqual([g.start_date, g.place], ['', '']);
+  assert.ok(!(await call(guest, 'GET', '/api/export.ged')).body.includes('Тайного'));
+  assert.equal((await call(guest, 'PATCH', `/api/families/${fam.id}`, { place: 'x' })).statusCode, 403);
+});

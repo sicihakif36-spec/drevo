@@ -149,8 +149,8 @@ export function toGedcom(data) {
     if (h && ids.has(h)) L.push(`1 HUSB ${ids.get(h)}`);
     if (w && ids.has(w)) L.push(`1 WIFE ${ids.get(w)}`);
     for (const c of data.children) if (c.family_id === f.id && ids.has(c.child_id)) L.push(`1 CHIL ${ids.get(c.child_id)}`);
-    if (f.kind === 'marriage' && (f.start_date || (f.partner1 && f.partner2))) {
-      if (f.start_date) event('MARR', f.start_date, '', f.id);
+    if (f.kind === 'marriage' && (f.start_date || f.place || (f.partner1 && f.partner2))) {
+      if (f.start_date || f.place) event('MARR', f.start_date, f.place, f.id);
       else {
         L.push('1 MARR Y');
         sources(2, f.id, 'MARR');

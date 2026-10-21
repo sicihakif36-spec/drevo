@@ -14,7 +14,7 @@ export function hideLiving(data) {
   return {
     ...data,
     persons: data.persons.map((p) => (hidden.has(p.id) ? { ...p, ...HIDDEN } : p)),
-    families: data.families.map((f) => (hidden.has(f.partner1) || hidden.has(f.partner2) ? { ...f, start_date: '', end_date: '' } : f)),
+    families: data.families.map((f) => (hidden.has(f.partner1) || hidden.has(f.partner2) ? { ...f, start_date: '', place: '', end_date: '' } : f)),
   };
 }
 

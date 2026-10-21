@@ -2,7 +2,7 @@
 import { logChange } from './changes.js';
 
 export const PERSON_FIELDS = ['sex', 'surname', 'given', 'patronymic', 'birth_surname', 'living', 'birth_date', 'birth_place', 'death_date', 'death_place', 'burial_place', 'occupation', 'notes'];
-export const FAMILY_FIELDS = ['kind', 'start_date', 'end_date', 'ended'];
+export const FAMILY_FIELDS = ['kind', 'start_date', 'place', 'end_date', 'ended'];
 export const SLOTS = ['partner1', 'partner2'];
 
 // Ошибку с кодом < 500 общий обработчик отдаёт пользователю как есть.
@@ -67,9 +67,9 @@ export async function restoreFamily(db, userId, { family: f, children }) {
   const p1 = await live(f.partner1);
   const p2 = await live(f.partner2);
   const ok = (await db.q(
-    `insert into families (id, partner1, partner2, kind, start_date, end_date, ended, created_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (id) do nothing returning id`,
-    [f.id, p1, p2, f.kind, f.start_date, f.end_date, f.ended, f.created_at],
+    `insert into families (id, partner1, partner2, kind, start_date, place, end_date, ended, created_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9) on conflict (id) do nothing returning id`,
+    [f.id, p1, p2, f.kind, f.start_date, f.place ?? '', f.end_date, f.ended, f.created_at],
   ))[0];
   if (!ok) throw new HttpError(409, 'Эта семья уже есть в дереве');
   const back = [];
