@@ -5,10 +5,13 @@ import PDFDocument from 'pdfkit';
 import { q } from '../db.js';
 import { need } from '../auth.js';
 import { mediaPath } from './media.js';
-import { buildIndex, isPrivate, lifespan, shortName } from '../../../shared/names.js';
+import { buildIndex, fullName, isPrivate, lifespan, shortName } from '../../../shared/names.js';
 import { guestTree, isGuest } from '../privacy.js';
 import { layoutTree, BOX } from '../../../shared/layout.js';
 import { PAPER, planPages } from '../../../shared/printplan.js';
+import { layoutFan, parseFanOptions } from '../../../shared/fan.js';
+import { drawFan } from '../fan.js';
+import { disposition } from '../pdf.js';
 
 const require = createRequire(import.meta.url);
 const fontDir = path.join(path.dirname(require.resolve('dejavu-fonts-ttf/package.json')), 'ttf');
@@ -29,7 +32,7 @@ export function parsePrintOptions(qs) {
   const num = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) && v !== '' && v !== undefined ? Number(v) : d));
   return {
     root: qs.root,
-    mode: ['ancestors', 'descendants', 'hourglass'].includes(qs.mode) ? qs.mode : 'hourglass',
+    mode: ['ancestors', 'descendants', 'hourglass', 'fan'].includes(qs.mode) ? qs.mode : 'hourglass',
     up: num(qs.up, 4, 0, 12),
     down: num(qs.down, 3, 0, 12),
     paper: PAPER[qs.paper] ? qs.paper : 'A4',
@@ -40,6 +43,7 @@ export function parsePrintOptions(qs) {
     hideLiving: qs.hideLiving === '1',
     theme: THEMES[qs.theme] ? qs.theme : 'classic',
     title: String(qs.title ?? '').slice(0, 120),
+    ...parseFanOptions(qs),
   };
 }
 
@@ -85,8 +89,20 @@ export function renderPdf(stream, data, o) {
     p._photo = m ? [m.thumb && mediaPath(m.id, true), mediaPath(m.id)].find((f) => f && fs.existsSync(f)) : null;
   }
   const root = idx.persons.has(o.root) ? o.root : data.persons[0]?.id;
+  if (o.mode === 'fan' && root) {
+    // В середине фото крупное: лучше оригинал, чем миниатюра. Нет файла — нет и места под фото.
+    const m = data.photos?.[idx.persons.get(root).photo_id];
+    const file = m ? [mediaPath(m.id), m.thumb && mediaPath(m.id, true)].find((f) => f && fs.existsSync(f)) : null;
+    const fan = layoutFan(idx, root, { ...o, photos: o.photos && Boolean(file) });
+    fan.center.file = file;
+    return sheets(stream, fan.plan, fan.bounds, o, (doc) => drawFan(doc, fan, o));
+  }
   const layout = layoutTree(idx, root, { mode: o.mode, up: o.up, down: o.down });
-  const plan = planPages(layout, o);
+  return sheets(stream, planPages(layout, o), layout.bounds, o, (doc) => drawTree(doc, idx, layout, o, o.theme));
+}
+
+// Листы печати: один лист или плакат из склеиваемых листов с метками; draw рисует всю схему в её единицах.
+function sheets(stream, plan, bounds, o, draw) {
   const t = THEMES[o.theme];
   const doc = new PDFDocument({ autoFirstPage: false, size: [plan.pw, plan.ph], margin: 0, info: { Title: o.title || 'Семейное древо', Creator: 'Древо' } });
   for (const [k, f] of Object.entries(FONTS)) doc.registerFont(k, f);
@@ -117,8 +133,8 @@ export function renderPdf(stream, data, o) {
         ox -= c * (aw - plan.overlap);
         oy -= r * (ah - plan.overlap);
       }
-      doc.translate(ox, oy).scale(plan.s).translate(plan.pad - layout.bounds.x, plan.pad - layout.bounds.y);
-      drawTree(doc, idx, layout, o, o.theme);
+      doc.translate(ox, oy).scale(plan.s).translate(plan.pad - bounds.x, plan.pad - bounds.y);
+      draw(doc);
       doc.restore();
       // метки склейки
       if (total > 1) {
@@ -154,8 +170,10 @@ export default async function printRoutes(app) {
     const data = await loadTreeData(req.user, o.hideLiving);
     if (!o.title) o.title = data.title || 'Семейное древо';
     if (!o.root) o.root = req.user.person_id;
+    const center = o.mode === 'fan' && data.persons.find((p) => p.id === o.root);
     reply.header('Content-Type', 'application/pdf');
-    reply.header('Content-Disposition', `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="drevo.pdf"`);
+    reply.header('Content-Disposition', center ? disposition(req.query.download === '1', `Веер предков — ${fullName(center)}`)
+      : `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="drevo.pdf"`);
     reply.header('Cache-Control', 'no-store');
     const { PassThrough } = await import('node:stream');
     const out = new PassThrough();

@@ -1,21 +1,32 @@
 <script setup>
 import { computed, reactive, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { store, canTalk } from '../store.js';
+import { thumbUrl } from '../api.js';
 import { layoutTree, BOX } from '@shared/layout.js';
 import { planPages, PAPER, MM } from '@shared/printplan.js';
+import { layoutFan, sectorPath, FAN } from '@shared/fan.js';
 import { fullName } from '@shared/names.js';
 
 const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.print') || '{}'); } catch { return {}; } })();
 const o = reactive({
   root: '', mode: 'hourglass', up: 4, down: 3, paper: 'A4', orient: 'auto', fit: 'page', scale: 100,
-  photos: true, hideLiving: false, theme: 'classic', title: '', ...saved,
+  photos: true, hideLiving: false, theme: 'classic', title: '', gens: 5, shape: 180, colors: 'branch', empty: true, ...saved,
 });
+// Из карточки: «Веер предков» с этим человеком в центре.
+const route = useRoute();
+if (route.query.root) o.root = String(route.query.root);
+if (route.query.mode === 'fan') o.mode = 'fan';
 watch(o, () => { try { localStorage.setItem('drevo.print', JSON.stringify(o)); } catch {} });
 
 const people = computed(() => [...(store.idx?.persons.values() || [])].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru')));
 const rootId = computed(() => (store.idx?.persons.has(o.root) ? o.root : store.me?.person_id && store.idx?.persons.has(store.me.person_id) ? store.me.person_id : people.value[0]?.id));
-const layout = computed(() => (store.idx && rootId.value ? layoutTree(store.idx, rootId.value, { mode: o.mode, up: o.up, down: o.down }) : null));
-const plan = computed(() => (layout.value?.nodes.length ? planPages(layout.value, o) : null));
+const isFan = computed(() => o.mode === 'fan');
+const layout = computed(() => (store.idx && rootId.value && !isFan.value ? layoutTree(store.idx, rootId.value, { mode: o.mode, up: o.up, down: o.down }) : null));
+// Веер: та же раскладка, что в PDF (shared/fan.js). Гостю дерево уже пришло без дат и фото живых.
+const fan = computed(() => (store.idx && rootId.value && isFan.value ? layoutFan(store.idx, rootId.value, { ...o, hideLiving: o.hideLiving || !canTalk() }) : null));
+const scheme = computed(() => layout.value || fan.value);
+const plan = computed(() => (fan.value ? fan.value.plan : layout.value?.nodes.length ? planPages(layout.value, o) : null));
 const pages = computed(() => (plan.value ? plan.value.cols * plan.value.rows : 0));
 
 // Листы в координатах дерева — для рамок на предпросмотре.
@@ -24,7 +35,7 @@ const sheets = computed(() => {
   if (!p) return [];
   const aw = (p.pw - 2 * p.margin) / p.s;
   const ah = (p.ph - 2 * p.margin - p.head) / p.s;
-  const b = layout.value.bounds;
+  const b = scheme.value.bounds;
   const x0 = b.x - p.pad;
   const y0 = b.y - p.pad;
   if (p.cols * p.rows === 1) return [{ x: x0 - (aw - p.cw) / 2, y: y0 - (ah - p.ch) / 2, w: aw, h: ah }];
@@ -47,6 +58,7 @@ const url = (download) => {
   const qs = new URLSearchParams({
     root: rootId.value || '', mode: o.mode, up: o.up, down: o.down, paper: o.paper, orient: o.orient, fit: o.fit,
     scale: o.scale, photos: o.photos ? '1' : '0', hideLiving: o.hideLiving ? '1' : '0', theme: o.theme, title: o.title,
+    ...(isFan.value ? { gens: o.gens, shape: o.shape, colors: o.colors, empty: o.empty ? '1' : '0' } : {}),
   });
   if (download) qs.set('download', '1');
   return `/api/print.pdf?${qs}`;
@@ -54,8 +66,14 @@ const url = (download) => {
 const sizeMm = computed(() => {
   if (!plan.value || pages.value < 2) return '';
   const cm = (v) => Math.round((v * plan.value.s) / MM / 10);
-  return `· дерево около ${cm(plan.value.cw)} × ${cm(plan.value.ch)} см`;
+  return `· ${isFan.value ? 'веер' : 'дерево'} около ${cm(plan.value.cw)} × ${cm(plan.value.ch)} см`;
 });
+const centerPhoto = computed(() => {
+  const p = fan.value && store.idx.persons.get(fan.value.center.id);
+  return fan.value?.center.photo && p?.photo_id ? thumbUrl(p.photo_id) : null;
+});
+const fanFont = (l) => ({ 'font-size': l.size, 'font-weight': l.bold ? 700 : 400, 'font-family': o.theme === 'classic' ? '"DejaVu Serif", serif' : '"DejaVu Sans", sans-serif' });
+const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many);
 </script>
 
 <template>
@@ -66,14 +84,27 @@ const sizeMm = computed(() => {
       <div class="preview card">
         <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
           <rect v-for="(s, i) in sheets" :key="'s' + i" :x="s.x" :y="s.y" :width="s.w" :height="s.h" class="sheet-r" />
-          <path v-for="(e, i) in layout.edges" :key="'e' + i" :d="e.points.map((p, j) => (j ? 'L' : 'M') + p[0] + ',' + p[1]).join('')" class="ln" />
-          <rect v-for="(n, i) in layout.nodes" :key="'n' + i" :x="n.x" :y="n.y" :width="BOX.w" :height="BOX.h" rx="10" :class="['nd', store.idx.persons.get(n.id)?.sex]" />
+          <template v-if="layout">
+            <path v-for="(e, i) in layout.edges" :key="'e' + i" :d="e.points.map((p, j) => (j ? 'L' : 'M') + p[0] + ',' + p[1]).join('')" class="ln" />
+            <rect v-for="(n, i) in layout.nodes" :key="'n' + i" :x="n.x" :y="n.y" :width="BOX.w" :height="BOX.h" rx="10" :class="['nd', store.idx.persons.get(n.id)?.sex]" />
+          </template>
+          <g v-else class="fan">
+            <path v-for="s in fan.sectors" :key="'f' + s.k" :d="sectorPath(s)" :fill="s.fill" :stroke="fan.line" :stroke-width="(s.id ? 0.9 : 0.4) / plan.s" />
+            <path :d="fan.shape === 180 ? `M${-fan.center.r1},0A${fan.center.r1},${fan.center.r1} 0 0 1 ${fan.center.r1},0Z` : `M${-fan.center.r1},0A${fan.center.r1},${fan.center.r1} 0 1 1 ${fan.center.r1},0A${fan.center.r1},${fan.center.r1} 0 1 1 ${-fan.center.r1},0Z`"
+              :fill="fan.center.fill" :stroke="fan.line" :stroke-width="1.4 / plan.s" />
+            <image v-if="centerPhoto" :href="centerPhoto" :x="fan.center.photo.x" :y="fan.center.photo.y" :width="fan.center.photo.w" :height="fan.center.photo.h" preserveAspectRatio="xMidYMid slice" />
+            <text v-for="(l, i) in [...fan.sectors.flatMap((s) => s.lines), ...fan.center.lines]" :key="'l' + i" :x="l.x" :y="l.y" :transform="`rotate(${l.rot} ${l.x} ${l.y})`" :style="fanFont(l)">{{ l.text }}</text>
+          </g>
           <text v-for="(s, i) in sheets.length > 1 ? sheets : []" :key="'t' + i" :x="s.x + s.w / 2" :y="s.y + s.h / 2" class="num">{{ s.n }}</text>
         </svg>
         <div class="small" style="margin-top:6px">
           <b>{{ pages }} {{ pages === 1 ? 'лист' : pages < 5 ? 'листа' : 'листов' }} {{ o.paper }}</b>,
-          {{ plan.orient === 'landscape' ? 'альбомная' : 'книжная' }} · {{ layout.nodes.length }} чел. <span class="muted">{{ sizeMm }}</span>
+          {{ plan.orient === 'landscape' ? 'альбомная' : 'книжная' }} · {{ layout ? layout.nodes.length : fan.people }} чел. <span class="muted">{{ sizeMm }}</span>
         </div>
+        <p v-if="fan?.crowded" class="small warn">
+          {{ fan.crowded }} {{ plural(fan.crowded, 'имя не помещается', 'имени не помещаются', 'имён не помещаются') }} даже мелким шрифтом —
+          возьмите лист крупнее или «Склеить из листов».
+        </p>
       </div>
 
       <div class="row" style="margin:12px 0">
@@ -85,11 +116,30 @@ const sizeMm = computed(() => {
         <select v-model="o.root"><option value="">{{ store.me?.person_id ? 'Я' : 'Первый в списке' }}</option><option v-for="p in people" :key="p.id" :value="p.id">{{ fullName(p) }}</option></select>
       </label>
       <div class="field"><div class="seg">
+        <button :class="{ on: !isFan }" @click="o.mode = isFan ? 'hourglass' : o.mode">Дерево</button>
+        <button :class="{ on: isFan }" @click="o.mode = 'fan'">Веер предков</button>
+      </div></div>
+      <div class="field" v-if="!isFan"><div class="seg">
         <button :class="{ on: o.mode === 'ancestors' }" @click="o.mode = 'ancestors'">Предки</button>
         <button :class="{ on: o.mode === 'hourglass' }" @click="o.mode = 'hourglass'">Предки и потомки</button>
         <button :class="{ on: o.mode === 'descendants' }" @click="o.mode = 'descendants'">Потомки</button>
       </div></div>
-      <div class="grid2">
+      <template v-if="isFan">
+        <div class="field"><span class="small muted">Поколений</span>
+          <div class="chips"><button v-for="g in FAN.gens[1] - FAN.gens[0] + 1" :key="g" class="chip" :class="{ on: o.gens === g + FAN.gens[0] - 1 }" @click="o.gens = g + FAN.gens[0] - 1">{{ g + FAN.gens[0] - 1 }}</button></div>
+        </div>
+        <div class="field"><div class="seg">
+          <button :class="{ on: o.shape === 180 }" @click="o.shape = 180">Полукруг</button>
+          <button :class="{ on: o.shape === 270 }" @click="o.shape = 270">Три четверти</button>
+          <button :class="{ on: o.shape === 360 }" @click="o.shape = 360">Круг</button>
+        </div></div>
+        <div class="field"><span class="small muted">Цвет</span><div class="seg">
+          <button :class="{ on: o.colors === 'branch' }" @click="o.colors = 'branch'">Линии отца и матери</button>
+          <button :class="{ on: o.colors === 'gens' }" @click="o.colors = 'gens'">По поколениям</button>
+        </div></div>
+        <label class="row field"><input type="checkbox" v-model="o.empty" style="width:auto;min-height:0" /> Показывать пустые места — вписать неизвестных от руки</label>
+      </template>
+      <div class="grid2" v-else>
         <label class="field" v-if="o.mode !== 'descendants'"><span>Поколений вверх</span><input type="number" min="1" max="12" v-model.number="o.up" /></label>
         <label class="field" v-if="o.mode !== 'ancestors'"><span>Поколений вниз</span><input type="number" min="1" max="12" v-model.number="o.down" /></label>
       </div>
@@ -105,7 +155,7 @@ const sizeMm = computed(() => {
         <button :class="{ on: o.fit === 'page' }" @click="o.fit = 'page'">Уместить на лист</button>
         <button :class="{ on: o.fit === 'tiles' }" @click="o.fit = 'tiles'">Склеить из листов</button>
       </div></div>
-      <label class="field" v-if="o.fit === 'tiles'"><span>Крупность: {{ o.scale }}% (карточка около {{ Math.round(42 * o.scale / 100) }} мм)</span>
+      <label class="field" v-if="o.fit === 'tiles'"><span>Крупность: {{ o.scale }}%<template v-if="!isFan"> (карточка около {{ Math.round(42 * o.scale / 100) }} мм)</template></span>
         <input type="range" min="40" max="250" step="10" v-model.number="o.scale" />
       </label>
       <p class="muted small" v-if="o.fit === 'tiles'">Пунктир на листах показывает, где накладывать соседний лист при склейке (1 см).</p>
@@ -117,7 +167,7 @@ const sizeMm = computed(() => {
         <button class="chip" :class="{ on: o.theme === 'bw' }" @click="o.theme = 'bw'">Чёрно-белое</button>
       </div>
       <label class="field"><span>Заголовок</span><input v-model="o.title" :placeholder="store.title" /></label>
-      <label class="row field"><input type="checkbox" v-model="o.photos" style="width:auto;min-height:0" /> Фотографии</label>
+      <label class="row field"><input type="checkbox" v-model="o.photos" style="width:auto;min-height:0" /> {{ isFan ? 'Фото в середине' : 'Фотографии' }}</label>
       <label v-if="canTalk()" class="row field"><input type="checkbox" v-model="o.hideLiving" style="width:auto;min-height:0" /> Скрыть даты и фото живых (для печати не для семьи)</label>
       <p v-else class="muted small">Даты и фото живых родственников на печати не показываются.</p>
     </template>
@@ -131,5 +181,7 @@ const sizeMm = computed(() => {
 .nd { fill: #eee; stroke: #888; stroke-width: 2; }
 .nd.M { fill: #e3ecf8; stroke: #5b7db1; }
 .nd.F { fill: #f8e3eb; stroke: #b15b7d; }
+.fan text { text-anchor: middle; dominant-baseline: central; fill: #1d1d1d; }
+.warn { color: #a05a00; margin: 6px 0 0; }
 .num { font-size: 120px; fill: rgba(0,0,0,.18); text-anchor: middle; dominant-baseline: middle; font-weight: 700; }
 </style>

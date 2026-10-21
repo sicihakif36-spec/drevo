@@ -39,6 +39,25 @@ export function ensure(doc, h) {
   doc.x = doc.page.margins.left;
 }
 
+// Над подвалом есть запас: туда можно дописать последнюю строку-другую, чтобы она не ушла одна на новую страницу.
+export const SLACK = 22;
+
+// Перед абзацем высотой h (строки по lh): помещается — пишем тут; не хватает чуть-чуть — пишем в запас над подвалом;
+// иначе абзац переносится так, чтобы ни внизу, ни вверху следующей страницы не осталось одной строки.
+export function place(doc, h, lh) {
+  const room = bottom(doc) - doc.y;
+  if (h <= room + 0.5) return;
+  if (!doc.page.stretched && h <= room + SLACK) {
+    doc.page.margins.bottom -= SLACK;
+    doc.page.stretched = true;
+    return;
+  }
+  const n = Math.round(h / lh);
+  const fit = Math.floor((room + 0.5) / lh);
+  if (fit < 2 || n - fit < 2) doc.addPage();
+  doc.x = doc.page.margins.left;
+}
+
 // «21 октября 2026 года» по Москве: сервер живёт по UTC.
 export const today = () => `${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' }).replace(/\s*г\.$/, '')} года`;
 
@@ -48,7 +67,7 @@ export function footer(doc, c, left) {
   doc.pageCount = range.count;
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i);
-    const y = doc.page.height - 40;
+    const y = doc.page.height - 30;
     const keep = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
     doc.moveTo(MARGIN.left, y - 8).lineTo(A4.w - MARGIN.right, y - 8).lineWidth(0.5).strokeColor(c.line).stroke();
