@@ -137,7 +137,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
           <button :class="{ on: o.colors === 'branch' }" @click="o.colors = 'branch'">Линии отца и матери</button>
           <button :class="{ on: o.colors === 'gens' }" @click="o.colors = 'gens'">По поколениям</button>
         </div></div>
-        <label class="row field"><input type="checkbox" v-model="o.empty" style="width:auto;min-height:0" /> Показывать пустые места — вписать неизвестных от руки</label>
+        <label class="row field check"><input type="checkbox" v-model="o.empty" /> Показывать пустые места — вписать неизвестных от руки</label>
       </template>
       <div class="grid2" v-else>
         <label class="field" v-if="o.mode !== 'descendants'"><span>Поколений вверх</span><input type="number" min="1" max="12" v-model.number="o.up" /></label>
@@ -167,8 +167,8 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <button class="chip" :class="{ on: o.theme === 'bw' }" @click="o.theme = 'bw'">Чёрно-белое</button>
       </div>
       <label class="field"><span>Заголовок</span><input v-model="o.title" :placeholder="store.title" /></label>
-      <label class="row field"><input type="checkbox" v-model="o.photos" style="width:auto;min-height:0" /> {{ isFan ? 'Фото в середине' : 'Фотографии' }}</label>
-      <label v-if="canTalk()" class="row field"><input type="checkbox" v-model="o.hideLiving" style="width:auto;min-height:0" /> Скрыть даты и фото живых (для печати не для семьи)</label>
+      <label class="row field check"><input type="checkbox" v-model="o.photos" /> {{ isFan ? 'Фото в середине' : 'Фотографии' }}</label>
+      <label v-if="canTalk()" class="row field"><input type="checkbox" v-model="o.hideLiving" /> Скрыть даты и фото живых — для печати не для семьи</label>
       <p v-else class="muted small">Даты и фото живых родственников на печати не показываются.</p>
     </template>
   </div>
@@ -183,4 +183,6 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
 .nd.F { fill: #f8e3eb; stroke: #b15b7d; }
 .fan text { text-anchor: middle; dominant-baseline: central; fill: #1d1d1d; }
 .num { font-size: 120px; fill: rgba(0,0,0,.18); text-anchor: middle; dominant-baseline: middle; font-weight: 700; }
+.check { align-items: flex-start; min-height: 2.667rem; }
+.check input { flex: none; margin: 0.111rem 0 0; }
 </style>
