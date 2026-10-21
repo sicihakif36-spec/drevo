@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Вариант Б «Древо жизни»: народный мотив в круглой печати рода, золото на ореховом фоне. Безопасная зона — круг радиусом 180. -->
+  <rect width="512" height="512" fill="#6e3518"/>
+  <circle cx="256" cy="256" r="170" fill="none" stroke="#f0c674" stroke-width="8"/>
+  <g fill="none" stroke="#f0c674" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 392V158"/>
+    <path d="M256 300c-30-6-58-22-82-50M256 300c30-6 58-22 82-50"/>
+    <path d="M256 236c-22-8-42-24-58-46M256 236c22-8 42-24 58-46"/>
+    <path d="M256 384c-20 0-44 10-64 30M256 384c20 0 44 10 64 30M256 392v28"/>
+  </g>
+  <g fill="#f0c674">
+    <ellipse cx="256" cy="134" rx="30" ry="44"/>
+    <ellipse cx="184" cy="170" rx="24" ry="46" transform="rotate(-42 184 170)"/>
+    <ellipse cx="328" cy="170" rx="24" ry="46" transform="rotate(42 328 170)"/>
+    <ellipse cx="156" cy="236" rx="24" ry="46" transform="rotate(-62 156 236)"/>
+    <ellipse cx="356" cy="236" rx="24" ry="46" transform="rotate(62 356 236)"/>
+  </g>
+  <g fill="#fff3d6">
+    <circle cx="210" cy="300" r="13"/><circle cx="302" cy="300" r="13"/>
+  </g>
+</svg>
