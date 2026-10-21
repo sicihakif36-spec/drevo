@@ -1,5 +1,5 @@
 // Лента «что нового»: последние действия, которые остались в силе, и комментарии вперемешку по времени.
-// Новое — действия и комментарии других людей после прошлого визита.
+// Новое — действия и комментарии других людей после прошлого визита. Владельцу и участникам — ещё и отправленные анкеты.
 import { q } from '../db.js';
 import { need } from '../auth.js';
 import { listOps } from '../changes.js';
@@ -10,10 +10,15 @@ export default async function feedRoutes(app) {
   app.get('/api/feed', { preHandler: need('viewer') }, async (req) => {
     const guest = isGuest(req.user);
     const hidden = new Set(guest ? await privateIds() : []);
-    const [ops, comments, [u]] = await Promise.all([
+    const [ops, comments, [u], surveys] = await Promise.all([
       listOps({ limit: 50, standing: true }),
       recentComments({ hidden: [...hidden], limit: 50 }),
       q('select feed_seen_at, now() as now from users where id = $1', [req.user.id]),
+      // Отправленные анкеты — только владельцу и участникам: в ответах данные живых.
+      ['owner', 'editor'].includes(req.user.role) ? q(
+        `select id, name, submitted_at as at, answers->'people'->'self'->>'sex' as sex from surveys
+         where submitted_at is not null and revoked_at is null order by submitted_at desc limit 20`,
+      ) : [],
     ]);
     const items = [
       ...ops.map(({ user_id: who, reverted, ...op }) => ({
@@ -29,6 +34,7 @@ export default async function feedRoutes(app) {
         body: body.slice(0, 300),
         fresh: who !== req.user.id && at > u.feed_seen_at,
       })),
+      ...surveys.map((sv) => ({ kind: 'survey', ...sv, fresh: sv.at > u.feed_seen_at })),
     ];
     items.sort((a, b) => b.at - a.at);
     return { items: items.slice(0, 50), now: u.now };

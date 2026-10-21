@@ -92,13 +92,20 @@ test('родственник ничего не правит: каждый мар
       assert.equal(res.statusCode, 403, `${who}: ${r.method} ${r.url} — ${res.statusCode} ${res.body}`);
     }
   }
-  // Открытые родственнику маршруты записи — только эти.
+  // Открытые родственнику маршруты записи — только эти. Публичные маршруты анкеты пускают без входа, только по её токену
+  // (test/surveys.test.js), — и ничего не меняют в дереве.
   const open = routes.filter((r) => !['editor', 'owner'].includes(r.role)).map((r) => `${r.method} ${r.url}`).sort();
+  const survey = ['DELETE /api/survey/photos/:id', 'PATCH /api/survey/photos/:id', 'POST /api/survey/photos', 'POST /api/survey/submit', 'PUT /api/survey'];
   assert.deepEqual(open, [
     'DELETE /api/comments/:id', 'DELETE /api/push/subscription', 'PATCH /api/comments/:id', 'PATCH /api/me', 'PATCH /api/push/settings',
     'POST /api/feed/seen', 'POST /api/invites/redeem', 'POST /api/logout', 'POST /api/persons/:id/comments', 'POST /api/push/test',
-    'PUT /api/push/subscription',
-  ]);
+    'PUT /api/push/subscription', ...survey,
+  ].sort());
+  // Без токена анкеты они ничего не делают.
+  for (const r of routes.filter((x) => survey.includes(`${x.method} ${x.url}`))) {
+    const res = await call(relative, r.method, r.url.replace(/:\w+/g, id), {});
+    assert.equal(res.statusCode, 404, `${r.method} ${r.url} — ${res.statusCode} ${res.body}`);
+  }
   // Ничего не изменилось: в журнале только правки владельца.
   const ops = await json(owner, 'GET', '/api/changes');
   assert.ok(ops.every((o) => o.user_name === 'owner'));

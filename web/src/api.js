@@ -2,8 +2,9 @@ export class ApiError extends Error {
   constructor(status, message, body) { super(message); this.status = status; this.body = body; }
 }
 
-export async function api(method, url, body) {
-  const opts = { method, headers: { 'x-drevo': '1' }, credentials: 'same-origin' };
+// headers — дополнительные заголовки (анкета по ссылке передаёт свой токен в x-survey).
+export async function api(method, url, body, headers = {}) {
+  const opts = { method, headers: { 'x-drevo': '1', ...headers }, credentials: 'same-origin' };
   if (body instanceof FormData) opts.body = body;
   else if (body !== undefined) {
     opts.headers['content-type'] = 'application/json';
@@ -24,11 +25,12 @@ export const photoUrl = (id) => (id ? `/api/media/${id}` : null);
 export const thumbUrl = (id) => `/api/media/${id}/thumb`;
 
 // Отправка файла с ходом загрузки: onProgress(доля от 0 до 1). fetch хода отправки не сообщает.
-export function upload(url, form, onProgress) {
+export function upload(url, form, onProgress, headers = {}) {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest();
     x.open('POST', url);
     x.setRequestHeader('x-drevo', '1');
+    for (const [k, v] of Object.entries(headers)) x.setRequestHeader(k, v);
     x.responseType = 'json';
     x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
     x.onload = () => {

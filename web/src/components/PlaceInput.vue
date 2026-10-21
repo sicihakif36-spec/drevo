@@ -3,6 +3,7 @@ import { computed, ref, useId } from 'vue';
 import { store } from '../store.js';
 import { api } from '../api.js';
 import { placeKey, suggestPlaces } from '@shared/places.js';
+import { vGrow } from '../grow.js';
 
 // Поле места с подсказкой: начинаешь писать — предлагаются места из справочника и уже встречавшиеся в дереве,
 // чтобы одну деревню не записали пятью способами. Можно выбрать подсказку, а можно написать своё.
@@ -44,9 +45,11 @@ let usedAt = 0;
 <template>
   <div class="field place">
     <label :for="id">{{ label }}</label>
-    <input :id="id" :value="modelValue" :maxlength="maxlength" :placeholder="placeholder" autocomplete="off" role="combobox"
+    <!-- Многострочное: полное старое название не помещается в строку. Перевод строки не нужен — Enter его не ставит. -->
+    <textarea :id="id" v-grow class="line" rows="1" :value="modelValue" :maxlength="maxlength" :placeholder="placeholder" autocomplete="off" role="combobox"
       :aria-expanded="list.length > 0" :aria-controls="`${id}-list`"
-      @input="emit('update:modelValue', $event.target.value); open = true" @focus="focus" @blur="open = false" @keydown.esc="open = false" />
+      @input="emit('update:modelValue', $event.target.value.replace(/\s*\n\s*/g, ' ')); open = true" @focus="focus" @blur="open = false"
+      @keydown.esc="open = false" @keydown.enter.prevent />
     <div v-if="list.length" :id="`${id}-list`" class="hints" role="listbox">
       <button v-for="s in list" :key="s.text" type="button" role="option" @mousedown.prevent @click="pick(s)">
         <span class="t">{{ s.text }}</span>

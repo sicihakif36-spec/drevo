@@ -17,17 +17,17 @@ export async function logChange(db, userId, entity, entityId, action, before, af
 export const STANDS = `bool_and(c.reverted_by is null)
   and not exists (select 1 from changes x join changes r on r.reverted_by = x.id where x.op = c.op)`;
 
-// Последние действия целиком, новые сверху. id действия — номер его первой записи.
-export async function listOps({ person = null, limit = 50, standing = false } = {}) {
+// Последние действия целиком, новые сверху. id действия — номер его первой записи. op — только это действие.
+export async function listOps({ person = null, limit = 50, standing = false, op = null } = {}) {
   const rows = await q(
     `with ops as (
-       select op, max(id) as last from changes c where $1::uuid is null or $1 = any(persons)
+       select op, max(id) as last from changes c where ($1::uuid is null or $1 = any(persons)) and ($3::uuid is null or op = $3)
        group by op ${standing ? `having ${STANDS}` : ''} order by last desc limit $2
      )
      select c.id, c.op, c.at, c.entity, c.entity_id, c.action, c.before, c.after, c.persons, c.reverted_by, c.user_id, u.name as user_name
      from changes c join ops o on o.op = c.op left join users u on u.id = c.user_id
      order by o.last desc, c.id`,
-    [person, limit],
+    [person, limit, op],
   );
   const out = [];
   for (const r of rows) {
@@ -40,8 +40,8 @@ export async function listOps({ person = null, limit = 50, standing = false } = 
 }
 
 // Сколько действий и комментариев других людей появилось после того, как человек открывал ленту.
-// hidden — люди, чьи обсуждения ему не видны (см. privateIds).
-export async function countNew(userId, hidden = []) {
+// hidden — люди, чьи обсуждения ему не видны (см. privateIds); surveys — считать и отправленные анкеты (владельцу и участникам).
+export async function countNew(userId, hidden = [], surveys = false) {
   const rows = await q(
     `with seen as (select feed_seen_at as at from users where id = $1)
      select (select count(*) from (
@@ -51,8 +51,8 @@ export async function countNew(userId, hidden = []) {
      ) s) + (select count(*) from comments c join persons p on p.id = c.person_id
        where c.created_at > (select at from seen) and c.user_id <> $1
          and c.deleted_at is null and p.deleted_at is null and not (c.person_id = any($2::uuid[]))
-     ) as n`,
-    [userId, hidden],
+     ) + (select count(*) from surveys s where $3 and s.submitted_at > (select at from seen) and s.revoked_at is null) as n`,
+    [userId, hidden, surveys],
   );
   return Number(rows[0].n);
 }

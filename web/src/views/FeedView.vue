@@ -49,7 +49,7 @@ const hints = computed(() => {
 });
 
 const name = computed(() => namer(items.value.filter((i) => i.kind === 'op'), store.idx));
-const feed = computed(() => items.value.map((i) => (i.kind === 'op' ? { ...i, lines: opLines(i, name.value) } : { ...i, who: name.value(i.person_id) })));
+const feed = computed(() => items.value.map((i) => (i.kind === 'op' ? { ...i, lines: opLines(i, name.value) } : i.kind === 'comment' ? { ...i, who: name.value(i.person_id) } : i)));
 const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 </script>
 
@@ -90,6 +90,14 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
             <div class="small"><b>{{ it.user_name || 'Кто-то' }}</b> <span class="muted">· {{ when(it.at) }}</span><span v-if="it.fresh" class="badge">новое</span></div>
             <div>написал(а) в обсуждении: {{ it.who }}</div>
             <div class="quote">{{ it.body }}</div>
+          </div>
+          <span class="muted">›</span>
+        </router-link>
+        <router-link v-else-if="it.kind === 'survey'" :to="`/surveys/${it.id}`" :class="{ fresh: it.fresh }">
+          <div class="grow">
+            <div class="small"><b>{{ it.name }}</b> <span class="muted">· {{ when(it.at) }}</span><span v-if="it.fresh" class="badge">новое</span></div>
+            <div>{{ it.name }} {{ it.sex === 'F' ? 'заполнила' : it.sex === 'M' ? 'заполнил' : 'заполнил(а)' }} анкету о семье</div>
+            <div class="muted small">Посмотрите ответы и загрузите их в дерево</div>
           </div>
           <span class="muted">›</span>
         </router-link>

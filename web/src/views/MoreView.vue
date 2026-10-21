@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue';
-import { store, isOwner, canTalk, loadTree, toast } from '../store.js';
+import { store, isOwner, canTalk, canEdit, loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { fullName } from '@shared/names.js';
 import { disablePush } from '../push.js';
@@ -59,6 +59,7 @@ async function logout() {
       <router-link to="/print">Печать и PDF</router-link>
       <router-link to="/places">Места</router-link>
       <router-link v-if="canTalk()" to="/changes">Последние правки</router-link>
+      <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
       <a href="/api/export.ged" download>Скачать всё дерево (GEDCOM)</a>
       <router-link v-if="isOwner()" to="/family">Родственники и приглашения</router-link>
     </div>

@@ -37,7 +37,7 @@ export default async function personRoutes(app) {
       q('select * from families order by created_at'),
       q('select * from family_children'),
       q('select key, value from settings'),
-      countNew(req.user.id, guest ? await privateIds() : []),
+      countNew(req.user.id, guest ? await privateIds() : [], ['owner', 'editor'].includes(req.user.role)),
       listPlaces(),
     ]);
     const data = { persons, families, children };

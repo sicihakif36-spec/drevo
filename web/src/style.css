@@ -65,6 +65,8 @@ input, select, textarea {
 }
 input[type=range], input[type=checkbox] { accent-color: var(--accent); }
 textarea { min-height: 96px; resize: vertical; }
+/* Однострочное по смыслу поле, которое растёт по тексту (v-grow). */
+textarea.line { min-height: 46px; resize: none; overflow: hidden; line-height: 1.4; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .seg { display: flex; background: var(--line); border-radius: 12px; padding: 3px; gap: 3px; }
 .seg button { flex: 1; min-height: 38px; padding: 6px 8px; background: transparent; font-size: 14px; border-radius: 10px; }

@@ -1,0 +1,107 @@
+<script setup>
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { store, onLive } from '../store.js';
+import { api } from '../api.js';
+import { fullName, lifespan } from '@shared/names.js';
+import { STATUS, shareSurvey } from '../surveys.js';
+
+// Анкеты для родственников, которые приложением не пользуются: ссылка в мессенджер, ответы — в дерево.
+const router = useRouter();
+const list = ref(null);
+const name = ref('');
+const personId = ref(null);
+const find = ref('');
+const link = ref(null);
+const error = ref('');
+
+const load = async () => { list.value = await api('GET', '/api/surveys'); };
+onMounted(load);
+onUnmounted(onLive(load));
+
+const person = computed(() => store.idx?.persons.get(personId.value));
+const candidates = computed(() => {
+  const s = find.value.trim().toLowerCase();
+  if (s.length < 2) return [];
+  return [...(store.idx?.persons.values() || [])].filter((p) => fullName(p).toLowerCase().includes(s)).slice(0, 6);
+});
+function pick(p) {
+  personId.value = p.id;
+  find.value = '';
+  if (!name.value.trim()) name.value = [p.given, p.patronymic].filter(Boolean).join(' ');
+}
+
+async function create() {
+  error.value = '';
+  try {
+    const s = await api('POST', '/api/surveys', { name: name.value, person_id: personId.value });
+    link.value = { ...s, name: name.value };
+    name.value = '';
+    personId.value = null;
+    load();
+  } catch (e) {
+    error.value = e.message;
+  }
+}
+const when = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+</script>
+
+<template>
+  <div class="page">
+    <h1>Анкеты</h1>
+    <p class="muted small">Для родственника, который приложением не пользуется: он заполнит анкету по ссылке, без входа, а вы загрузите ответы в дерево.
+      Анкета не показывает ничего из дерева.</p>
+
+    <div class="card">
+      <b>Новая анкета</b>
+      <label class="field"><span>Для кого (видите только вы, например «Тётя Валя»)</span><input v-model="name" maxlength="80" /></label>
+      <div class="field">
+        <span class="muted small">Кто это в дереве — необязательно: тогда ответы сразу привяжутся к нему</span>
+        <div v-if="person" class="row picked">
+          <span class="grow">{{ fullName(person) }} <span class="muted small">{{ lifespan(person) }}</span></span>
+          <button class="ghost" @click="personId = null" aria-label="Убрать">✕</button>
+        </div>
+        <template v-else>
+          <input v-model="find" placeholder="Начните вводить имя" />
+          <div v-if="candidates.length" class="list" style="margin-top:6px">
+            <a v-for="p in candidates" :key="p.id" href="#" @click.prevent="pick(p)">{{ fullName(p) }} <span class="muted small">{{ lifespan(p) }}</span></a>
+          </div>
+        </template>
+      </div>
+      <p v-if="error" class="error">{{ error }}</p>
+      <button class="primary block" :disabled="!name.trim()" @click="create">Создать ссылку</button>
+    </div>
+
+    <div v-if="link" class="card" style="margin-top:12px">
+      <b>Ссылка для: {{ link.name }}</b>
+      <p class="small" style="word-break:break-all">{{ link.url }}</p>
+      <p class="muted small">Работает 30 дней и пока анкету не отправили. Отправьте её в любом мессенджере.</p>
+      <div class="grid2">
+        <button class="primary" @click="shareSurvey(link, 'share')">Поделиться</button>
+        <button @click="shareSurvey(link, 'copy')">Скопировать</button>
+      </div>
+    </div>
+
+    <h2>Отправленные</h2>
+    <div v-if="!list" class="muted">Загрузка…</div>
+    <div v-else class="list">
+      <router-link v-for="s in list" :key="s.id" :to="`/surveys/${s.id}`">
+        <div class="grow">
+          <div>{{ s.name }}</div>
+          <div class="small"><span class="status" :class="s.status">{{ STATUS[s.status] }}</span>
+            <span class="muted"> · {{ s.created_by_name }}, {{ when(s.created_at) }}</span></div>
+        </div>
+        <span class="muted">›</span>
+      </router-link>
+      <div v-if="!list.length" class="muted">Анкет пока нет</div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.picked { background: var(--accent-soft); border-radius: 12px; padding: 4px 4px 4px 12px; }
+.status { font-weight: 600; color: var(--muted); }
+.status.submitted { color: var(--accent); }
+.status.filling { color: var(--oral); }
+.status.loaded { color: var(--text); font-weight: 400; }
+</style>

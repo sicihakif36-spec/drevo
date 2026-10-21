@@ -192,6 +192,25 @@ export function pushPlugin(app, opts = {}) {
     });
   }
 
+  // Анкету отправили: сообщить тому, кто её создал, и владельцу — если они по-прежнему правят дерево.
+  async function survey(id) {
+    const s = (await q(
+      `select id, name, created_by, answers->'people'->'self'->>'sex' as sex from surveys where id = $1 and submitted_at is not null`, [id],
+    ))[0];
+    if (!s || !(await claim('survey', s.id))) return;
+    const subs = await q(
+      `select s.endpoint, s.p256dh, s.auth from push_subs s join users u on u.id = s.user_id
+       where not u.disabled and (u.role = 'owner' or (u.id = $1 and u.role = 'editor'))`,
+      [s.created_by],
+    );
+    await deliver(subs, {
+      title: `${s.name} ${verb('заполнил', s.sex)} анкету`,
+      body: 'Посмотрите ответы и загрузите их в дерево',
+      url: `/#/surveys/${s.id}`,
+      tag: `survey-${s.id}`,
+    });
+  }
+
   // Комментарии, о которых не успели сообщить сразу.
   async function missedComments(now) {
     const rows = await q(
@@ -297,6 +316,7 @@ export function pushPlugin(app, opts = {}) {
 
   app.decorate('push', {
     comment: (id) => later(() => comment(id)),
+    survey: (id) => later(() => survey(id)),
     tick,
     settled: () => Promise.all([...pending, busy]),
   });
