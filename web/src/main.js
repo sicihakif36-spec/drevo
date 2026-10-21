@@ -1,6 +1,7 @@
 import { createApp } from 'vue';
 import { createRouter, createWebHashHistory } from 'vue-router';
 import App from './App.vue';
+import './fonts.css';
 import './style.css';
 import TreeView from './views/TreeView.vue';
 import PersonView from './views/PersonView.vue';

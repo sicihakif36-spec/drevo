@@ -10,7 +10,7 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+      includeAssets: ['icon.svg', 'apple-touch-icon.png', 'badge-96.png'],
       manifest: {
         name: 'Древо — семейное дерево',
         short_name: 'Древо',
@@ -19,15 +19,18 @@ export default defineConfig({
         start_url: '/',
         display: 'standalone',
         orientation: 'any',
-        background_color: '#f7f3ec',
-        theme_color: '#5b7a3a',
+        background_color: '#f6f1e7',
+        theme_color: '#46682a',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          // Фон во весь квадрат: круг или «капельку» вырезает сам телефон.
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
+        // woff2 — шрифт PT Sans: приложение без сети открывается с ним же.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         // Обработчики уведомлений (push, нажатие) — отдельным файлом из public.
         importScripts: ['push-sw.js'],
         navigateFallback: '/index.html',
