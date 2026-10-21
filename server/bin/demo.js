@@ -9,7 +9,8 @@ import path from 'node:path';
 import { config } from '../src/config.js';
 import { mediaPath } from '../src/routes/media.js';
 import { snapshot } from '../src/album.js';
-import { demoImage, demoLetter } from './demo-media.js';
+import { snapshot as storySnapshot } from '../src/stories.js';
+import { demoImage, demoLetter, demoVoice } from './demo-media.js';
 
 if (process.env.NODE_ENV === 'production') { console.error('Не запускайте на рабочей базе'); process.exit(1); }
 await pool.query('drop schema public cascade; create schema public;');
@@ -95,6 +96,28 @@ await tx(async (db) => {
   await media(db, { image: 'group', caption: 'Вся семья у дома в Горках', date: 'лето 1975', name: 'gorki.jpg', persons: [petr, klav, yuri, lyuda], user: ed.id });
   await media(db, { pdf: true, kind: 'doc', caption: 'Письмо Василия с фронта', date: 'март 1942', name: 'pismo.pdf', persons: [vas, petr], user: ed.id });
 });
+// Истории. Рассказ о войне с записью голоса — гостю виден; про летние приезды (с живой Людмилой) — нет.
+async function story(db, { title, date, body, persons, voice, user = u.id }) {
+  let audio = null;
+  if (voice) {
+    audio = (await db.q("insert into media (kind, mime, bytes, name, duration, created_by) values ('audio', 'audio/wav', 0, 'golos.wav', $1, $2) returning id",
+      [voice, user]))[0].id;
+    fs.writeFileSync(mediaPath(audio), demoVoice(voice));
+    await db.q('update media set bytes = $1 where id = $2', [fs.statSync(mediaPath(audio)).size, audio]);
+  }
+  const s = (await db.q('insert into stories (title, date, body, audio_id, created_by) values ($1, $2, $3, $4, $5) returning *',
+    [title, date, body, audio, user]))[0];
+  for (const p of persons) await db.q('insert into story_persons (story_id, person_id) values ($1, $2)', [s.id, p]);
+  await logChange(db, user, 'story', s.id, 'add', null, storySnapshot(s), persons);
+}
+await tx((db) => story(db, {
+  title: 'Как дед Пётр уходил на фронт', date: 'лето 1941', persons: [petr, vas], voice: 20,
+  body: 'Бабушка Клава рассказывала: провожали всей деревней, у правления. Пётр обещал вернуться к покосу, а вернулся только в сорок пятом.\n\nВасилий ушёл через год и писал письма до весны сорок третьего.',
+}));
+await tx((db) => story(db, {
+  title: 'Лето в Горках', date: '1960-е', persons: [klav, lyuda], user: ed.id,
+  body: 'Каждое лето Людмилу отправляли к бабушке в Горки. Ходили за земляникой, а вечером пили чай на крыльце.',
+}));
 // Обсуждение: Сергей писал давно, Елена — после его прошлого визита.
 const say = (person, user, body, ago) => pool.query(
   'insert into comments (person_id, user_id, body, created_at) values ($1, $2, $3, now() - $4::interval)', [person, user, body, ago]);

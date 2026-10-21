@@ -132,7 +132,8 @@ export function renderPdf(stream, data, o) {
   return plan;
 }
 
-export async function loadTreeData(user) {
+// hide — как для гостя: и у владельца с галочкой «скрыть живых» (без главных фото, которые гостю не показываются).
+export async function loadTreeData(user, hide = isGuest(user)) {
   const [persons, families, children, media, settings] = await Promise.all([
     q('select * from persons where deleted_at is null'),
     q('select * from families'),
@@ -141,14 +142,14 @@ export async function loadTreeData(user) {
     q("select value from settings where key = 'title'"),
   ]);
   const data = { persons, families, children, photoMime: Object.fromEntries(media.map((m) => [m.id, m.mime])), title: settings[0]?.value };
-  return isGuest(user) ? guestTree(data) : data;
+  return hide ? guestTree(data) : data;
 }
 
 export default async function printRoutes(app) {
   app.get('/api/print.pdf', { preHandler: need('viewer') }, async (req, reply) => {
     const o = parsePrintOptions(req.query);
-    const data = await loadTreeData(req.user);
     if (isGuest(req.user)) o.hideLiving = true;
+    const data = await loadTreeData(req.user, o.hideLiving);
     if (!o.title) o.title = data.title || 'Семейное древо';
     if (!o.root) o.root = req.user.person_id;
     reply.header('Content-Type', 'application/pdf');

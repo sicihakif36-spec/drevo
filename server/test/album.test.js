@@ -235,6 +235,19 @@ test('гость не видит файлов с живыми — ни в аль
   assert.equal((await call(guest, 'GET', `/api/media/${old.id}`)).statusCode, 404);
 });
 
+test('печать «скрыть живых» у владельца: без главного фото, которое гостю не показывается', async () => {
+  const grand = await add({ given: 'Печать', sex: 'M', living: false });
+  const kid = await add({ given: 'Живой', sex: 'M', birth_date: '1995' });
+  const group = (await upload(owner, grand.id, { thumb: false })).json();
+  await json(owner, 'PUT', `/api/media/${group.id}/persons/${kid.id}`);
+  assert.equal((await person(grand.id)).photo_id, group.id);
+  const pdf = async (q) => (await call(owner, 'GET', `/api/print.pdf?root=${grand.id}&mode=descendants&up=0&down=0${q}`)).rawPayload.toString('latin1');
+  assert.match(await pdf(''), /\/Subtype \/Image/, 'обычная печать — с фото');
+  assert.doesNotMatch(await pdf('&hideLiving=1'), /\/Subtype \/Image/, 'с галочкой — без группового фото с живым');
+  await json(owner, 'DELETE', `/api/media/${group.id}/persons/${kid.id}`);
+  assert.match(await pdf('&hideLiving=1'), /\/Subtype \/Image/, 'фото ушедшего без живых — печатается');
+});
+
 test('лента и сводка: «добавил 3 фото», гостю — без подписей и id файлов', async () => {
   const p = await add({ given: 'Лента', sex: 'M', living: false });
   const a = (await upload(editor, p.id, { caption: 'секретная подпись', date: '1961' })).json();
@@ -261,18 +274,27 @@ test('миграция: фото, загруженные до альбома, п
   await app.close();
   await pool.query('drop schema public cascade; create schema public;');
   await pool.query('create table schema_migrations (name text primary key, applied_at timestamptz not null default now())');
-  await pool.query("insert into schema_migrations (name) values ('007_album.sql')");
+  // 007_album.sql и всё после неё — как будто уже есть, чтобы получить старую схему; потом снимаем отметки.
+  const later = fs.readdirSync(new URL('../migrations', import.meta.url)).filter((f) => f >= '007_album.sql');
+  await pool.query('insert into schema_migrations (name) select unnest($1::text[])', [later]);
   await migrate(() => {});
   const [p] = (await pool.query("insert into persons (given, living) values ('Старый', false) returning id")).rows;
   const ins = async () => (await pool.query("insert into media (person_id, mime, bytes) values ($1, 'image/jpeg', 100) returning id", [p.id])).rows[0].id;
   const main = await ins();
   const replaced = await ins();
   const undone = await ins();
+  const removed = await ins();
   await pool.query('update persons set photo_id = $1 where id = $2', [main, p.id]);
-  await pool.query(`insert into changes (op, entity, entity_id, action, before, after, reverted_by)
-    values (gen_random_uuid(), 'person', $1, 'photo', '{"photo_id": null}', $2, 1)`, [p.id, JSON.stringify({ photo_id: undone })]);
+  const photoChange = (before, after, revertedBy = null) => pool.query(
+    `insert into changes (op, at, entity, entity_id, action, before, after, reverted_by)
+     values (gen_random_uuid(), now() - interval '30 days', 'person', $1, 'photo', $2, $3, $4)`,
+    [p.id, JSON.stringify({ photo_id: before }), JSON.stringify({ photo_id: after }), revertedBy]);
+  await photoChange(null, undone, 1);
+  // Заменённое другим фото — видно; убранное кнопкой «убрать фото» — в альбоме удалённым.
+  await photoChange(replaced, main);
+  await photoChange(removed, null);
 
-  await pool.query("delete from schema_migrations where name = '007_album.sql'");
+  await pool.query('delete from schema_migrations where name = any($1)', [later]);
   await migrate(() => {});
   app = await buildApp({ logger: false, push: { timer: false, send: async () => {} } });
   owner = await login('owner');
@@ -280,4 +302,15 @@ test('миграция: фото, загруженные до альбома, п
   assert.deepEqual(list.map((m) => m.id).sort(), [main, replaced].sort());
   assert.ok(list.every((m) => m.kind === 'photo' && m.caption === '' && !m.thumb));
   assert.equal((await person(p.id)).photo_id, main);
+
+  // Убранное фото можно вернуть в альбом: удаление записано в журнал отдельным действием того же времени.
+  const ops = await json(owner, 'GET', '/api/changes');
+  const del = ops.find((o) => o.entries.some((e) => e.entity === 'media' && e.entity_id === removed));
+  assert.equal(del.entries.length, 1);
+  assert.equal(del.entries[0].action, 'delete');
+  assert.ok(Date.now() - new Date(del.at) > 29 * 24 * 3600000, 'в журнале — время, когда фото убрали');
+  assert.ok(!ops.some((o) => o.entries.some((e) => e.entity === 'media' && e.entity_id !== removed)));
+  await revert(del);
+  assert.deepEqual((await album(owner, p.id)).map((m) => m.id).sort(), [main, replaced, removed].sort());
+  assert.equal((await person(p.id)).photo_id, main, 'главное фото не меняется');
 });

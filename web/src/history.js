@@ -99,6 +99,26 @@ function mediaLines(entries, name) {
   return lines;
 }
 
+// Истории: «добавил(а) историю «Рыбалка на Волге»: Смирнов Пётр Иванович». Гостю заголовки не приходят — без них.
+const STORY_FIELD = { title: 'заголовок', date: 'дату', body: 'текст', audio_id: 'запись голоса' };
+function storyLine(e, name) {
+  const x = e.after || e.before || {};
+  const title = x.title ? ` «${x.title}»` : '';
+  const who = (e.persons || []).map(name).join(', ');
+  switch (e.action) {
+    case 'add': return `добавил(а) историю${title}${x.audio ? ' с записью голоса' : ''}${who ? `: ${who}` : ''}`;
+    case 'delete': return `удалил(а) историю${title}${who ? `: ${who}` : ''}`;
+    case 'restore': return `вернул(а) историю${title}${who ? `: ${who}` : ''}`;
+    case 'update': {
+      const what = Object.keys(e.before || {}).map((k) => STORY_FIELD[k] || k).join(', ');
+      return `изменил(а) историю${title}${what ? `: ${what}` : ''}`;
+    }
+    case 'link': return `связал(а) историю${title} с: ${name(e.after?.person_id)}`;
+    case 'unlink': return `убрал(а) историю${title} из карточки: ${name(e.before?.person_id)}`;
+  }
+  return null;
+}
+
 // Строки действия. Служебные записи (пустая семья создана или убрана) не показываем.
 export function opLines(op, name) {
   // Первое фото само становится главным, удалённое перестаёт им быть — отдельной строкой это не показываем.
@@ -107,6 +127,7 @@ export function opLines(op, name) {
     ...mediaLines(op.entries.filter((e) => e.entity === 'media'), name),
     ...op.entries.map((e) => {
       if (e.entity === 'person') return e.action === 'photo' && withFiles ? null : personLine(e, name);
+      if (e.entity === 'story') return storyLine(e, name);
       return e.entity === 'family' ? familyLine(e, name) : null;
     }),
   ].filter(Boolean);
@@ -114,10 +135,13 @@ export function opLines(op, name) {
 }
 
 // «было: …» для правок карточки.
+// У истории — только заголовок и дата: текст длинный, а запись голоса словами не покажешь.
 export function opWas(op) {
   return op.entries
     .filter((e) => e.entity !== 'family' && e.action === 'update')
-    .map((e) => 'было: ' + Object.values(e.before || {}).map((v) => (v === '' ? '—' : String(v))).join(', '));
+    .map((e) => Object.entries(e.before || {}).filter(([k]) => e.entity !== 'story' || ['title', 'date'].includes(k)).map(([, v]) => v))
+    .filter((vals) => vals.length)
+    .map((vals) => 'было: ' + vals.map((v) => (v === '' ? '—' : String(v))).join(', '));
 }
 
 export const restoresSomeone = (op) => op.entries.some((e) => e.entity !== 'family' && e.action === 'delete');

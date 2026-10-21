@@ -13,8 +13,9 @@ export async function tagged(db, mediaId) {
   return (await db.q('select person_id from media_persons where media_id = $1 order by person_id', [mediaId])).map((r) => r.person_id);
 }
 
+// Записи голоса — не альбом: их правит история (stories.js).
 export async function liveMedia(db, id) {
-  const m = (await db.q('select * from media where id = $1 and deleted_at is null for update', [id]))[0];
+  const m = (await db.q("select * from media where id = $1 and deleted_at is null and kind <> 'audio' for update", [id]))[0];
   if (!m) throw new HttpError(404, 'Файл не найден');
   return m;
 }

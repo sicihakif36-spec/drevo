@@ -6,6 +6,7 @@ import {
   dropFamily, restoreFamily, dropEmpty, deletePerson, restorePerson,
 } from './tree.js';
 import { MEDIA_FIELDS, deleteMedia, restoreMedia, tag, untag } from './album.js';
+import { STORY_FIELDS, deleteStory, restoreStory, updateStory, linkPerson, unlinkPerson } from './stories.js';
 
 const LATER = 'После этой правки были другие. Сначала отмените более поздние правки.';
 const GONE = 'Этот человек удалён. Сначала верните его.';
@@ -121,6 +122,40 @@ async function undoMedia(db, userId, e) {
   throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
 }
 
+async function undoStory(db, userId, e) {
+  const s = (await db.q('select * from stories where id = $1 for update', [e.entity_id]))[0];
+  if (!s) throw new HttpError(404, 'История не найдена');
+  switch (e.action) {
+    case 'add':
+    case 'restore':
+      if (s.deleted_at) throw new HttpError(409, 'Эта история уже удалена');
+      return deleteStory(db, userId, s.id);
+    case 'delete':
+      return restoreStory(db, userId, s.id);
+  }
+  if (s.deleted_at) throw new HttpError(409, 'Эта история удалена. Сначала верните её.');
+  switch (e.action) {
+    case 'update': {
+      const before = e.before || {};
+      const id = await updateStory(db, userId, s.id, pick(before, Object.keys(before).filter((c) => STORY_FIELDS.includes(c))));
+      if (!id) throw new HttpError(409, 'Здесь уже всё как было до этой правки');
+      return id;
+    }
+    case 'link': {
+      const id = await unlinkPerson(db, userId, s.id, e.after.person_id);
+      if (!id) throw new HttpError(409, LATER);
+      return id;
+    }
+    case 'unlink': {
+      if (!(await alive(db, e.before.person_id))) throw new HttpError(409, GONE);
+      const id = await linkPerson(db, userId, s.id, e.before.person_id);
+      if (!id) throw new HttpError(409, LATER);
+      return id;
+    }
+  }
+  throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
+}
+
 export async function revertOp(db, userId, changeId) {
   const head = (await db.q('select op from changes where id = $1', [changeId]))[0];
   if (!head) throw new HttpError(404, 'Правка не найдена');
@@ -130,7 +165,7 @@ export async function revertOp(db, userId, changeId) {
   let first = null;
   for (const e of entries) {
     if (e.entity === 'family') families.push(e.entity_id);
-    const undo = { person: undoPerson, media: undoMedia, family: undoFamily }[e.entity];
+    const undo = { person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory }[e.entity];
     const id = await undo(db, userId, e);
     first ??= id;
   }

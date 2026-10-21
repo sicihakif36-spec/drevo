@@ -34,7 +34,8 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           { urlPattern: /\/api\/tree$/, handler: 'NetworkFirst', options: { cacheName: 'tree', networkTimeoutSeconds: 4 } },
-          { urlPattern: /\/api\/media\//, handler: 'CacheFirst', options: { cacheName: 'photos', expiration: { maxEntries: 2000 } } },
+          // rangeRequests: запись голоса Safari просит кусками (Range); целиком сохранённый файл режется на нужный кусок.
+          { urlPattern: /\/api\/media\//, handler: 'CacheFirst', options: { cacheName: 'photos', rangeRequests: true, expiration: { maxEntries: 2000 } } },
         ],
       },
     }),

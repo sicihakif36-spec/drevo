@@ -92,3 +92,35 @@ export function demoLetter(file) {
   doc.end();
   return new Promise((resolve) => out.on('finish', resolve));
 }
+
+// «Голос» для истории: WAV, 16 кГц, моно. Слоги — тон с плавающей высотой и паузами, похоже на речь издали.
+export function demoVoice(seconds = 20) {
+  const rate = 16000;
+  const n = rate * seconds;
+  const data = Buffer.alloc(n * 2);
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    const syllable = (t * 3.2) % 1; // около трёх слогов в секунду
+    const pause = Math.floor(t / 2.7) % 3 === 2 && t % 2.7 > 2.1; // паузы между фразами
+    const env = pause ? 0 : Math.sin(Math.PI * syllable) ** 2;
+    const pitch = 150 + 40 * Math.sin(t * 1.3) + 25 * Math.sin(t * 7.1);
+    phase += (2 * Math.PI * pitch) / rate;
+    const v = env * (0.5 * Math.sin(phase) + 0.25 * Math.sin(2 * phase) + 0.12 * Math.sin(3 * phase));
+    data.writeInt16LE(Math.round(v * 12000), i * 2);
+  }
+  const head = Buffer.alloc(44);
+  head.write('RIFF', 0);
+  head.writeUInt32LE(36 + data.length, 4);
+  head.write('WAVEfmt ', 8);
+  head.writeUInt32LE(16, 16);
+  head.writeUInt16LE(1, 20); // PCM
+  head.writeUInt16LE(1, 22); // моно
+  head.writeUInt32LE(rate, 24);
+  head.writeUInt32LE(rate * 2, 28);
+  head.writeUInt16LE(2, 32);
+  head.writeUInt16LE(16, 34);
+  head.write('data', 36);
+  head.writeUInt32LE(data.length, 40);
+  return Buffer.concat([head, data]);
+}

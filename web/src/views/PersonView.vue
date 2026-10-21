@@ -7,6 +7,7 @@ import { openAdd } from '../components/addState.js';
 import ChangeList from '../components/ChangeList.vue';
 import Discussion from '../components/Discussion.vue';
 import Album from '../components/Album.vue';
+import Stories from '../components/Stories.vue';
 import { FIELDS } from '../history.js';
 import { fullName, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields } from '@shared/names.js';
 
@@ -195,6 +196,8 @@ onUnmounted(onLive((events) => { if (showHistory.value && events.some((e) => e.k
     </div>
 
     <Album ref="album" :person="p" />
+
+    <Stories :person="p" />
 
     <Discussion :person="p" />
 

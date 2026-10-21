@@ -40,6 +40,11 @@ export function trimEntry(e) {
     const f = e.action === 'update' ? fieldsOnly : (x) => pick(x, ['kind', 'person_id']);
     return { ...both(f), entity_id: null };
   }
+  // Истории: без заголовков, дат и текста — только кто связан и есть ли запись голоса.
+  if (e.entity === 'story') {
+    const f = e.action === 'update' ? fieldsOnly : (x) => pick(x, ['person_id', 'audio']);
+    return { ...both(f), entity_id: null };
+  }
   if (e.action === 'create' || e.action === 'drop') return both(familySnap);
   if (e.action === 'update') return both(fieldsOnly);
   return both((x) => pick(x, LINK));
@@ -53,6 +58,20 @@ export async function guestMedia(ids) {
     `select m.id, p.living, p.birth_date, p.deleted_at from media m
      join media_persons mp on mp.media_id = m.id join persons p on p.id = mp.person_id
      where m.id = any($1::uuid[]) and m.deleted_at is null`,
+    [ids],
+  );
+  const bad = new Set(rows.filter((r) => isPrivate(r)).map((r) => r.id));
+  return new Set(rows.filter((r) => !r.deleted_at && !bad.has(r.id)).map((r) => r.id));
+}
+
+// Какие из историй ids гость может видеть: история не удалена, связана с кем-то из дерева и ни с одним живым.
+// Как с групповым фото: история с живым гостю не показывается совсем — ни в карточке ушедшего, ни запись голоса по ссылке.
+export async function guestStories(ids) {
+  if (!ids.length) return new Set();
+  const rows = await q(
+    `select s.id, p.living, p.birth_date, p.deleted_at from stories s
+     join story_persons sp on sp.story_id = s.id join persons p on p.id = sp.person_id
+     where s.id = any($1::uuid[]) and s.deleted_at is null`,
     [ids],
   );
   const bad = new Set(rows.filter((r) => isPrivate(r)).map((r) => r.id));

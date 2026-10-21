@@ -25,4 +25,25 @@ where m.bytes = 0 or m.person_id is null
        and exists (select 1 from changes c where c.entity = 'person' and c.action = 'photo'
                    and c.after->>'photo_id' = m.id::text and c.reverted_by is not null));
 
+-- Фото, которое убрали с карточки кнопкой «убрать фото» (и оно ничьё не главное), — в альбом сразу удалённым.
+-- Удаление пишется в журнал отдельным действием того, кто убрал фото, и в то же время: «Вернуть» возвращает фото в альбом.
+create temp table album_removed on commit drop as
+select distinct on (m.id) m.id, m.person_id, c.user_id, c.at
+from media m join changes c on c.entity = 'person' and c.action = 'photo' and c.reverted_by is null
+  and c.before->>'photo_id' = m.id::text and c.after->>'photo_id' is null
+where m.deleted_at is null and not exists (select 1 from persons p where p.photo_id = m.id)
+order by m.id, c.id desc;
+
+update media m set deleted_at = r.at from album_removed r where r.id = m.id;
+insert into changes (op, at, user_id, entity, entity_id, action, before, after, persons)
+select gen_random_uuid(), r.at, r.user_id, 'media', r.id, 'delete',
+  jsonb_build_object('kind', 'photo', 'name', '', 'caption', '', 'date', ''), null, array[r.person_id]
+from album_removed r order by r.at;
+-- Эти записи — не новые правки: в сводку уведомлений не попадают.
+update push_digests d set last_change = x.last
+from (select user_id, max(id) as last from changes where user_id is not null group by user_id) x
+where x.user_id = d.user_id and not exists (
+  select 1 from changes c where c.user_id = d.user_id and c.id > d.last_change
+  and not (c.entity = 'media' and c.action = 'delete' and c.entity_id in (select id from album_removed)));
+
 alter table media drop column person_id;

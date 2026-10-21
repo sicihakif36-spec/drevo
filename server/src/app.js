@@ -13,6 +13,7 @@ import printRoutes from './routes/print.js';
 import exportRoutes from './routes/export.js';
 import feedRoutes from './routes/feed.js';
 import commentRoutes from './routes/comments.js';
+import storyRoutes from './routes/stories.js';
 import { eventsPlugin } from './events.js';
 import { pushPlugin } from './push.js';
 
@@ -37,6 +38,7 @@ export async function buildApp(opts = {}) {
   await app.register(exportRoutes);
   await app.register(feedRoutes);
   await app.register(commentRoutes);
+  await app.register(storyRoutes);
   eventsPlugin(app, { ping: opts.eventsPing });
 
   app.get('/api/health', async () => {

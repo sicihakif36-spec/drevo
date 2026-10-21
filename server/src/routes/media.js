@@ -12,9 +12,18 @@ import { config } from '../config.js';
 import { logChange } from '../changes.js';
 import { HttpError, alive } from '../tree.js';
 import { snapshot, liveMedia, setMain, deleteMedia, tag, untag, updateMedia } from '../album.js';
-import { isGuest, guestMedia } from '../privacy.js';
+import { isGuest, guestMedia, guestStories } from '../privacy.js';
 
 const IMAGES = ['image/jpeg', 'image/png', 'image/webp'];
+// Запись голоса: с телефона (MediaRecorder) или готовый файл из диктофона. Телефоны называют одно и то же по-разному,
+// поэтому тип берётся по названию и по расширению файла и сводится к одному.
+const AUDIO = {
+  'audio/mp4': 'audio/mp4', 'audio/x-m4a': 'audio/mp4', 'audio/m4a': 'audio/mp4', 'audio/aac': 'audio/aac', 'audio/x-aac': 'audio/aac',
+  'audio/mpeg': 'audio/mpeg', 'audio/mp3': 'audio/mpeg', 'audio/ogg': 'audio/ogg', 'audio/opus': 'audio/ogg', 'audio/webm': 'audio/webm',
+  'video/webm': 'audio/webm', 'audio/wav': 'audio/wav', 'audio/x-wav': 'audio/wav', 'audio/wave': 'audio/wav', 'audio/vnd.wave': 'audio/wav',
+};
+const AUDIO_EXT = { m4a: 'audio/mp4', mp4: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', webm: 'audio/webm', wav: 'audio/wav' };
+const audioMime = (mime, name) => AUDIO[String(mime).split(';')[0].trim().toLowerCase()] || AUDIO_EXT[/\.([a-z0-9]+)$/i.exec(name)?.[1].toLowerCase()];
 const MIME = { photo: IMAGES, doc: [...IMAGES, 'application/pdf'] };
 export const MAX_FILE = 20 * 1024 * 1024; // крупный PDF; nginx пропускает до 25 МБ (deploy/nginx/drevo.conf)
 export const mediaPath = (id, thumb = false) => path.join(config.dataDir, 'media', thumb ? `${id}.thumb` : id);
@@ -27,8 +36,23 @@ const LIST = `select m.id, m.kind, m.mime, m.name, m.caption, m.date, m.thumb, m
   from media m`;
 
 // Файл гостю не отдаётся: на нём живой человек или его нет в альбоме.
-async function guestDenied(req, id) {
-  return isGuest(req.user) && !(await guestMedia([id])).has(id);
+// Запись голоса — если ни одна история с ней гостю не видна.
+async function guestDenied(req, m) {
+  if (!isGuest(req.user)) return false;
+  if (m.kind !== 'audio') return !(await guestMedia([m.id])).has(m.id);
+  const ids = (await q('select id from stories where audio_id = $1', [m.id])).map((s) => s.id);
+  return !(await guestStories(ids)).size;
+}
+
+// Кусок файла по заголовку Range: «bytes=0-1023», «bytes=1024-», «bytes=-500». Без него Safari на iPhone не играет аудио.
+// null — заголовка нет или он непонятный (тогда файл целиком), false — кусок за концом файла.
+export function parseRange(header, size) {
+  const r = /^bytes=(\d*)-(\d*)$/.exec(String(header || '').trim());
+  if (!r || (!r[1] && !r[2])) return null;
+  const start = r[1] ? Number(r[1]) : Math.max(0, size - Number(r[2]));
+  const end = r[1] && r[2] ? Math.min(Number(r[2]), size - 1) : size - 1;
+  if ((!r[1] && !Number(r[2])) || start >= size || start > end) return false;
+  return { start, end };
 }
 
 export default async function mediaRoutes(app) {
@@ -135,14 +159,55 @@ export default async function mediaRoutes(app) {
     return { photo_id: mediaId };
   });
 
+  // Запись голоса. Отдельно от альбома: файл ни к кому не привязан, пока его не приложат к истории.
+  // Поля до файла: duration — длительность в секундах, как её насчитал телефон.
+  app.post('/api/audio', { preHandler: need('editor') }, async (req) => {
+    const id = crypto.randomUUID();
+    const fields = {};
+    let file = null;
+    try {
+      for await (const part of req.parts()) {
+        if (part.type === 'field') fields[part.fieldname] = part.value;
+        else if (part.fieldname === 'file' && !file) {
+          file = { mime: audioMime(part.mimetype, part.filename || ''), name: text(part.filename, 200) };
+          await pipeline(part.file, fs.createWriteStream(mediaPath(id)));
+        } else part.file.resume();
+      }
+      if (!file) throw new HttpError(400, 'Запись не получена');
+      if (!file.mime) throw new HttpError(400, 'Нужна запись голоса: MP3, M4A, OGG, WebM или WAV');
+      const { size } = await fsp.stat(mediaPath(id));
+      if (!size) throw new HttpError(400, 'Запись пустая. Попробуйте записать ещё раз.');
+      const sec = Math.round(Number(fields.duration));
+      const duration = Number.isFinite(sec) && sec > 0 ? Math.min(sec, 24 * 3600) : null;
+      return (await q(
+        `insert into media (id, kind, mime, bytes, name, duration, created_by) values ($1, 'audio', $2, $3, $4, $5, $6)
+         returning id, mime, bytes, duration`,
+        [id, file.mime, size, file.name, duration, req.user.id],
+      ))[0];
+    } catch (err) {
+      await fsp.rm(mediaPath(id), { force: true });
+      if (err.code === 'FST_REQ_FILE_TOO_LARGE') throw new HttpError(413, `Запись слишком большая: не больше ${MAX_FILE / 1024 / 1024} МБ`);
+      if (err.code === 'FST_FILES_LIMIT') throw new HttpError(413, 'Записи отправляются по одной');
+      throw err;
+    }
+  });
+
   async function send(req, reply, thumb) {
-    const m = (await q('select id, mime, thumb from media where id = $1', [req.params.id]))[0];
-    if (!m || (await guestDenied(req, m.id))) return reply.code(404).send({ error: 'Файл не найден' });
+    const m = (await q('select id, kind, mime, thumb from media where id = $1', [req.params.id]))[0];
+    if (!m || (await guestDenied(req, m))) return reply.code(404).send({ error: 'Файл не найден' });
     // Миниатюры нет (старое фото) — отдаём сам снимок.
     const small = thumb && m.thumb;
     if (thumb && !small && !IMAGES.includes(m.mime)) return reply.code(404).send({ error: 'Файл не найден' });
-    reply.header('Content-Type', small ? 'image/jpeg' : m.mime).header('Cache-Control', 'private, max-age=31536000, immutable');
-    return reply.send(fs.createReadStream(mediaPath(m.id, small)));
+    const file = mediaPath(m.id, small);
+    const stat = await fsp.stat(file).catch(() => null);
+    if (!stat) return reply.code(404).send({ error: 'Файл не найден' });
+    const range = parseRange(req.headers.range, stat.size);
+    if (range === false) return reply.code(416).header('Content-Range', `bytes */${stat.size}`).send({ error: 'Такого куска в файле нет' });
+    reply.header('Content-Type', small ? 'image/jpeg' : m.mime).header('Cache-Control', 'private, max-age=31536000, immutable')
+      .header('Accept-Ranges', 'bytes');
+    if (!range) return reply.header('Content-Length', stat.size).send(fs.createReadStream(file));
+    return reply.code(206).header('Content-Range', `bytes ${range.start}-${range.end}/${stat.size}`)
+      .header('Content-Length', range.end - range.start + 1).send(fs.createReadStream(file, range));
   }
   app.get('/api/media/:id', { preHandler: need('viewer') }, (req, reply) => send(req, reply, false));
   app.get('/api/media/:id/thumb', { preHandler: need('viewer') }, (req, reply) => send(req, reply, true));
