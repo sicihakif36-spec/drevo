@@ -101,7 +101,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
           <b>{{ pages }} {{ pages === 1 ? 'лист' : pages < 5 ? 'листа' : 'листов' }} {{ o.paper }}</b>,
           {{ plan.orient === 'landscape' ? 'альбомная' : 'книжная' }} · {{ layout ? layout.nodes.length : fan.people }} чел. <span class="muted">{{ sizeMm }}</span>
         </div>
-        <p v-if="fan?.crowded" class="small warn">
+        <p v-if="fan?.crowded" class="banner" style="margin:6px 0 0">
           {{ fan.crowded }} {{ plural(fan.crowded, 'имя не помещается', 'имени не помещаются', 'имён не помещаются') }} даже мелким шрифтом —
           возьмите лист крупнее или «Склеить из листов».
         </p>
@@ -182,6 +182,5 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
 .nd.M { fill: #e3ecf8; stroke: #5b7db1; }
 .nd.F { fill: #f8e3eb; stroke: #b15b7d; }
 .fan text { text-anchor: middle; dominant-baseline: central; fill: #1d1d1d; }
-.warn { color: #a05a00; margin: 6px 0 0; }
 .num { font-size: 120px; fill: rgba(0,0,0,.18); text-anchor: middle; dominant-baseline: middle; font-weight: 700; }
 </style>
