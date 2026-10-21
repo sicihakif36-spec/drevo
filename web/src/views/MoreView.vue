@@ -57,8 +57,9 @@ async function logout() {
   <div class="page">
     <h1>Ещё</h1>
     <div class="card">
-      <div><b>{{ store.me.name }}</b> <a href="#" class="small" @click.prevent="rename">изменить</a></div>
+      <div><b>{{ store.me.name }}</b></div>
       <div class="muted small">{{ ROLE[store.me.role] }}<template v-if="store.me.person_id && store.idx?.persons.get(store.me.person_id)"> · в дереве: {{ fullName(store.idx.persons.get(store.me.person_id)) }}</template></div>
+      <button style="margin-top:0.667rem" @click="rename">Изменить имя</button>
     </div>
 
     <div v-if="!standalone" class="card" style="margin-top:12px">
@@ -79,7 +80,7 @@ async function logout() {
       <router-link v-if="canTalk()" to="/changes">Последние правки</router-link>
       <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
       <a v-if="isOwner()" href="#" @click.prevent="openArchive">Скачать всё: дерево, фото, документы</a>
-      <a href="/api/export.ged" download>Скачать дерево для других программ (GEDCOM)</a>
+      <a href="/api/export.ged" download><span>Скачать дерево для другой программы<br /><span class="muted small">файл GEDCOM</span></span></a>
       <router-link v-if="isOwner()" to="/family">Родственники и приглашения</router-link>
     </div>
 

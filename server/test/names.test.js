@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   patronymicFrom, surnameFor, guessSex, kinshipTerm, lifespan, isPrivate, exactDate, yearsText, upcomingDates, parsePeriod,
-  toNewStyle, dateText, isOldStyle, withOldStyle, canBeOldStyle, parseDate,
+  toNewStyle, dateText, isOldStyle, withOldStyle, canBeOldStyle, parseDate, nameGenitive,
 } from '../../shared/names.js';
 import { placeTitle, placeKey, suggestPlaces } from '../../shared/places.js';
 import { gedDate, gedPeriod } from '../src/routes/export.js';
@@ -15,6 +15,23 @@ test('отчества', () => {
     assert.equal(patronymicFrom(n, 'M'), m);
     assert.equal(patronymicFrom(n, 'F'), f);
   }
+});
+
+test('имя в родительном падеже', () => {
+  const cases = [
+    [{ given: 'Сергей', patronymic: 'Юрьевич', sex: 'M' }, 'Сергея Юрьевича'],
+    [{ given: 'Пётр', patronymic: 'Ильич', sex: 'M' }, 'Петра Ильича'],
+    [{ given: 'Илья', patronymic: '', sex: 'M' }, 'Ильи'],
+    [{ given: 'Никита', patronymic: 'Павлович', sex: 'M' }, 'Никиты Павловича'],
+    [{ given: 'Игорь', patronymic: '', sex: 'M' }, 'Игоря'],
+    [{ given: 'Иван', patronymic: 'Петрович', sex: 'U' }, 'Ивана Петровича'],
+    [{ given: 'Ольга', patronymic: 'Ивановна', sex: 'F' }, 'Ольги Ивановны'],
+    [{ given: 'Мария', patronymic: 'Ильинична', sex: 'F' }, 'Марии Ильиничны'],
+    [{ given: 'Любовь', patronymic: 'Сергеевна', sex: 'F' }, 'Любови Сергеевны'],
+    [{ given: 'Елена', patronymic: '', sex: 'U' }, 'Елены'],
+    [{ given: '', surname: 'Смирнов', patronymic: '', sex: 'M' }, 'Смирнов'],
+  ];
+  for (const [p, want] of cases) assert.equal(nameGenitive({ surname: '', ...p }), want);
 });
 
 test('фамилии и пол', () => {

@@ -216,6 +216,29 @@ export function guessSex(given, patronymic) {
   return 'M';
 }
 
+// Родительный падеж имени с отчеством: «для Сергея Юрьевича». Фамилию не склоняем.
+// Незнакомое окончание оставляем как есть: лучше несклонённое имя, чем исковерканное.
+function wordGenitive(w, female) {
+  const low = w.toLowerCase();
+  const keep = (tail, n = 1) => w.slice(0, -n) + tail;
+  if (/(вич|ич)$/.test(low)) return w + 'а';
+  if (/на$/.test(low) && female) return keep('ы');
+  const special = { 'пётр': 'Петра', 'петр': 'Петра', 'павел': 'Павла', 'лев': 'Льва' };
+  if (!female && special[low]) return special[low];
+  if (/[гкхжчшщ]а$/.test(low)) return keep('и');
+  if (/а$/.test(low)) return keep('ы');
+  if (/я$/.test(low)) return keep('и');
+  if (female) return /ь$/.test(low) ? keep('и') : w;
+  if (/[йь]$/.test(low)) return keep('я');
+  if (/[бвгджзклмнпрстфхцчшщ]$/.test(low)) return w + 'а';
+  return w;
+}
+export function nameGenitive(p) {
+  if (!p?.given) return fullName(p);
+  const female = (p.sex === 'U' || !p.sex ? guessSex(p.given, p.patronymic) : p.sex) === 'F';
+  return [p.given, p.patronymic].filter(Boolean).map((w) => wordGenitive(w.trim(), female)).join(' ');
+}
+
 // ---------- Родство ----------
 
 const ANC = { M: ['отец', 'дед', 'прадед'], F: ['мать', 'бабушка', 'прабабушка'] };
