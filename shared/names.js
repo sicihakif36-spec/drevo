@@ -403,3 +403,32 @@ export function missingFields(p, idx) {
   if (idx && parentsOf(idx, p.id).length < 2) miss.push('родители');
   return miss;
 }
+
+// Фамилия в родительном падеже: «Орлова» (Орлов), «Орловой» (Орлова), «Вяземского», «Вяземской».
+// Незнакомое окончание — как есть («Шевченко», «Цой»): лучше несклонённая, чем исковерканная.
+export function surnameGenitive(s, female) {
+  const w = String(s || '').trim();
+  if (!w) return '';
+  if (w.includes('-')) return w.split('-').map((x) => surnameGenitive(x, female)).join('-');
+  const low = w.toLowerCase();
+  if (female) {
+    if (/(ова|ева|ёва|ина|ына)$/.test(low)) return w.slice(0, -1) + 'ой';
+    if (low.length > 4 && /ая$/.test(low)) return w.slice(0, -2) + 'ой';
+    return w;
+  }
+  if (/(ов|ев|ёв|ин|ын)$/.test(low)) return w + 'а';
+  // Короткие («Цой», «Бий») — как есть: это не прилагательные.
+  if (low.length > 4 && /(ий|ый|ой)$/.test(low)) return w.slice(0, -2) + 'ого';
+  return w;
+}
+
+// «Николая Орлова», «Анны Орловой»: имя и фамилия в родительном падеже (для «дочь Николая Орлова»).
+export function shortGenitive(p) {
+  if (!p) return '';
+  const female = isFemale(p);
+  const given = p.given ? wordGenitive(p.given.trim(), female) : '';
+  return [given, surnameGenitive(p.surname, female)].filter(Boolean).join(' ') || fullName(p);
+}
+
+// «21 октября 2026 года» по Москве: сервер живёт по UTC.
+export const todayText = (d = new Date()) => `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' }).replace(/\s*г\.$/, '')} года`;

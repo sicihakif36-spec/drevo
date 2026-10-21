@@ -12,6 +12,7 @@ import { PAPER, planPages } from '../../../shared/printplan.js';
 import { layoutFan, parseFanOptions } from '../../../shared/fan.js';
 import { drawFan } from '../fan.js';
 import { disposition } from '../pdf.js';
+import { renderInWorker, sendPdf } from '../pdfpool.js';
 
 const require = createRequire(import.meta.url);
 const fontDir = path.join(path.dirname(require.resolve('dejavu-fonts-ttf/package.json')), 'ttf');
@@ -171,13 +172,8 @@ export default async function printRoutes(app) {
     if (!o.title) o.title = data.title || 'Семейное древо';
     if (!o.root) o.root = req.user.person_id;
     const center = o.mode === 'fan' && data.persons.find((p) => p.id === o.root);
-    reply.header('Content-Type', 'application/pdf');
-    reply.header('Content-Disposition', center ? disposition(req.query.download === '1', `Веер предков — ${fullName(center)}`)
+    // Собирается в отдельном потоке (pdfpool.js): большое дерево не задерживает остальные запросы.
+    return sendPdf(reply, renderInWorker('tree', data, o), center ? disposition(req.query.download === '1', `Веер предков — ${fullName(center)}`)
       : `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="drevo.pdf"`);
-    reply.header('Cache-Control', 'no-store');
-    const { PassThrough } = await import('node:stream');
-    const out = new PassThrough();
-    renderPdf(out, data, o);
-    return reply.send(out);
   });
 }

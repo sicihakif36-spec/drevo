@@ -2,6 +2,7 @@
 // перенос блоков на следующую страницу. Весь напечатанный текст записывается в doc.printed — по нему проверяют тесты.
 import PDFDocument from 'pdfkit';
 import { FONTS, THEMES } from './routes/print.js';
+import { todayText } from '../../shared/names.js';
 
 export const A4 = { w: 595.28, h: 841.89 };
 export const MARGIN = { top: 48, bottom: 64, left: 50, right: 50 };
@@ -58,8 +59,8 @@ export function place(doc, h, lh) {
   doc.x = doc.page.margins.left;
 }
 
-// «21 октября 2026 года» по Москве: сервер живёт по UTC.
-export const today = () => `${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' }).replace(/\s*г\.$/, '')} года`;
+// «21 октября 2026 года» по Москве.
+export const today = () => todayText();
 
 // Подвал на всех страницах: слева — подпись, справа — номер страницы.
 export function footer(doc, c, left) {

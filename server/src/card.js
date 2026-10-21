@@ -11,8 +11,7 @@ import { LIST as EVENT_LIST, visibleEvents } from './routes/timeline.js';
 import { personSources } from './routes/sources.js';
 import { buildIndex, childrenOf, dateText, fullName, lifespan, parentsOf, siblingsOf, spousesOf } from '../../shared/names.js';
 import { lifeItems } from '../../shared/life.js';
-import { eventTitle } from '../../shared/events.js';
-import { citeText, factLabel, kindNote, sourceTitle } from '../../shared/sources.js';
+import { sourceLine } from '../../shared/sources.js';
 import { MARGIN, WIDTH, colors, ensure, footer, newDoc, place, today } from './pdf.js';
 
 export const CARD_PARTS = ['stories', 'photos', 'docs', 'sources'];
@@ -84,15 +83,6 @@ const join = (...a) => a.filter(Boolean).join(', ');
 function bond(f) {
   const start = f.start_date || f.place ? `${f.kind === 'partners' ? 'вместе с' : 'брак'} ${join(dateText(f.start_date), f.place)}` : '';
   return [start, f.ended === 'divorce' && `развод${f.end_date ? ` ${dateText(f.end_date)}` : ''}`].filter(Boolean).join('; ');
-}
-
-// Источник одной строкой: «По документу: Метрическая книга…, ГАТО, ф. 160… — дата рождения, брак».
-function sourceLine(s, citations) {
-  const mine = citations.filter((c) => c.source_id === s.id);
-  const facts = [...new Set(mine.map((c) => (c.subject === 'event' ? eventTitle({ kind: c.event_kind, title: c.event_title }) : factLabel(c.subject, c.fact)).toLowerCase()))];
-  const pages = [...new Set(mine.map((c) => c.page).filter(Boolean))];
-  const what = join(sourceTitle(s), kindNote(s), citeText(s), ...pages);
-  return `${s.kind === 'legend' ? 'Со слов' : 'По документу'}: ${what}${facts.length ? ` — ${facts.join(', ')}` : ''}`;
 }
 
 const SIZE = { name: 24, sub: 15, head: 17, text: 13, small: 11.5 };

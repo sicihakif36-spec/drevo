@@ -20,6 +20,8 @@ import timelineRoutes from './routes/timeline.js';
 import placeRoutes from './routes/places.js';
 import surveyRoutes from './routes/surveys.js';
 import cardRoutes from './routes/cards.js';
+import rospisRoutes from './routes/rospis.js';
+import { closePool } from './pdfpool.js';
 import { eventsPlugin } from './events.js';
 import { pushPlugin } from './push.js';
 
@@ -51,6 +53,8 @@ export async function buildApp(opts = {}) {
   await app.register(placeRoutes);
   await app.register(surveyRoutes);
   await app.register(cardRoutes);
+  await app.register(rospisRoutes);
+  app.addHook('onClose', closePool);
   eventsPlugin(app, { ping: opts.eventsPing });
 
   app.get('/api/health', async () => {

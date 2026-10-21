@@ -1,5 +1,6 @@
 // Источники сведений: шаблоны записей, краткая строка ссылки на архивное дело, сведения и достоверность.
 // Общий код телефона (форма, значки) и сервера (проверка, GEDCOM).
+import { eventTitle } from './events.js';
 
 // Поля источника. Шифр дела: архив, фонд, опись, дело, лист (и «об.» — оборот листа).
 export const SOURCE_FIELDS = ['kind', 'title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'verso', 'url', 'media_id', 'note'];
@@ -62,3 +63,14 @@ export const QUALITY = {
   oral: { label: 'Со слов', short: 'со слов', quay: 1 },
   guess: { label: 'Предположение', short: 'предположение', quay: 0 },
 };
+
+// Источник одной строкой (карточка в PDF, роспись): «По документу: Метрическая книга…, ГАТО, ф. 160… — дата рождения, брак».
+// citations — привязки этого человека (у события — event_kind и event_title).
+export function sourceLine(s, citations) {
+  const join = (...a) => a.filter(Boolean).join(', ');
+  const mine = citations.filter((c) => c.source_id === s.id);
+  const facts = [...new Set(mine.map((c) => (c.subject === 'event' ? eventTitle({ kind: c.event_kind, title: c.event_title }) : factLabel(c.subject, c.fact)).toLowerCase()))];
+  const pages = [...new Set(mine.map((c) => c.page).filter(Boolean))];
+  const what = join(sourceTitle(s), kindNote(s), citeText(s), ...pages);
+  return `${s.kind === 'legend' ? 'Со слов' : 'По документу'}: ${what}${facts.length ? ` — ${facts.join(', ')}` : ''}`;
+}
