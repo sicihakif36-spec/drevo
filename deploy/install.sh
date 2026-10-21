@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Установка и обновление «Древа» на сервере. Запускать через sudo из распакованного релиза:
+# Установка и обновление «Древа» на сервере. Обычно его запускает deploy/update.sh; можно и руками из распакованного кода:
 #   sudo bash deploy/install.sh
 # Повторный запуск безопасен: база и фото сохраняются, обновляется только код.
 # Перед обновлением снимается копия базы; вернуть прежний выпуск: sudo bash /srv/drevo/current/deploy/rollback.sh
+# shellcheck disable=SC1091  # $APP/last-update пишет сам установщик
 set -euo pipefail
 
 DOMAIN=drevo.myryadom.su
@@ -34,11 +35,11 @@ if [ -n "$PREV" ] && [ -d "$PREV" ]; then
 fi
 
 say "Код -> $APP/releases/$STAMP"
-rsync -a --delete --exclude node_modules --exclude web/dist --exclude server/var --exclude deploy/.env "$SRC/" "$APP/releases/$STAMP/"
+rsync -a --delete --exclude .git --exclude node_modules --exclude web/dist --exclude server/var --exclude deploy/.env "$SRC/" "$APP/releases/$STAMP/"
 # Для отката (deploy/rollback.sh): какой выпуск стоял и где его база. Повторная установка того же кода
 # точку отката не сдвигает: откат по-прежнему вернёт версию, стоявшую до обновления.
 if [ -n "$DUMP" ]; then
-  if [ -f "$APP/last-update" ] && diff -rq -x .env "$PREV" "$APP/releases/$STAMP" >/dev/null; then
+  if [ -f "$APP/last-update" ] && diff -rq -x .env -x .git "$PREV" "$APP/releases/$STAMP" >/dev/null; then
     echo "Код тот же, что уже стоял: откат, как и раньше, вернёт $(. "$APP/last-update"; echo "$PREV")"
   else
     printf 'PREV=%q\nDUMP=%q\n' "$PREV" "$DUMP" > "$APP/last-update"
