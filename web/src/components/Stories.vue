@@ -8,6 +8,7 @@ import StoryView from './StoryView.vue';
 // Истории человека: воспоминания текстом и голосом. Открытая история — поверх карточки, адрес ?story=<id>
 // (?story=new — новая): кнопка «Назад» на телефоне её закрывает.
 const props = defineProps({ person: Object });
+const emit = defineEmits(['count']); // сколько историй — для закладки в карточке
 const route = useRoute();
 const router = useRouter();
 const items = ref([]);
@@ -43,6 +44,7 @@ async function load() {
   if (!props.person.hidden) await reload();
 }
 watch(() => props.person.id, load, { immediate: true });
+watch([loaded, () => items.value.length], ([l, n]) => emit('count', l ? n : null), { immediate: true });
 onUnmounted(onLive((events) => { if (loaded.value && events.some((e) => e.kind === 'tree')) return reload(); }));
 
 let pushed = false; // открыто отсюда: закрывать шагом назад, чтобы «Назад» не открывал историю снова
@@ -99,8 +101,8 @@ const time = (sec) => (sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStar
 
 <style scoped>
 .stories > .item { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; }
-.item .title { display: block; font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.item .title { display: block; font-size: 0.944rem; font-weight: 600; overflow-wrap: anywhere; }
 .item .grow > span { display: block; }
-.voice { flex: none; display: flex; align-items: center; gap: 2px; color: var(--accent); }
+.voice { flex: none; display: flex; align-items: center; gap: 2px; color: var(--accent-text); }
 .voice svg { width: 22px; height: 22px; fill: currentColor; }
 </style>

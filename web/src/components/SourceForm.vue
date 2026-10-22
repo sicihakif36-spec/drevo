@@ -89,10 +89,10 @@ function submit() {
 <style scoped>
 .cipher { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
 .cipher .field { margin: 4px 0; }
-.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 16px; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 0.889rem; }
 .check input { width: 22px; height: 22px; min-height: 0; }
-.cite { margin: 4px 0 8px; padding: 8px 12px; border-radius: 10px; background: var(--accent-soft); font-size: 15px; }
-.lbl { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.cite { margin: 4px 0 8px; padding: 8px 12px; border-radius: 10px; background: var(--accent-soft); font-size: 0.833rem; }
+.lbl { display: block; font-size: 0.889rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem; }
 .field { margin: 10px 0; }
 .thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; background: var(--line); }
 .scans { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }

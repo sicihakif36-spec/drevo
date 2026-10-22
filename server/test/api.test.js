@@ -258,7 +258,10 @@ test('лента: что нового, без отменённого, гостю
   const g = await feed(guest);
   assert.equal(g.items.filter((i) => i.fresh).length, 5);
   const text = JSON.stringify(g.items);
-  for (const s of ['05.05.2015', 'Тверь', 'Калинин', 'школьник', 'секрет', '1985', '2010', photo]) assert.ok(!text.includes(s), s);
+  assert.ok(!text.includes(photo), 'фото');
+  // Без номеров записей: случайный uuid может содержать «1985» или «2010».
+  const values = text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '');
+  for (const s of ['05.05.2015', 'Тверь', 'Калинин', 'школьник', 'секрет', '1985', '2010']) assert.ok(!values.includes(s), s);
   const entries = g.items.flatMap((i) => i.entries);
   assert.deepEqual(entries.find((e) => e.entity_id === kid.id && e.action === 'create').after, { surname: '', given: 'Лентовый', patronymic: '', sex: 'M' });
   assert.deepEqual(entries.find((e) => e.action === 'update' && e.entity === 'person').after, { birth_place: null, occupation: null });
@@ -344,7 +347,7 @@ test('обсуждение: кто пишет, правит и удаляет; �
   assert.ok(f.items.slice(1).every((i, n) => i.at <= f.items[n].at), 'по времени, новые сверху');
   const g = await feed(guest);
   assert.deepEqual(g.items.filter((i) => i.kind === 'comment').map((i) => i.id), [c1.id]);
-  assert.ok(!JSON.stringify(g.items).includes('8-900'));
+  assert.ok(!JSON.stringify(g.items).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '').includes('8-900'));
   assert.ok((await feed(other)).items.length <= 50);
 
   // Комментарии удалённого человека не видны нигде, после возврата — снова видны.

@@ -78,9 +78,9 @@ const heading = computed(() => (props.role === 'self' ? 'Вы' : r.label));
 
 <style scoped>
 .person { margin-top: 12px; padding-top: 6px; }
-.head h2 { margin: 10px 0 4px; color: var(--text); font-size: 20px; }
-.person .field > span { font-size: 15px; }
-.person input, .person textarea { font-size: 18px; }
-.seg.big button { min-height: 50px; font-size: 17px; }
+.head h2 { margin: 10px 0 4px; color: var(--text); font-size: 1.111rem; }
+.person .field > span { font-size: 0.833rem; }
+.person input, .person textarea { font-size: 1rem; }
+.seg.big button { min-height: 50px; font-size: 0.944rem; }
 .seg.col { flex-direction: column; }
 </style>

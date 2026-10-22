@@ -4,6 +4,7 @@ import { store, isOwner, canTalk, canEdit, loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { fullName } from '@shared/names.js';
 import { disablePush } from '../push.js';
+import { ask, askText } from '../components/ask.js';
 
 const ROLE = { owner: 'владелец', editor: 'участник', relative: 'родственник: видит всё, не правит', viewer: 'гость (только просмотр)' };
 const title = ref(store.title);
@@ -21,7 +22,7 @@ async function saveTitle() {
   toast('Название сохранено');
 }
 async function rename() {
-  const name = prompt('Как вас подписывать в истории правок?', store.me.name);
+  const name = (await askText({ text: 'Как вас зовут в семье?', note: 'Так вас подпишут в ленте и правках. Например: тётя Лена', value: store.me.name }))?.trim();
   if (!name) return;
   await api('PATCH', '/api/me', { name });
   await loadTree();
@@ -45,7 +46,7 @@ function sizeText(n) {
 }
 
 async function logout() {
-  if (!confirm('Выйти на этом устройстве? Войти снова можно будет только по новой ссылке.')) return;
+  if (!await ask({ text: 'Выйти на этом телефоне?', note: 'Войти снова можно будет только по новой ссылке-приглашению.', yes: 'Выйти', no: 'Не выходить', danger: true })) return;
   // Этот телефон больше не получает уведомлений.
   await disablePush().catch(() => {});
   await api('POST', '/api/logout');
@@ -81,6 +82,7 @@ async function logout() {
       <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
       <a v-if="isOwner()" href="#" @click.prevent="openArchive">Скачать всё: дерево, фото, документы</a>
       <a href="/api/export.ged" download><span>Скачать дерево для другой программы<br /><span class="muted small">файл GEDCOM</span></span></a>
+      <router-link v-if="isOwner()" to="/import"><span>Загрузить дерево из файла<br /><span class="muted small">из другой программы, файл GEDCOM</span></span></router-link>
       <router-link v-if="isOwner()" to="/family">Родственники и приглашения</router-link>
     </div>
 

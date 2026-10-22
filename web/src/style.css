@@ -53,6 +53,9 @@ h2 { font-size: 1.111rem; line-height: 1.3; margin: 1.333rem 0 0.5rem; color: va
 .list { background: var(--card); border-radius: var(--radius); border: 1px solid var(--line); overflow: hidden; }
 .list > * { display: flex; align-items: center; gap: 0.667rem; padding: 0.667rem 1rem; border-top: 1px solid var(--line); color: inherit; text-decoration: none; min-height: 3.333rem; }
 .list > *:first-child { border-top: 0; }
+/* Строка списка, которая нажимается целиком, — без рамки кнопки, текст слева. */
+.list > button { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; color: inherit; font-weight: 400; justify-content: flex-start; text-align: left; width: 100%; }
+.list > button:first-child { border-top: 0; }
 .muted { color: var(--muted); }
 .small { font-size: 0.889rem; }
 .row { display: flex; gap: 0.5rem; align-items: center; }
@@ -98,9 +101,9 @@ textarea.line { min-height: 3rem; resize: none; overflow: hidden; line-height: 1
 input:focus, select:focus, textarea:focus { outline: 3px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
 
 /* Переключатель: выбранный пункт — светлый с зелёной обводкой. */
-.seg { display: flex; background: var(--line); border-radius: var(--radius-s); padding: 0.222rem; gap: 0.222rem; }
+.seg { display: flex; flex-wrap: wrap; background: var(--line); border-radius: var(--radius-s); padding: 0.222rem; gap: 0.222rem; }
 .seg button {
-  flex: 1; min-width: 0; min-height: 2.667rem; padding: 0.25rem 0.333rem; background: transparent; border: 2px solid transparent;
+  flex: 1 1 auto; min-width: 0; min-height: 2.667rem; padding: 0.25rem 0.5rem; background: transparent; border: 2px solid transparent;
   color: var(--text); font-size: 0.889rem; font-weight: 400; border-radius: 0.611rem;
 }
 .seg button.on { background: var(--card); border-color: var(--accent); font-weight: 700; }

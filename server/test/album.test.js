@@ -272,14 +272,35 @@ test('лента и сводка: «добавил 3 фото», гостю — 
   assert.equal(op.entries.filter((e) => e.entity === 'media').length, 3);
   assert.equal(op.entries[0].after.caption, 'секретная подпись');
 
+  // Миниатюры новых фото: id только у тех, что видны и в альбоме.
+  assert.equal(op.photos.length, 2);
+  assert.ok(op.photos.includes(a.id));
   const g = (await json(guest, 'GET', '/api/feed')).items.find((i) => i.op === op.op);
-  const text = JSON.stringify(g);
+  const text = JSON.stringify({ ...g, photos: [] });
   for (const s of ['секретная', '1961', 'письмо.pdf', a.id]) assert.ok(!text.includes(s), s);
+  assert.deepEqual(g.photos, op.photos, 'фото ушедшего гостю видно и в альбоме — видно и в ленте');
   assert.deepEqual(g.entries.filter((e) => e.entity === 'media').map((e) => e.after), [{ kind: 'photo' }, { kind: 'photo' }, { kind: 'doc' }]);
   assert.ok(g.entries.every((e) => e.entity !== 'media' || e.entity_id === null));
 
   const entries = op.entries.map((e) => ({ ...e, op: op.op }));
   assert.equal(digestText('Елена', 'F', entries, [op.op]), 'Елена добавила 2 фото и 1 документ');
+});
+
+test('миниатюры в ленте: гостю — без фото с живыми, никому — без удалённых', async () => {
+  const p = await add({ given: 'Миниатюры', sex: 'M', living: false });
+  const kid = await add({ given: 'Живой', sex: 'M', birth_date: '1990' });
+  const a = (await upload(editor, p.id)).json();
+  const b = (await upload(editor, p.id, { batch: a.batch })).json();
+  const c = (await upload(editor, p.id, { batch: a.batch })).json();
+  await json(owner, 'PUT', `/api/media/${b.id}/persons/${kid.id}`);
+  await json(owner, 'DELETE', `/api/media/${c.id}`);
+  const find = async (cookie) => (await json(cookie, 'GET', '/api/feed')).items.find((i) => i.kind === 'op' && i.photos?.includes(a.id));
+  assert.deepEqual((await find(owner)).photos.sort(), [a.id, b.id].sort());
+  const g = await find(guest);
+  assert.deepEqual(g.photos, [a.id]);
+  assert.ok(!JSON.stringify(g).includes(b.id), 'фото с живым гостю не называется');
+  assert.equal((await call(guest, 'GET', `/api/media/${b.id}/thumb`)).statusCode, 404);
+  assert.equal((await call(guest, 'GET', `/api/media/${a.id}/thumb`)).statusCode, 200);
 });
 
 test('миграция: фото, загруженные до альбома, переходят в альбом', async () => {

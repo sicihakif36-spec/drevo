@@ -26,7 +26,7 @@ const wrong = computed(() => old.value && !shown.value && /^\d{1,2}\.\d{1,2}\.\d
 
 <template>
   <div class="field date">
-    <label :for="id">{{ label }}</label>
+    <label :for="id" class="label">{{ label }}</label>
     <input :id="id" v-model="text" :maxlength="maxlength" :placeholder="placeholder" inputmode="text" autocomplete="off" />
     <label v-if="offer" class="old"><input v-model="old" type="checkbox" /> по старому стилю</label>
     <div v-if="shown" class="muted small">По двум стилям: {{ shown }}</div>
@@ -35,8 +35,9 @@ const wrong = computed(() => old.value && !shown.value && /^\d{1,2}\.\d{1,2}\.\d
 </template>
 
 <style scoped>
-.date > label:first-child { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-.old { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 15px; min-height: 36px; }
-.old input { width: 22px; height: 22px; min-height: 0; margin: 0; flex: none; }
+/* Подпись — как у остальных полей (.field > span). */
+.date > .label { display: block; font-size: 0.889rem; font-weight: 700; color: var(--text); margin-bottom: 0.25rem; }
+.old { display: flex; align-items: center; gap: 0.444rem; margin-top: 0.333rem; min-height: 2.667rem; }
+.old input { width: 1.333rem; height: 1.333rem; min-height: 0; margin: 0; flex: none; }
 .date .error { margin: 4px 0 0; }
 </style>

@@ -3,12 +3,13 @@ import { computed, reactive, ref } from 'vue';
 import { store, canEdit, toast } from '../store.js';
 import { api } from '../api.js';
 import { factInfo } from '../sources.js';
-import { fullName, dateText, lifespan, parentsOf, spousesOf, childrenOf } from '@shared/names.js';
+import { fullName, dateText, lifespan, parentsOf, spousesOf, childrenOf, nameGenitive, personHas } from '@shared/names.js';
 import DateInput from './DateInput.vue';
 import PlaceInput from './PlaceInput.vue';
 import { EVENT_KINDS, eventTitle } from '@shared/events.js';
 import FactBadge from './FactBadge.vue';
 import FactSheet from './FactSheet.vue';
+import { ask } from './ask.js';
 
 // Своё событие ленты жизни поверх карточки: просмотр, правка, участники, источники и удаление. event — null для нового.
 // Короткая форма: вид, дата, место, описание; название, часть и звание, другие участники — под «Ещё».
@@ -38,7 +39,7 @@ const found = computed(() => {
   if (!idx) return [];
   const words = query.value.toLowerCase().split(/\s+/).filter(Boolean);
   const pool = words.length
-    ? [...idx.persons.values()].filter((p) => words.every((w) => fullName(p).toLowerCase().includes(w)))
+    ? [...idx.persons.values()].filter((p) => personHas(p, query.value))
     : [...spousesOf(idx, props.person.id).map((s) => s.spouseId), ...childrenOf(idx, props.person.id), ...parentsOf(idx, props.person.id)]
       .map((id) => idx.persons.get(id)).filter(Boolean);
   return pool.filter((p) => !taken.value.has(p.id)).slice(0, 20);
@@ -88,19 +89,19 @@ async function link(p) {
   }
   try {
     emit('saved', await api('PUT', `/api/life-events/${e.value.id}/persons/${p.id}`));
-    toast(`Добавлен(а): ${fullName(p)}`);
+    toast(`Добавлено: ${fullName(p)}`);
   } catch (err) { toast(err.message); }
 }
 
 async function unlink(p) {
-  if (!confirm(`Убрать событие из ленты: ${fullName(p)}?`)) return;
+  if (!await ask({ text: `Убрать событие из жизни ${nameGenitive(p, true)}?`, note: `${fullName(p)}. У остальных участников событие останется.`, yes: 'Убрать', no: 'Не убирать', danger: true })) return;
   try {
     emit('saved', await api('DELETE', `/api/life-events/${e.value.id}/persons/${p.id}`));
   } catch (err) { toast(err.message); }
 }
 
 async function remove() {
-  if (!confirm(`Удалить событие «${eventTitle(e.value)}»? Это можно отменить в «Ещё → Последние правки».`)) return;
+  if (!await ask({ text: `Удалить событие «${eventTitle(e.value)}»?`, note: `Оно пропадёт у всех участников. Вернуть можно в «Ещё → Последние правки».`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   try {
     await api('DELETE', `/api/life-events/${e.value.id}`);
     toast('Событие удалено. Вернуть можно в «Ещё → Последние правки».');
@@ -178,7 +179,7 @@ async function remove() {
         </div>
         <FactBadge class="evbadge" :info="info" :editable="canEdit()" @open="sheet = true" />
         <div v-if="e.body" class="body">{{ e.body }}</div>
-        <div class="muted small added">добавил(а) {{ e.user_name || 'кто-то' }}, {{ when(e.created_at) }}</div>
+        <div class="muted small added">записано {{ when(e.created_at) }}, {{ e.user_name || 'кто-то' }}</div>
 
         <h2>Участники</h2>
         <div class="list">
@@ -222,21 +223,21 @@ async function remove() {
 .event { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; overscroll-behavior: contain; }
 .event .page { padding-bottom: calc(32px + var(--safe-b)); }
 .top { margin-bottom: 8px; }
-h1 { font-size: 24px; overflow-wrap: anywhere; margin-top: 2px; }
+h1 { font-size: 1.333rem; overflow-wrap: anywhere; margin-top: 2px; }
 .kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0 6px; }
-.kinds button { min-height: 60px; font-size: 17px; background: var(--card); border: 2px solid var(--line); }
-.kinds button.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
-.more { margin-top: 6px; background: transparent; border: 1px dashed var(--line); color: var(--accent); }
+.kinds button { min-height: 60px; font-size: 0.944rem; background: var(--card); border: 2px solid var(--field); color: var(--text); }
+.kinds button.on { border-color: var(--accent-text); background: var(--accent-soft); font-weight: 600; }
+.more { margin-top: 6px; background: transparent; border: 2px dashed var(--field); color: var(--accent-text); }
 .search { margin-top: 8px; }
-.facts { display: flex; flex-direction: column; gap: 10px; font-size: 18px; margin: 4px 0 12px; }
+.facts { display: flex; flex-direction: column; gap: 10px; font-size: 1rem; margin: 4px 0 12px; }
 .facts span { display: block; }
-.body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 18px; line-height: 1.55; margin-top: 16px; }
+.body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.55; margin-top: 16px; }
 .added { margin-top: 14px; }
-.placelink { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.placelink { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
 .who { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
 .found { margin-top: 8px; }
 .pick { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; }
-.plus { font-size: 26px; color: var(--accent); }
+.plus { font-size: 1.444rem; color: var(--accent-text); }
 .actions { margin-top: 16px; }
 .actions-col { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; }
 .done { margin-top: 12px; }

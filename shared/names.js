@@ -2,6 +2,30 @@
 
 const MALE_ON_A = new Set(['илья', 'никита', 'фома', 'кузьма', 'савва', 'лука', 'фока', 'данила', 'гаврила', 'мина', 'иона', 'миша', 'саша', 'паша', 'гоша', 'коля', 'ваня', 'петя', 'вася', 'дима', 'серёжа', 'сережа', 'лёша', 'леша', 'вова', 'юра', 'женя']);
 
+// ---------- Сравнение имён ----------
+// Татарские буквы и ё — как русские: «Әминә» = «Амина». Одна функция для поиска, проверки дубликатов и загрузки из файла.
+const TATAR = { 'ә': 'а', 'ө': 'о', 'ү': 'у', 'һ': 'х', 'җ': 'ж', 'ң': 'н', 'ё': 'е' };
+export const TATAR_LETTERS = /[әөүһҗң]/i;
+export const foldName = (s) => String(s ?? '').trim().toLowerCase().replace(/[әөүһҗңё]/g, (c) => TATAR[c]);
+// Ещё грубее — для похожих написаний одного имени: Ренат и Ринат, Ильгамия и Илһамия, Ульфат и Өлфәт, Габдулла и Габдула.
+// Гласные по созвучию, г/х/һ — одна буква, без ь и ъ, двойные буквы — одной.
+export function looseName(s) {
+  return foldName(s).replace(/дж/g, 'ж').replace(/[ьъ]/g, '').replace(/[оуюө]/g, 'у').replace(/[еиэыё]/g, 'и').replace(/я/g, 'а')
+    .replace(/[гх]/g, 'х').replace(/(.)\1+/g, '$1');
+}
+// Одно ли это имя (фамилия, отчество) в разных написаниях. Пустое ни с чем не совпадает.
+export const sameName = (a, b) => Boolean(looseName(a)) && looseName(a) === looseName(b);
+// Отчество без окончания: «Закирович» и «Закир улы» — от одного имени.
+const patronymicRoot = (s) => looseName(s).replace(/\s*(увич|увна|ивич|ивна|инична|ична|ич|кизи|ули|ухли)$/, '');
+export const samePatronymic = (a, b) => sameName(a, b) || (Boolean(patronymicRoot(a)) && patronymicRoot(a) === patronymicRoot(b));
+// Есть ли в тексте все слова запроса — для поиска людей: «амина» находит «Әминә», «ильгамия» — «Илһамия».
+export function textHas(text, query) {
+  const hay = looseName(text);
+  return looseName(query).split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+}
+// Человек подходит под поиск: по фамилии, имени, отчеству и фамилии при рождении.
+export const personHas = (p, query) => textHas(`${fullName(p)} ${p?.birth_surname || ''}`, query);
+
 export function fullName(p) {
   if (!p) return '';
   return [p.surname, p.given, p.patronymic].filter(Boolean).join(' ') || 'Без имени';
@@ -178,6 +202,8 @@ export function patronymicFrom(fatherGiven, sex) {
   const n = fatherGiven.trim();
   const low = n.toLowerCase();
   const f = sex === 'F';
+  // Татарское имя отца — татарское отчество: «Дәүләтшә кызы», «Дәүләтшә улы».
+  if (TATAR_LETTERS.test(n)) return `${n} ${f ? 'кызы' : 'улы'}`;
   const special = { 'илья': ['Ильич', 'Ильинична'], 'лука': ['Лукич', 'Лукинична'], 'фома': ['Фомич', 'Фоминична'], 'кузьма': ['Кузьмич', 'Кузьминична'], 'никита': ['Никитич', 'Никитична'], 'савва': ['Саввич', 'Саввична'], 'яков': ['Яковлевич', 'Яковлевна'], 'павел': ['Павлович', 'Павловна'], 'лев': ['Львович', 'Львовна'], 'пётр': ['Петрович', 'Петровна'], 'петр': ['Петрович', 'Петровна'], 'михаил': ['Михайлович', 'Михайловна'] };
   if (special[low]) return special[low][f ? 1 : 0];
   if (/ий$/.test(low)) return n.slice(0, -2) + (f ? 'ьевна' : 'ьевич');
@@ -206,8 +232,8 @@ export function surnameFor(fatherSurname, sex) {
 
 export function guessSex(given, patronymic) {
   const p = (patronymic || '').toLowerCase();
-  if (/(вна|чна|кызы)$/.test(p)) return 'F';
-  if (/(вич|ич|оглы)$/.test(p)) return 'M';
+  if (/(вна|чна|кызы|кизи)$/.test(p)) return 'F';
+  if (/(вич|ич|оглы|улы|углы)$/.test(p)) return 'M';
   const g = (given || '').trim().toLowerCase();
   if (!g) return 'U';
   if (MALE_ON_A.has(g)) return 'M';
@@ -233,11 +259,40 @@ function wordGenitive(w, female) {
   if (/[бвгджзклмнпрстфхцчшщ]$/.test(low)) return w + 'а';
   return w;
 }
-export function nameGenitive(p) {
-  if (!p?.given) return fullName(p);
-  const female = (p.sex === 'U' || !p.sex ? guessSex(p.given, p.patronymic) : p.sex) === 'F';
-  return [p.given, p.patronymic].filter(Boolean).map((w) => wordGenitive(w.trim(), female)).join(' ');
+// Винительный: «Петра», «Илью», «Анну», «Любовь».
+function wordAccusative(w, female) {
+  const low = w.toLowerCase();
+  if (/а$/.test(low)) return w.slice(0, -1) + 'у'; // Анну, Никиту
+  if (/я$/.test(low)) return w.slice(0, -1) + 'ю'; // Марию, Илью
+  return female ? w : wordGenitive(w, false);
 }
+const isFemale = (p) => (p.sex === 'U' || !p.sex ? guessSex(p.given, p.patronymic) : p.sex) === 'F';
+// Татарские слова и отчества «Дәүләтшә кызы» не склоняем: лучше как записано, чем исковеркать.
+const keepCase = (w) => TATAR_LETTERS.test(w) || /\s/.test(w);
+function nameCase(p, word, patronymic) {
+  if (!p?.given) return fullName(p);
+  const female = isFemale(p);
+  return [p.given, patronymic && p.patronymic].filter(Boolean).map((w) => (keepCase(w.trim()) ? w.trim() : word(w.trim(), female))).join(' ');
+}
+// Предложный: «о Петре», «об Анне», «о Марии», «о Любови», «о Сергее».
+function wordPrepositional(w, female) {
+  const low = w.toLowerCase();
+  const special = { 'пётр': 'Петре', 'петр': 'Петре', 'павел': 'Павле', 'лев': 'Льве' };
+  if (!female && special[low]) return special[low];
+  if (/(ия|ий)$/.test(low)) return w.slice(0, -1) + 'и';
+  if (/[ая]$/.test(low)) return w.slice(0, -1) + 'е';
+  if (/(вич|ич)$/.test(low)) return w + 'е';
+  if (female) return /ь$/.test(low) ? w.slice(0, -1) + 'и' : w;
+  if (/[йь]$/.test(low)) return w.slice(0, -1) + 'е';
+  if (/[бвгджзклмнпрстфхцчшщ]$/.test(low)) return w + 'е';
+  return w;
+}
+// «для Сергея Юрьевича»; short — только имя: «у Петра».
+export const nameGenitive = (p, short = false) => nameCase(p, wordGenitive, !short);
+// «Удалить Анну Петровну»; short — только имя: «Убрать Юрия».
+export const nameAccusative = (p, short = false) => nameCase(p, wordAccusative, !short);
+// «Рассказ о Петре»; short — только имя.
+export const namePrepositional = (p, short = false) => nameCase(p, wordPrepositional, !short);
 
 // ---------- Родство ----------
 
@@ -376,3 +431,32 @@ export function missingFields(p, idx) {
   if (idx && parentsOf(idx, p.id).length < 2) miss.push('родители');
   return miss;
 }
+
+// Фамилия в родительном падеже: «Орлова» (Орлов), «Орловой» (Орлова), «Вяземского», «Вяземской».
+// Незнакомое окончание — как есть («Шевченко», «Цой»): лучше несклонённая, чем исковерканная.
+export function surnameGenitive(s, female) {
+  const w = String(s || '').trim();
+  if (!w) return '';
+  if (w.includes('-')) return w.split('-').map((x) => surnameGenitive(x, female)).join('-');
+  const low = w.toLowerCase();
+  if (female) {
+    if (/(ова|ева|ёва|ина|ына)$/.test(low)) return w.slice(0, -1) + 'ой';
+    if (low.length > 4 && /ая$/.test(low)) return w.slice(0, -2) + 'ой';
+    return w;
+  }
+  if (/(ов|ев|ёв|ин|ын)$/.test(low)) return w + 'а';
+  // Короткие («Цой», «Бий») — как есть: это не прилагательные.
+  if (low.length > 4 && /(ий|ый|ой)$/.test(low)) return w.slice(0, -2) + 'ого';
+  return w;
+}
+
+// «Николая Орлова», «Анны Орловой»: имя и фамилия в родительном падеже (для «дочь Николая Орлова»).
+export function shortGenitive(p) {
+  if (!p) return '';
+  const female = isFemale(p);
+  const given = p.given ? wordGenitive(p.given.trim(), female) : '';
+  return [given, surnameGenitive(p.surname, female)].filter(Boolean).join(' ') || fullName(p);
+}
+
+// «21 октября 2026 года» по Москве: сервер живёт по UTC.
+export const todayText = (d = new Date()) => `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Moscow' }).replace(/\s*г\.$/, '')} года`;

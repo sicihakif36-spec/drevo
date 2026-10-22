@@ -3,9 +3,11 @@ import { nextTick, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { store, canTalk, isOwner, toast, onLive } from '../store.js';
 import { api } from '../api.js';
+import { ask } from './ask.js';
 
 // Обсуждение у карточки: воспоминания и комментарии родственников.
 const props = defineProps({ person: Object });
+const emit = defineEmits(['count']); // сколько сообщений — для закладки в карточке
 const route = useRoute();
 const root = ref(null);
 const comments = ref([]);
@@ -34,6 +36,7 @@ async function load() {
   }
 }
 watch(() => props.person.id, load, { immediate: true });
+watch([loaded, () => comments.value.length], ([l, n]) => emit('count', l ? n : null), { immediate: true });
 
 // Родственник написал здесь — перечитать тихо, не сбивая начатый ответ.
 onUnmounted(onLive(async (events) => {
@@ -63,7 +66,7 @@ async function saveEdit(c) {
 }
 
 async function remove(c) {
-  if (!confirm('Удалить этот комментарий?')) return;
+  if (!await ask({ text: mine(c) ? 'Удалить ваше сообщение?' : `Удалить сообщение: ${c.user_name || 'кто-то'}?`, note: c.body.length > 120 ? `${c.body.slice(0, 120)}…` : c.body, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   try {
     await api('DELETE', `/api/comments/${c.id}`);
     comments.value = comments.value.filter((x) => x.id !== c.id);
@@ -93,22 +96,23 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
         <div class="pre">{{ c.body }}</div>
         <div v-if="canTalk() && (mine(c) || isOwner())" class="row">
           <button v-if="mine(c)" class="ghost" @click="startEdit(c)">Изменить</button>
-          <button class="danger" @click="remove(c)">Удалить</button>
+          <button class="ghost danger" @click="remove(c)">Удалить</button>
         </div>
       </template>
     </div>
     <div v-if="loaded && !comments.length" class="muted">{{ canTalk() ? 'Пока никто не писал. Поделитесь воспоминанием или спросите родных.' : 'Пока никто не писал.' }}</div>
     <form v-if="loaded && canTalk()" class="new" @submit.prevent="send">
-      <textarea v-model="draft" maxlength="5000" placeholder="Воспоминание, вопрос или уточнение" />
+      <textarea v-model="draft" maxlength="5000" placeholder="Напишите, что помните, или спросите родных" />
       <button class="primary block" :disabled="sending || !draft.trim()">{{ sending ? 'Отправляю…' : 'Отправить' }}</button>
     </form>
   </div>
 </template>
 
 <style scoped>
-.anchor { scroll-margin-top: 16px; }
+.anchor { scroll-margin-top: 0.889rem; }
 .talk > .msg, .talk > .new { display: block; }
-.msg .pre { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; font-size: 17px; }
-.msg > .row { margin: 4px -12px -8px; }
-.msg form textarea, .new textarea { margin: 8px 0; }
+.msg .pre { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 0.222rem; }
+.msg > .row { margin: 0.222rem -1rem -0.444rem; }
+.msg > .row .ghost:not(.danger) { color: var(--accent-text); }
+.msg form textarea, .new textarea { margin: 0.444rem 0; }
 </style>

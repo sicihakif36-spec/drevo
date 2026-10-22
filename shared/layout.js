@@ -5,7 +5,7 @@ export const BOX = { w: 168, h: 76, hgap: 22, vgap: 64 };
 
 const rowStep = () => BOX.h + BOX.vgap;
 
-function fatherMother(idx, id) {
+export function fatherMother(idx, id) {
   const fid = (idx.parentFamilies.get(id) || [])[0];
   if (!fid) return [null, null];
   const f = idx.families.get(fid);

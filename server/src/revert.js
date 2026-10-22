@@ -283,6 +283,12 @@ async function undoQuality(db, userId, e) {
   return setQuality(db, userId, { subject, subject_id: e.entity_id, fact }, e.before.quality);
 }
 
+// Сводка загрузки из файла: сама ничего не меняет, люди и связи отменяются своими записями.
+async function undoImport(db, userId, e) {
+  if (e.action === 'load') return logChange(db, userId, 'import', e.entity_id, 'revert', e.after, null, []);
+  return logChange(db, userId, 'import', e.entity_id, 'load', null, e.before, []);
+}
+
 export async function revertOp(db, userId, changeId) {
   const head = (await db.q('select op from changes where id = $1', [changeId]))[0];
   if (!head) throw new HttpError(404, 'Правка не найдена');
@@ -294,7 +300,7 @@ export async function revertOp(db, userId, changeId) {
     if (e.entity === 'family') families.push(e.entity_id);
     const undo = {
       person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory, source: undoSource, citation: undoCitation, quality: undoQuality,
-      event: undoEvent, place: undoPlace,
+      event: undoEvent, place: undoPlace, import: undoImport,
     }[e.entity];
     const id = await undo(db, userId, e);
     first ??= id;

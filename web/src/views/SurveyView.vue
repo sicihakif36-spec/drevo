@@ -5,8 +5,9 @@ import { store, loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { STATUS, shareSurvey } from '../surveys.js';
 import { FIELDS, ROLES, surveyPeople, findMatches } from '@shared/survey.js';
-import { fullName, lifespan, parentsOf, spousesOf, childrenOf, siblingsOf } from '@shared/names.js';
+import { fullName, lifespan, parentsOf, spousesOf, childrenOf, siblingsOf, personHas } from '@shared/names.js';
 import ChangeList from '../components/ChangeList.vue';
+import { ask } from '../components/ask.js';
 
 // Просмотр анкеты и загрузка ответов в дерево. Для каждого человека из анкеты приложение ищет,
 // нет ли его уже в дереве; выбрать: «это он», «новый человек» или «пропустить». Загрузка — одно действие в журнале.
@@ -79,7 +80,7 @@ function diff(p, x) {
   if (x.sex !== 'U' && x.sex !== p.sex) out.push({ key: 'sex', label: 'Пол', tree: p.sex === 'U' ? '' : p.sex === 'F' ? 'женщина' : 'мужчина', survey: x.sex === 'F' ? 'женщина' : 'мужчина', add: p.sex === 'U' });
   const alive = !dead(x);
   if (alive !== p.living && (x.living !== null || !alive)) {
-    const word = (l) => (l ? 'жив(а)' : 'умер(ла)');
+    const word = (l) => (x.sex === 'F' ? (l ? 'жива' : 'умерла') : (l ? 'жив' : 'умер'));
     out.push({ key: 'living', label: 'Жив или умер', tree: word(p.living), survey: word(alive), add: !alive && p.living && !p.death_date && !p.death_place });
   }
   return out;
@@ -102,11 +103,11 @@ function edit(r) {
 }
 const found = (r) => {
   const t = r.d.find.trim().toLowerCase();
-  return t.length < 2 ? [] : persons.value.filter((p) => fullName(p).toLowerCase().includes(t)).slice(0, 6);
+  return t.length < 2 ? [] : persons.value.filter((p) => personHas(p, t)).slice(0, 6);
 };
 const nameOf = (x) => [x.surname, x.given, x.patronymic].map((v) => (v || '').trim()).filter(Boolean).join(' ');
-const dates = (x) => [x.birth_date && `род. ${x.birth_date}`, dead(x) && (x.death_date ? `ум. ${x.death_date}` : 'умер(ла)')].filter(Boolean).join(', ');
-const label = (r) => (r.role === 'self' ? 'Заполнял(а) анкету' : ROLES[r.role].label);
+const dates = (x) => [x.birth_date && `родил${x.sex === 'F' ? 'ась' : 'ся'} ${x.birth_date}`, dead(x) && (x.death_date ? `умер${x.sex === 'F' ? 'ла' : ''} ${x.death_date}` : x.sex === 'F' ? 'умерла' : 'умер')].filter(Boolean).join(', ');
+const label = (r) => (r.role === 'self' ? 'Кто заполнял анкету' : ROLES[r.role].label);
 
 async function upload() {
   busy.value = true;
@@ -129,11 +130,14 @@ async function upload() {
 }
 
 async function newLink() {
-  if (!confirm('Сделать новую ссылку? Старая перестанет работать, а срок начнётся заново.')) return;
+  if (!await ask({ text: 'Сделать новую ссылку?', note: 'Старая перестанет работать, а срок начнётся заново.', yes: 'Сделать новую', no: 'Оставить старую' })) return;
   try { link.value = await api('POST', `/api/surveys/${props.id}/link`); await load(); } catch (e) { toast(e.message); }
 }
 async function revoke() {
-  if (!confirm('Отозвать анкету? Ссылка перестанет работать.')) return;
+  const done = s.value.status === 'submitted';
+  if (!await ask(done
+    ? { text: 'Не загружать эту анкету?', note: 'Ответы не попадут в дерево, загрузить их потом будет нельзя.', yes: 'Не загружать', no: 'Вернуться к анкете', danger: true }
+    : { text: 'Отключить ссылку на анкету?', note: 'Открыть анкету по ней будет нельзя.', yes: 'Отключить ссылку', no: 'Не отключать', danger: true })) return;
   try { await api('DELETE', `/api/surveys/${props.id}`); await load(); } catch (e) { toast(e.message); }
 }
 const reverted = async () => { notes.value = []; await load(); };
@@ -151,9 +155,9 @@ const goPerson = (id) => router.push(`/person/${id}`);
       <h1>Анкета: {{ s.name }}</h1>
       <div class="card small">
         <div><b>{{ STATUS[s.status] }}</b></div>
-        <div class="muted">Создал(а) {{ s.created_by_name }} {{ when(s.created_at) }}<template v-if="s.submitted_at">; заполнена {{ when(s.submitted_at) }}</template>
+        <div class="muted">Создана {{ when(s.created_at) }}, {{ s.created_by_name }}<template v-if="s.submitted_at">; заполнена {{ when(s.submitted_at) }}</template>
           <template v-else-if="['sent', 'filling'].includes(s.status)">; ссылка работает до {{ when(s.expires_at) }}</template></div>
-        <div v-if="s.status === 'loaded'" class="muted">Загрузил(а) {{ s.loaded_by_name }} {{ when(s.loaded_at) }}</div>
+        <div v-if="s.status === 'loaded'" class="muted">Загружена в дерево {{ when(s.loaded_at) }}, {{ s.loaded_by_name }}</div>
         <div v-if="s.person_id && store.idx?.persons.get(s.person_id)" class="muted">В дереве: {{ fullName(store.idx.persons.get(s.person_id)) }}</div>
       </div>
 
@@ -165,7 +169,7 @@ const goPerson = (id) => router.push(`/person/${id}`);
         <p class="muted small">{{ s.status === 'filling' ? 'Родственник начал заполнять. Ответы появятся здесь, когда он нажмёт «Отправить».' : 'Ответы появятся здесь, когда анкету отправят.' }}</p>
         <div class="grid2">
           <button @click="newLink">Новая ссылка</button>
-          <button v-if="s.status !== 'expired'" class="danger" @click="revoke">Отозвать</button>
+          <button v-if="s.status !== 'expired'" class="danger" @click="revoke">Отключить ссылку</button>
         </div>
         <div v-if="link" class="card" style="margin-top:12px">
           <p class="small" style="word-break:break-all;margin-top:0">{{ link.url }}</p>
@@ -213,7 +217,7 @@ const goPerson = (id) => router.push(`/person/${id}`);
           <template v-if="r.action === 'match'">
             <div v-if="r.tree" class="row picked">
               <span class="grow">= <a href="#" @click.prevent="goPerson(r.tree.id)">{{ fullName(r.tree) }}</a> <span class="muted small">{{ lifespan(r.tree) }}</span></span>
-              <button class="ghost small" @click="r.d.person_id = null; r.d.action = 'match'">другой</button>
+              <button class="ghost small" @click="r.d.person_id = null; r.d.action = 'match'">Выбрать другого</button>
             </div>
             <template v-else>
               <input v-model="r.d.find" placeholder="Найти в дереве: начните вводить имя" style="margin-top:8px" />
@@ -265,25 +269,25 @@ const goPerson = (id) => router.push(`/person/${id}`);
         <p v-if="undecided" class="muted small" style="margin-top:16px">Осталось решить: {{ undecided }}</p>
         <button class="primary block" style="margin-top:8px" :disabled="busy || undecided > 0" @click="upload">{{ busy ? 'Загружаю…' : 'Загрузить в дерево' }}</button>
         <p class="muted small">Загрузка — одно действие: его можно отменить целиком в «Последних правках».</p>
-        <button class="danger block" style="margin-top:8px" @click="revoke">Не загружать, отозвать анкету</button>
+        <button class="danger block" style="margin-top:0.444rem" @click="revoke">Не загружать эту анкету</button>
       </template>
     </template>
   </div>
 </template>
 
 <style scoped>
-.rec { margin-top: 10px; }
+.rec { margin-top: 0.556rem; }
 .rec.need { border-color: var(--oral); box-shadow: inset 3px 0 var(--oral); }
-.rec .name { font-size: 18px; font-weight: 600; }
+.rec .name { font-weight: 700; overflow-wrap: anywhere; }
 .rec .seg { margin-top: 10px; }
 .ask { margin: 10px 0 0; }
-.cand { margin-top: 6px; background: var(--card); justify-content: flex-start; text-align: left; }
+.cand { margin-top: 0.333rem; background: var(--card); justify-content: flex-start; text-align: left; color: var(--text); flex-wrap: wrap; }
 .picked { margin-top: 8px; background: var(--accent-soft); border-radius: 12px; padding: 2px 4px 2px 12px; }
 .diff { margin-top: 8px; display: grid; gap: 6px; }
-.add { color: var(--accent); font-weight: 600; }
+.add { color: var(--accent-text); font-weight: 700; }
 .conflict { display: flex; gap: 8px; align-items: flex-start; }
-.conflict input, .check input { width: 20px; height: 20px; min-height: 0; flex: none; margin: 1px 0 0; }
-.check { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.conflict input, .check input { width: 1.333rem; height: 1.333rem; min-height: 0; flex: none; margin: 1px 0 0; }
+.check { display: flex; gap: 0.444rem; align-items: center; margin-top: 0.444rem; min-height: 2.667rem; }
 .story { white-space: pre-wrap; max-height: 320px; overflow-y: auto; }
 .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .ph { display: flex; flex-direction: column; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; }

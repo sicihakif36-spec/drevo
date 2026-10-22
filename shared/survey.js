@@ -1,7 +1,7 @@
 // Анкета для родственника: что спрашиваем и в каком порядке. Одно описание для страницы по ссылке,
 // для загрузки ответов в дерево и для бумажного бланка (server/src/blank.js): бланк печатает те же шаги и поля,
 // у «много» — несколько пустых мест (paper). Подписи только для бумаги — paperLabel, paperHint, paperLines.
-import { parseDate, patronymicFrom, surnameFor } from './names.js';
+import { parseDate, patronymicFrom, surnameFor, foldName, sameName, samePatronymic } from './names.js';
 
 // Кем приходится человек тому, кто заполняет. many — сколько можно указать, sex — пол заранее.
 export const ROLES = {
@@ -165,20 +165,19 @@ export function suggest(answers, role, p) {
   return out;
 }
 
-const norm = (s) => t(s).toLowerCase().replace(/ё/g, 'е');
-
-// Похож ли человек из анкеты на человека из дерева: по имени, отчеству, фамилии и году рождения, как проверка дубликатов.
+// Похож ли человек из анкеты (или файла) на человека из дерева: по имени, отчеству, фамилии и году рождения,
+// как проверка дубликатов. Написание сравнивается без различий татарских и русских букв, похожие имена (Ренат и Ринат) — тоже он.
 // 0 — точно не он (другое имя, другое отчество, годы рождения расходятся больше чем на 5 лет).
 export function matchScore(rec, p) {
-  if (!norm(rec.given) || norm(rec.given) !== norm(p.given)) return 0;
-  let score = 1;
-  if (norm(rec.patronymic) && norm(p.patronymic)) {
-    if (norm(rec.patronymic) !== norm(p.patronymic)) return 0;
+  if (!sameName(rec.given, p.given)) return 0;
+  let score = foldName(rec.given) === foldName(p.given) ? 1 : 0.5;
+  if (t(rec.patronymic) && t(p.patronymic)) {
+    if (!samePatronymic(rec.patronymic, p.patronymic)) return 0;
     score += 2;
   }
-  const mine = [rec.surname, rec.birth_surname].map(norm).filter(Boolean);
-  const theirs = [p.surname, p.birth_surname].map(norm).filter(Boolean);
-  if (mine.length && theirs.length) score += mine.some((s) => theirs.includes(s)) ? 2 : -1;
+  const mine = [rec.surname, rec.birth_surname].filter((x) => t(x));
+  const theirs = [p.surname, p.birth_surname].filter((x) => t(x));
+  if (mine.length && theirs.length) score += mine.some((a) => theirs.some((b) => sameName(a, b))) ? 2 : -1;
   const a = parseDate(rec.birth_date)?.year;
   const b = parseDate(p.birth_date)?.year;
   if (a && b) {

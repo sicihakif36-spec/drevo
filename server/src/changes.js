@@ -17,22 +17,33 @@ export async function logChange(db, userId, entity, entityId, action, before, af
 export const STANDS = `bool_and(c.reverted_by is null)
   and not exists (select 1 from changes x join changes r on r.reverted_by = x.id where x.op = c.op)`;
 
+// Записей одного действия отдаём не больше ENTRIES: загрузка из файла — это тысячи записей, а показывается она сводкой.
+// В истории человека (person) — ещё и все записи о нём. total — сколько записей в действии всего.
+export const ENTRIES = 300;
+
 // Последние действия целиком, новые сверху. id действия — номер его первой записи. op — только это действие.
 export async function listOps({ person = null, limit = 50, standing = false, op = null } = {}) {
   const rows = await q(
     `with ops as (
        select op, max(id) as last from changes c where ($1::uuid is null or $1 = any(persons)) and ($3::uuid is null or op = $3)
        group by op ${standing ? `having ${STANDS}` : ''} order by last desc limit $2
+     ), numbered as (
+       select c.*, row_number() over (partition by c.op order by c.id) as n, count(*) over (partition by c.op) as total
+       from changes c join ops o on o.op = c.op
      )
-     select c.id, c.op, c.at, c.entity, c.entity_id, c.action, c.before, c.after, c.persons, c.reverted_by, c.user_id, u.name as user_name
-     from changes c join ops o on o.op = c.op left join users u on u.id = c.user_id
+     select c.id, c.op, c.at, c.entity, c.entity_id, c.action, c.before, c.after, c.persons, c.reverted_by, c.user_id, c.total,
+       u.name as user_name
+     from numbered c join ops o on o.op = c.op left join users u on u.id = c.user_id
+     where c.n <= $4 or $1 = any(c.persons)
      order by o.last desc, c.id`,
-    [person, limit, op],
+    [person, limit, op, ENTRIES],
   );
   const out = [];
   for (const r of rows) {
     let op = out.at(-1);
-    if (op?.op !== r.op) out.push((op = { op: r.op, id: r.id, at: r.at, user_id: r.user_id, user_name: r.user_name, reverted: false, entries: [] }));
+    if (op?.op !== r.op) {
+      out.push((op = { op: r.op, id: r.id, at: r.at, user_id: r.user_id, user_name: r.user_name, reverted: false, total: Number(r.total), entries: [] }));
+    }
     if (r.reverted_by) op.reverted = true;
     op.entries.push({ id: r.id, entity: r.entity, entity_id: r.entity_id, action: r.action, before: r.before, after: r.after, persons: r.persons });
   }

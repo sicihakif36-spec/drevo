@@ -7,6 +7,7 @@ import { factInfo } from '../sources.js';
 import { fullName } from '@shared/names.js';
 import { KINDS, QUALITY, citeText, sourceTitle } from '@shared/sources.js';
 import SourceForm from './SourceForm.vue';
+import { ask } from './ask.js';
 
 // Окно сведения снизу: достоверность и источники, «Указать источник» — выбрать записанный или создать новый по шаблону.
 // fact — { subject, id, fact, label, value }; без него сначала выбирается сведение из facts.
@@ -77,7 +78,7 @@ async function attach() {
 }
 
 async function detach(c) {
-  if (!confirm(`Убрать источник «${sourceTitle(c.source)}» у этого сведения? Сам источник останется.`)) return;
+  if (!await ask({ text: `Убрать источник «${sourceTitle(c.source)}» у этого сведения?`, note: 'Сам источник останется.', yes: 'Убрать', no: 'Не убирать', danger: true })) return;
   await run(() => api('DELETE', `/api/citations/${c.id}`), 'Источник убран');
 }
 
@@ -181,12 +182,12 @@ function openSource(id) {
 </template>
 
 <style scoped>
-.fsheet h1 { font-size: 22px; overflow-wrap: anywhere; margin-bottom: 4px; }
+.fsheet h1 { font-size: 1.222rem; overflow-wrap: anywhere; margin-bottom: 4px; }
 .fsheet h2 { margin-top: 16px; }
 .qual { display: flex; flex-direction: column; gap: 8px; }
-.qual button { justify-content: flex-start; background: var(--card); border: 2px solid var(--line); font-size: 17px; }
+.qual button { justify-content: flex-start; background: var(--card); border: 2px solid var(--field); color: var(--text); font-size: 0.944rem; }
 .qual button.on { font-weight: 600; }
-.qual .document.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.qual .document.on { border-color: var(--accent-text); background: var(--accent-soft); color: var(--accent-text); }
 .qual .oral.on { border-color: var(--oral); background: var(--oral-soft); color: var(--oral); }
 .qual .guess.on { border-color: var(--muted); background: var(--line); }
 .qual button.on::after { content: "✓"; margin-left: auto; }
@@ -194,11 +195,11 @@ function openSource(id) {
 .open, .pick { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; flex-direction: column; align-items: flex-start; gap: 2px; }
 .pick { flex-direction: row; align-items: center; width: 100%; }
 .pick .grow > span { display: block; }
-.ttl { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
-.plus { font-size: 26px; color: var(--accent); }
+.ttl { font-size: 0.944rem; font-weight: 600; overflow-wrap: anywhere; }
+.plus { font-size: 1.444rem; color: var(--accent-text); }
 .found { margin-top: 8px; }
 .kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.kinds button { min-height: 60px; font-size: 16px; }
+.kinds button { min-height: 60px; font-size: 0.889rem; }
 .close { margin-top: 10px; }
 .primary.block { margin-top: 12px; }
 </style>

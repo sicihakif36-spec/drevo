@@ -6,7 +6,7 @@ export const STATUS = {
   filling: 'заполняется',
   submitted: 'заполнена — можно загрузить',
   loaded: 'загружена в дерево',
-  revoked: 'отозвана',
+  revoked: 'ссылка отключена',
   expired: 'срок ссылки истёк',
 };
 

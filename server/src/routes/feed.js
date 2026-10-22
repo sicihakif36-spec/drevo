@@ -3,8 +3,18 @@
 import { q } from '../db.js';
 import { need } from '../auth.js';
 import { listOps } from '../changes.js';
-import { isGuest, trimEntry, privateIds } from '../privacy.js';
+import { isGuest, trimEntry, privateIds, guestMedia } from '../privacy.js';
 import { recentComments } from './comments.js';
+
+// Новые фото действия — для миниатюр в ленте.
+const newPhotos = (op) => op.entries.filter((e) => e.entity === 'media' && e.action === 'add' && e.after?.kind === 'photo').map((e) => e.entity_id);
+// Какие из новых фото человек и так может видеть: ещё в альбоме, а гостю — ещё и без живых (guestMedia).
+async function visiblePhotos(ops, guest) {
+  const ids = ops.flatMap(newPhotos);
+  if (!ids.length) return new Set();
+  if (guest) return guestMedia(ids);
+  return new Set((await q('select id from media where id = any($1::uuid[]) and deleted_at is null', [ids])).map((r) => r.id));
+}
 
 export default async function feedRoutes(app) {
   app.get('/api/feed', { preHandler: need('viewer') }, async (req) => {
@@ -20,11 +30,13 @@ export default async function feedRoutes(app) {
          where submitted_at is not null and revoked_at is null order by submitted_at desc limit 20`,
       ) : [],
     ]);
+    const seen = await visiblePhotos(ops, guest);
     const items = [
       ...ops.map(({ user_id: who, reverted, ...op }) => ({
         kind: 'op',
         ...op,
         entries: guest ? op.entries.map((e) => trimEntry(e, hidden)) : op.entries,
+        photos: newPhotos(op).filter((id) => seen.has(id)).slice(0, 6),
         fresh: who !== req.user.id && op.at > u.feed_seen_at,
       })),
       ...comments.map(({ user_id: who, created_at: at, body, ...c }) => ({

@@ -4,9 +4,11 @@ import { useRoute, useRouter } from 'vue-router';
 import { loadTree, canEdit, toast, onLive } from '../store.js';
 import { api, upload, shrinkImage, photoUrl, thumbUrl } from '../api.js';
 import MediaViewer from './MediaViewer.vue';
+import { tell } from './ask.js';
 
 // Фото и документы человека. Просмотр открывается поверх карточки, адрес ?media=<id>: кнопка «Назад» на телефоне его закрывает.
 const props = defineProps({ person: Object });
+const emit = defineEmits(['count']); // сколько фото и документов — для закладки в карточке
 const route = useRoute();
 const router = useRouter();
 const items = ref([]);
@@ -43,6 +45,7 @@ async function load() {
   if (!props.person.hidden) await reload();
 }
 watch(() => props.person.id, load, { immediate: true });
+watch([loaded, () => items.value.length], ([l, n]) => emit('count', l ? n : null), { immediate: true });
 onUnmounted(onLive((events) => { if (loaded.value && events.some((e) => e.kind === 'tree')) return reload(); }));
 
 let pushed = false; // просмотр открыт отсюда: закрывать шагом назад, чтобы «Назад» не открывал его снова
@@ -101,7 +104,7 @@ async function addFiles(e, kind) {
   await Promise.all([loadTree(), reload()]); // первое фото становится главным
   const ok = list.length - failed.length;
   if (!failed.length) toast(`Добавлено: ${kind === 'doc' ? docsText(ok) : `${ok} фото`}`);
-  else alert(`Не удалось загрузить ${failed.length} из ${list.length}:\n\n${failed.join('\n')}`);
+  else tell(`Не удалось загрузить ${failed.length} из ${list.length}`, failed.join('\n'));
 }
 </script>
 
@@ -115,7 +118,7 @@ async function addFiles(e, kind) {
     <div v-if="photos.length" class="grid">
       <button v-for="m in photos" :key="m.id" class="cell" :aria-label="m.caption || 'Фото'" @click="show(m)">
         <img :src="m.thumb ? thumbUrl(m.id) : photoUrl(m.id)" alt="" loading="lazy" />
-        <span v-if="m.id === person.photo_id" class="main">главное</span>
+        <span v-if="m.id === person.photo_id" class="main">На карточке</span>
       </button>
     </div>
 
@@ -163,14 +166,14 @@ async function addFiles(e, kind) {
 <style scoped>
 .album { padding: 12px; }
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 12px; }
-.cell { position: relative; padding: 0; min-height: 0; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--line); }
+.cell { position: relative; padding: 0; min-height: 0; aspect-ratio: 1; border-radius: 0.556rem; overflow: hidden; background: var(--line); border: 0; }
 .cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.main { position: absolute; left: 4px; bottom: 4px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 2px 6px; border-radius: 6px; }
+.main { position: absolute; left: 0.222rem; bottom: 0.222rem; right: 0.222rem; width: fit-content; max-width: calc(100% - 0.444rem); background: rgba(0,0,0,.7); color: #fff; font-size: 0.778rem; padding: 0.111rem 0.333rem; border-radius: 0.333rem; }
 .docs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-.doc { justify-content: flex-start; text-align: left; gap: 12px; padding: 8px; background: var(--bg); }
+.doc { justify-content: flex-start; text-align: left; gap: 0.667rem; padding: 0.444rem; background: var(--bg); border: 1.5px solid var(--line); color: var(--text); font-weight: 400; }
 .doc img, .doc .icon { width: 52px; height: 52px; flex: none; border-radius: 8px; object-fit: cover; }
 .doc .icon { display: grid; place-items: center; background: var(--danger); color: #fff; font-weight: 700; font-size: 14px; }
-.doc .title { display: block; font-size: 17px; overflow-wrap: anywhere; }
+.doc .title { display: block; font-weight: 700; overflow-wrap: anywhere; }
 .doc .grow > span { display: block; }
 .empty { margin: 0 0 12px; }
 .progress { font-size: 17px; }

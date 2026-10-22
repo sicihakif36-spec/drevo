@@ -2,7 +2,8 @@
 import { computed, reactive, ref } from 'vue';
 import { store, canEdit, toast } from '../store.js';
 import { api, upload, photoUrl } from '../api.js';
-import { fullName, lifespan } from '@shared/names.js';
+import { fullName, lifespan, namePrepositional, nameGenitive, personHas } from '@shared/names.js';
+import { ask } from './ask.js';
 import AudioPlayer from './AudioPlayer.vue';
 import VoiceRecorder from './VoiceRecorder.vue';
 
@@ -28,7 +29,7 @@ const found = computed(() => {
   if (!words.length || !store.idx) return [];
   const linked = new Set(s.value?.persons || []);
   return [...store.idx.persons.values()]
-    .filter((p) => !linked.has(p.id) && words.every((w) => fullName(p).toLowerCase().includes(w)))
+    .filter((p) => !linked.has(p.id) && personHas(p, query.value))
     .slice(0, 20);
 });
 
@@ -47,11 +48,13 @@ function cancel() {
 
 async function save() {
   error.value = '';
-  if (!form.title.trim()) {
-    error.value = 'Напишите заголовок: например, «Как бабушка встретила войну».';
+  if (!voice.value && !form.body.trim() && !form.title.trim() && !s.value?.audio_id) {
+    error.value = 'Запишите голос или напишите рассказ.';
     return;
   }
-  const data = { title: form.title, date: form.date, body: form.body };
+  // Без заголовка — «Рассказ о Петре, 21 октября».
+  const title = form.title.trim() || `Рассказ о ${namePrepositional(props.person, true)}, ${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}`;
+  const data = { title, date: form.date, body: form.body };
   try {
     if (voice.value) {
       saving.value = 'Отправляю запись…';
@@ -86,7 +89,7 @@ async function link(p) {
 }
 
 async function unlink(p) {
-  if (!confirm(`Убрать историю из карточки: ${fullName(p)}?`)) return;
+  if (!await ask({ text: `Убрать историю из карточки ${nameGenitive(p, true)}?`, note: `${fullName(p)}. У остальных история останется.`, yes: 'Убрать', no: 'Не убирать', danger: true })) return;
   try {
     const saved = await api('DELETE', `/api/stories/${s.value.id}/persons/${p.id}`);
     emit('saved', saved);
@@ -94,7 +97,7 @@ async function unlink(p) {
 }
 
 async function remove() {
-  if (!confirm(`Удалить историю «${s.value.title}»? Это можно отменить в «Ещё → Последние правки».`)) return;
+  if (!await ask({ text: `Удалить историю «${s.value.title}»?`, note: 'Она пропадёт у всех, о ком рассказана. Вернуть можно в «Ещё → Последние правки».', yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   try {
     await api('DELETE', `/api/stories/${s.value.id}`);
     toast('История удалена. Вернуть можно в «Ещё → Последние правки».');
@@ -113,11 +116,7 @@ async function remove() {
       <form v-if="mode === 'edit'" @submit.prevent="save">
         <h1>{{ s ? 'Изменить историю' : 'Новая история' }}</h1>
         <p v-if="!s" class="muted">О ком: {{ fullName(person) }}. Других людей можно добавить после сохранения.</p>
-        <label class="field"><span>Заголовок</span><input v-model="form.title" maxlength="200" placeholder="Например: как бабушка встретила войну" /></label>
-        <label class="field"><span>Когда это было</span><input v-model="form.date" maxlength="100" placeholder="например: около 1945, лето 1960" /></label>
-        <label class="field"><span>Рассказ</span><textarea v-model="form.body" maxlength="20000" rows="8" placeholder="Можно написать, а можно просто записать голос" /></label>
-
-        <h2>Запись голоса</h2>
+        <!-- Сначала голос: рассказать проще, чем написать. -->
         <div class="card">
           <template v-if="s?.audio_id && !dropAudio && !voice">
             <AudioPlayer :src="photoUrl(s.audio_id)" :duration="s.audio_duration" />
@@ -128,6 +127,11 @@ async function remove() {
           <p v-if="dropAudio && !voice" class="muted small">Прежняя запись будет убрана. <a href="#" @click.prevent="dropAudio = false">Оставить</a></p>
         </div>
 
+        <h2 class="or">или написать текстом</h2>
+        <label class="field"><span>Рассказ</span><textarea v-model="form.body" maxlength="20000" rows="6" placeholder="Что помните: кто, где, когда, что было" /></label>
+        <label class="field"><span>Заголовок</span><input v-model="form.title" maxlength="200" :placeholder="`Можно не писать: «Рассказ о ${namePrepositional(person, true)}»`" /></label>
+        <label class="field"><span>Когда это было</span><input v-model="form.date" maxlength="100" placeholder="например: около 1945, лето 1960" /></label>
+
         <p class="error" v-if="error">{{ error }}</p>
         <div class="row actions">
           <button type="button" class="grow" @click="cancel">Отмена</button>
@@ -137,7 +141,7 @@ async function remove() {
 
       <template v-else>
         <h1>{{ s.title }}</h1>
-        <div class="muted">{{ [s.date, `добавил(а) ${s.user_name || 'кто-то'}, ${when(s.created_at)}`].filter(Boolean).join(' · ') }}</div>
+        <div class="muted">{{ [s.date, `записано ${when(s.created_at)}`, s.user_name].filter(Boolean).join(' · ') }}</div>
         <div v-if="s.audio_id" class="card voice"><AudioPlayer :src="photoUrl(s.audio_id)" :duration="s.audio_duration" /></div>
         <div v-if="s.body" class="body">{{ s.body }}</div>
 
@@ -148,7 +152,7 @@ async function remove() {
               <div class="avatar" :class="x.sex">{{ (x.given || '?')[0] }}</div>
               <div class="grow"><div class="ellipsis">{{ fullName(x) }}</div><div class="muted small">{{ lifespan(x) }}</div></div>
             </router-link>
-            <button v-if="mode === 'link' && people.length > 1" class="danger" :aria-label="`Убрать: ${fullName(x)}`" @click="unlink(x)">✕</button>
+            <button v-if="mode === 'link' && people.length > 1" class="danger" :aria-label="`Убрать: ${fullName(x)}`" @click="unlink(x)">Убрать</button>
           </div>
         </div>
 
@@ -162,7 +166,7 @@ async function remove() {
               <span class="plus">+</span>
             </button>
           </div>
-          <p v-else-if="query.trim()" class="muted">Никого не нашлось.</p>
+          <p v-else-if="query.trim()" class="muted">Никого не нашлось. Попробуйте только фамилию</p>
           <button class="primary block done" @click="mode = 'view'">Готово</button>
         </template>
 
@@ -178,17 +182,17 @@ async function remove() {
 
 <style scoped>
 .story { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; overscroll-behavior: contain; }
-.story .page { padding-bottom: calc(32px + var(--safe-b)); }
-.top { margin-bottom: 8px; }
-h1 { font-size: 24px; overflow-wrap: anywhere; }
-.voice { margin-top: 14px; }
-.body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 18px; line-height: 1.55; margin-top: 16px; }
-.who { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
-.found { margin-top: 8px; }
-.pick { justify-content: flex-start; text-align: left; background: transparent; border-radius: 0; width: 100%; }
-.plus { font-size: 26px; color: var(--accent); }
-.card { display: flex; flex-direction: column; gap: 10px; }
-.actions { margin-top: 16px; }
-.actions-col { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; }
-.done { margin-top: 12px; }
+.story .page { padding-bottom: calc(1.778rem + var(--safe-b)); }
+.top { margin-bottom: 0.444rem; }
+h1 { overflow-wrap: anywhere; }
+.or { text-align: center; color: var(--muted); font-weight: 400; margin: 1.111rem 0 0.25rem; }
+.voice { margin-top: 0.778rem; }
+.body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; margin-top: 0.889rem; }
+.who { display: flex; align-items: center; gap: 0.667rem; color: inherit; text-decoration: none; }
+.found { margin-top: 0.444rem; }
+.plus { font-size: 1.444rem; color: var(--accent-text); }
+.card { display: flex; flex-direction: column; gap: 0.556rem; }
+.actions { margin-top: 0.889rem; }
+.actions-col { display: flex; flex-direction: column; gap: 0.444rem; margin-top: 1.222rem; }
+.done { margin-top: 0.667rem; }
 </style>

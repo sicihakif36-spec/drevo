@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { store } from '../store.js';
 import { photoUrl } from '../api.js';
-import { fullName, lifespan, missingFields } from '@shared/names.js';
+import { fullName, lifespan, missingFields, personHas, textHas } from '@shared/names.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -17,9 +17,9 @@ onMounted(() => document.querySelector('.chip.on')?.scrollIntoView({ inline: 'ce
 
 const people = computed(() => {
   if (!store.idx) return [];
-  const s = query.value.trim().toLowerCase();
+  const s = query.value.trim();
   return [...store.idx.persons.values()]
-    .filter((p) => !s || fullName(p).toLowerCase().includes(s) || p.birth_surname.toLowerCase().includes(s) || p.birth_place.toLowerCase().includes(s))
+    .filter((p) => !s || personHas(p, s) || textHas(p.birth_place, s))
     .filter((p) => {
       if (filter.value === 'nophoto') return !p.photo_id;
       if (filter.value === 'nodates') return !p.birth_date;
@@ -34,9 +34,9 @@ const people = computed(() => {
 
 <template>
   <div class="page">
-    <h1>Люди <span class="muted small">{{ store.tree?.persons.length || 0 }}</span></h1>
-    <input v-model="query" placeholder="Поиск по имени, фамилии, месту" />
-    <div class="chips" style="margin:10px 0">
+    <h1>Люди <span class="muted count">{{ store.tree?.persons.length || 0 }}</span></h1>
+    <label class="field"><span>Найти по имени, фамилии или месту</span><input v-model="query" type="search" placeholder="Например: Смирнов" /></label>
+    <div class="chips" style="margin:0.556rem 0">
       <button v-for="[k, label] in FILTERS" :key="k" class="chip" :class="{ on: filter === k }" @click="setFilter(k)">{{ label }}</button>
     </div>
     <div class="list">
@@ -44,11 +44,16 @@ const people = computed(() => {
         <img v-if="p.photo_id" :src="photoUrl(p.photo_id)" class="avatar" alt="" loading="lazy" />
         <div v-else class="avatar" :class="p.sex">{{ (p.given || p.surname || '?')[0] }}</div>
         <div class="grow">
-          <div class="ellipsis">{{ fullName(p) }}</div>
-          <div class="muted small ellipsis">{{ [lifespan(p), p.birth_place].filter(Boolean).join(' · ') }}</div>
+          <div class="name">{{ fullName(p) }}</div>
+          <div class="muted small name">{{ [lifespan(p), p.birth_place].filter(Boolean).join(' · ') }}</div>
         </div>
       </router-link>
-      <div v-if="!people.length" class="muted">Никого не нашлось</div>
+      <div v-if="!people.length" class="muted">{{ query.trim() ? 'Никого не нашлось. Попробуйте только фамилию' : 'Никого нет' }}</div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.name { overflow-wrap: anywhere; }
+.count { font-weight: 400; }
+</style>

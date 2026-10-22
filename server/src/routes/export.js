@@ -20,8 +20,9 @@ export function gedDate(text) {
   const low = t.toLowerCase();
   let prefix = '';
   if (/^(около|ок\.|~|примерно)/.test(low)) prefix = 'ABT ';
-  else if (/^до\b/.test(low)) prefix = 'BEF ';
-  else if (/^после\b/.test(low)) prefix = 'AFT ';
+  // \b в JS не видит границу русского слова: «до 1895» -> BEF.
+  else if (/^до(\s|$)/.test(low)) prefix = 'BEF ';
+  else if (/^после(\s|$)/.test(low)) prefix = 'AFT ';
   const between = low.match(/между\s+(\d{3,4})\s+и\s+(\d{3,4})/);
   if (between) return `BET ${cal}${between[1]} AND ${cal}${between[2]}`;
   prefix += cal;

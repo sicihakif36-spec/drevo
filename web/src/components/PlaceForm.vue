@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue';
 import { loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { PLACE_KINDS, placeTitle } from '@shared/places.js';
+import { ask } from './ask.js';
 
 // Окно места справочника снизу: новое или правка. from — текст места из карточек: у новых мест он заменится полным названием.
 const props = defineProps({ place: Object, from: { type: String, default: '' } });
@@ -24,7 +25,7 @@ async function save() {
     error.value = 'Напишите название: Горки, Старица…';
     return;
   }
-  if (p && title.value !== p.title && !confirm(`Новое название запишется и у всех людей, у кого записано «${p.title}». Сохранить?`)) return;
+  if (p && title.value !== p.title && !await ask({ text: 'Сохранить новое название?', note: `Оно запишется у всех людей, у кого сейчас «${p.title}».`, yes: 'Сохранить', no: 'Не сохранять' })) return;
   saving.value = true;
   try {
     const saved = p ? await api('PATCH', `/api/places/${p.id}`, form) : await api('POST', '/api/places', { ...form, from: props.from });
@@ -66,7 +67,7 @@ async function save() {
 </template>
 
 <style scoped>
-.psheet h1 { font-size: 22px; }
+.psheet h1 { font-size: 1.222rem; }
 .chips.wrap { flex-wrap: wrap; overflow: visible; }
 .preview { margin: 12px 0; }
 </style>

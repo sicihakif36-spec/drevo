@@ -3,7 +3,7 @@ import { computed, nextTick, onDeactivated, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { store, canEdit } from '../store.js';
 import { layoutTree } from '@shared/layout.js';
-import { fullName, lifespan, kinship } from '@shared/names.js';
+import { fullName, lifespan, kinship, personHas } from '@shared/names.js';
 import TreeCanvas from '../components/TreeCanvas.vue';
 import { openAdd } from '../components/addState.js';
 import { photoUrl } from '../api.js';
@@ -54,9 +54,9 @@ function add(type) { openAdd({ to: selected.value, type }); }
 function onPlaceholder(ph) { selected.value = ph.of; openAdd({ to: ph.of, type: ph.relation }); }
 
 const results = computed(() => {
-  const s = query.value.trim().toLowerCase();
+  const s = query.value.trim();
   if (!s || !idx.value) return [];
-  return [...idx.value.persons.values()].filter((p) => fullName(p).toLowerCase().includes(s) || p.birth_surname.toLowerCase().includes(s)).slice(0, 12);
+  return [...idx.value.persons.values()].filter((p) => personHas(p, s)).slice(0, 12);
 });
 function pick(p) {
   searching.value = false;

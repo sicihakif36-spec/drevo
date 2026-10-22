@@ -124,10 +124,10 @@ const when = (x) => (x.date && x.date !== year(x) ? dateText(x.date) : '');
 <style scoped>
 .life > .item { align-items: flex-start; cursor: pointer; }
 .life > .item.still { cursor: default; }
-.year { flex: none; width: 50px; font-size: 18px; font-weight: 700; line-height: 1.35; color: var(--accent); overflow-wrap: anywhere; }
-.undated .year { font-size: 13px; font-weight: 400; color: var(--muted); padding-top: 3px; }
+.year { flex: none; width: 50px; font-size: 1rem; font-weight: 700; line-height: 1.35; color: var(--accent-text); overflow-wrap: anywhere; }
+.undated .year { font-size: 0.889rem; font-weight: 400; color: var(--muted); padding-top: 3px; }
 .item .grow > span { display: block; }
-.title { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.title { font-size: 0.944rem; font-weight: 600; overflow-wrap: anywhere; }
 .own .title { color: var(--text); }
 .note { overflow-wrap: anywhere; }
 .item .grow > .badge { display: inline-flex; margin-top: 6px; }

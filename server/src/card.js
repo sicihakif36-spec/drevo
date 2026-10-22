@@ -11,9 +11,8 @@ import { LIST as EVENT_LIST, visibleEvents } from './routes/timeline.js';
 import { personSources } from './routes/sources.js';
 import { buildIndex, childrenOf, dateText, fullName, lifespan, parentsOf, siblingsOf, spousesOf } from '../../shared/names.js';
 import { lifeItems } from '../../shared/life.js';
-import { eventTitle } from '../../shared/events.js';
-import { citeText, factLabel, kindNote, sourceTitle } from '../../shared/sources.js';
-import { MARGIN, WIDTH, colors, ensure, footer, newDoc, today } from './pdf.js';
+import { sourceLine } from '../../shared/sources.js';
+import { MARGIN, WIDTH, colors, ensure, footer, newDoc, place, today } from './pdf.js';
 
 export const CARD_PARTS = ['stories', 'photos', 'docs', 'sources'];
 export const MAX_PHOTOS = 12; // «несколько миниатюр»: остальные — строкой «и ещё …»
@@ -86,15 +85,6 @@ function bond(f) {
   return [start, f.ended === 'divorce' && `развод${f.end_date ? ` ${dateText(f.end_date)}` : ''}`].filter(Boolean).join('; ');
 }
 
-// Источник одной строкой: «По документу: Метрическая книга…, ГАТО, ф. 160… — дата рождения, брак».
-function sourceLine(s, citations) {
-  const mine = citations.filter((c) => c.source_id === s.id);
-  const facts = [...new Set(mine.map((c) => (c.subject === 'event' ? eventTitle({ kind: c.event_kind, title: c.event_title }) : factLabel(c.subject, c.fact)).toLowerCase()))];
-  const pages = [...new Set(mine.map((c) => c.page).filter(Boolean))];
-  const what = join(sourceTitle(s), kindNote(s), citeText(s), ...pages);
-  return `${s.kind === 'legend' ? 'Со слов' : 'По документу'}: ${what}${facts.length ? ` — ${facts.join(', ')}` : ''}`;
-}
-
 const SIZE = { name: 24, sub: 15, head: 17, text: 13, small: 11.5 };
 
 export function renderCard(stream, data, o) {
@@ -103,9 +93,12 @@ export function renderCard(stream, data, o) {
   const doc = newDoc(fullName(p));
   doc.pipe(stream);
   const L = MARGIN.left;
+  // Абзац; перед ним — проверка места (place), если её не сделали раньше (placed).
   const para = (s, opts = {}) => {
-    doc.font(opts.bold ? c.bold : c.font).fontSize(opts.size || SIZE.text).fillColor(opts.color || c.text)
-      .text(s, L + (opts.indent || 0), doc.y, { width: WIDTH - (opts.indent || 0), lineGap: 2, ...opts.text });
+    const width = WIDTH - (opts.indent || 0);
+    doc.font(opts.bold ? c.bold : c.font).fontSize(opts.size || SIZE.text).fillColor(opts.color || c.text);
+    if (!opts.placed) place(doc, doc.heightOfString(s, { width, lineGap: 2 }), doc.currentLineHeight(true) + 2);
+    doc.text(s, L + (opts.indent || 0), doc.y, { width, lineGap: 2, ...opts.text });
   };
   // Заголовок не остаётся один внизу страницы: с ним хотя бы пара строк (next — сколько места нужно первому пункту).
   const heading = (s, next = 40) => {
@@ -119,7 +112,7 @@ export function renderCard(stream, data, o) {
   const fact = (label, value) => {
     if (!value) return;
     doc.font(c.font).fontSize(SIZE.text);
-    ensure(doc, doc.currentLineHeight(true) + 4);
+    place(doc, doc.heightOfString(`${label}: ${value}`, { width: WIDTH, lineGap: 2 }), doc.currentLineHeight(true) + 2);
     doc.font(c.bold).fillColor(c.muted).text(`${label}: `, L, doc.y, { width: WIDTH, continued: true, lineGap: 2 })
       .font(c.font).fillColor(c.text).text(value, { lineGap: 2 });
     doc.moveDown(0.25);
@@ -127,11 +120,11 @@ export function renderCard(stream, data, o) {
   // Пункт списка: переносы строк — под текстом, а не под точкой.
   const bullet = (s, opts = {}) => {
     doc.font(c.font).fontSize(opts.size || SIZE.text);
-    ensure(doc, doc.currentLineHeight(true) + 4);
+    place(doc, doc.heightOfString(s, { width: WIDTH - 18, lineGap: 2 }), doc.currentLineHeight(true) + 2);
     const y = doc.y;
     doc.fillColor(c.accent).text('•', L + 2, y, { lineBreak: false });
     doc.y = y;
-    para(s, { ...opts, indent: 18 });
+    para(s, { ...opts, indent: 18, placed: true });
     doc.moveDown(0.15);
   };
 
