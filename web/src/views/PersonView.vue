@@ -311,6 +311,7 @@ onUnmounted(onLive((events) => {
       <a href="#" v-if="store.me?.person_id !== p.id" @click.prevent="setMe">Это я</a>
       <a :href="`/api/print.pdf?root=${p.id}&mode=hourglass`" target="_blank">Распечатать дерево вокруг этого человека</a>
       <router-link :to="{ path: '/print', query: { root: p.id, mode: 'fan' } }">Веер предков</router-link>
+      <router-link v-if="marriages.some((m) => m.kids.length)" :to="{ path: '/print', query: { root: p.id, mode: 'rospis' } }">Поколенная роспись</router-link>
       <a href="#" v-if="canTalk()" @click.prevent="loadHistory">История правок</a>
       <a href="#" v-if="canEdit()" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
     </div>

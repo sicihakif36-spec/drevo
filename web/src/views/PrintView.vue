@@ -1,12 +1,14 @@
 <script setup>
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { store, canTalk } from '../store.js';
-import { thumbUrl } from '../api.js';
+import { api, thumbUrl } from '../api.js';
 import { layoutTree, BOX } from '@shared/layout.js';
 import { planPages, PAPER, MM } from '@shared/printplan.js';
 import { layoutFan, sectorPath, FAN } from '@shared/fan.js';
 import { fullName } from '@shared/names.js';
+import { buildRospis, parseRospisOptions } from '@shared/rospis.js';
+import RospisText from '../components/RospisText.vue';
 
 const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.print') || '{}'); } catch { return {}; } })();
 const o = reactive({
@@ -16,13 +18,18 @@ const o = reactive({
 // Из карточки: «Веер предков» с этим человеком в центре.
 const route = useRoute();
 if (route.query.root) o.root = String(route.query.root);
-if (route.query.mode === 'fan') o.mode = 'fan';
+if (['fan', 'rospis'].includes(route.query.mode)) o.mode = String(route.query.mode);
 watch(o, () => { try { localStorage.setItem('drevo.print', JSON.stringify(o)); } catch {} });
+// Роспись: свои настройки; оформление, заголовок и «скрыть живых» — общие.
+const savedR = (() => { try { return JSON.parse(localStorage.getItem('drevo.rospis') || '{}'); } catch { return {}; } })();
+const ro = reactive({ gens: 0, male: false, events: true, notes: true, sources: false, title: '', ...savedR });
+watch(ro, () => { try { localStorage.setItem('drevo.rospis', JSON.stringify(ro)); } catch {} });
 
 const people = computed(() => [...(store.idx?.persons.values() || [])].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru')));
 const rootId = computed(() => (store.idx?.persons.has(o.root) ? o.root : store.me?.person_id && store.idx?.persons.has(store.me.person_id) ? store.me.person_id : people.value[0]?.id));
 const isFan = computed(() => o.mode === 'fan');
-const layout = computed(() => (store.idx && rootId.value && !isFan.value ? layoutTree(store.idx, rootId.value, { mode: o.mode, up: o.up, down: o.down }) : null));
+const isRospis = computed(() => o.mode === 'rospis');
+const layout = computed(() => (store.idx && rootId.value && !isFan.value && !isRospis.value ? layoutTree(store.idx, rootId.value, { mode: o.mode, up: o.up, down: o.down }) : null));
 // Веер: та же раскладка, что в PDF (shared/fan.js). Гостю дерево уже пришло без дат и фото живых.
 const fan = computed(() => (store.idx && rootId.value && isFan.value ? layoutFan(store.idx, rootId.value, { ...o, hideLiving: o.hideLiving || !canTalk() }) : null));
 const scheme = computed(() => layout.value || fan.value);
@@ -54,6 +61,32 @@ const viewBox = computed(() => {
   return `${x - m} ${y - m} ${x2 - x + 2 * m} ${y2 - y + 2 * m}`;
 });
 
+// Роспись на экране — та же сборка, что в PDF (shared/rospis.js); события и источники — с сервера, по правилам приватности.
+const hideR = computed(() => o.hideLiving || !canTalk());
+const rqs = computed(() => ({
+  root: rootId.value || '', gens: String(ro.gens || ''), line: ro.male ? 'male' : 'all', events: ro.events ? '1' : '0', notes: ro.notes ? '1' : '0',
+  sources: ro.sources ? '1' : '0', hideLiving: hideR.value ? '1' : '0', theme: o.theme, title: ro.title,
+}));
+const extras = ref(null);
+const extrasFor = computed(() => (isRospis.value && (ro.events || ro.sources)
+  ? new URLSearchParams({ events: rqs.value.events, sources: rqs.value.sources, hideLiving: rqs.value.hideLiving }).toString() : ''));
+watch([extrasFor, () => store.tree], async ([qs]) => {
+  if (!qs) return;
+  try {
+    const x = await api('GET', `/api/rospis/extras?${qs}`);
+    if (extrasFor.value === qs) extras.value = { ...x, qs };
+  } catch { /* без событий и источников */ }
+}, { immediate: true });
+const rospis = computed(() => {
+  if (!isRospis.value || !store.idx || !rootId.value) return null;
+  const x = extras.value?.qs === extrasFor.value ? extras.value : {};
+  return buildRospis(store.idx, rootId.value, parseRospisOptions(rqs.value), x);
+});
+// Сколько колен всего — для выбора «сколько колен».
+const allGens = ref(0);
+watch(rospis, (r) => { if (r && !ro.gens) allGens.value = r.count.gens; }, { immediate: true });
+const rUrl = (download) => `/api/rospis.pdf?${new URLSearchParams({ ...rqs.value, ...(download ? { download: '1' } : {}) })}`;
+
 const url = (download) => {
   const qs = new URLSearchParams({
     root: rootId.value || '', mode: o.mode, up: o.up, down: o.down, paper: o.paper, orient: o.orient, fit: o.fit,
@@ -79,9 +112,20 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
 <template>
   <div class="page">
     <h1>Печать</h1>
-    <div v-if="!plan" class="muted">Сначала добавьте людей в дерево.</div>
+    <div v-if="!people.length" class="muted">Сначала добавьте людей в дерево.</div>
     <template v-else>
-      <div class="preview card">
+      <template v-if="rospis">
+        <RospisText :r="rospis" />
+        <div class="small" style="margin-top:6px">
+          <b>{{ rospis.count.gens }} {{ plural(rospis.count.gens, 'колено', 'колена', 'колен') }}, {{ rospis.count.desc }} {{ plural(rospis.count.desc, 'потомок', 'потомка', 'потомков') }}</b>
+          <span class="muted"> · в указателе {{ rospis.count.total }} чел.</span>
+        </div>
+        <div class="row" style="margin:12px 0">
+          <a class="btn primary grow" :href="rUrl(false)" target="_blank">Открыть PDF</a>
+          <a class="btn grow" :href="rUrl(true)">Скачать</a>
+        </div>
+      </template>
+      <div v-if="plan" class="preview card">
         <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
           <rect v-for="(s, i) in sheets" :key="'s' + i" :x="s.x" :y="s.y" :width="s.w" :height="s.h" class="sheet-r" />
           <template v-if="layout">
@@ -107,19 +151,35 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         </p>
       </div>
 
-      <div class="row" style="margin:12px 0">
+      <div v-if="plan" class="row" style="margin:12px 0">
         <a class="btn primary grow" :href="url(false)" target="_blank">Открыть PDF</a>
         <a class="btn grow" :href="url(true)">Скачать</a>
       </div>
 
-      <label class="field"><span>Кто в центре</span>
+      <label class="field"><span>{{ isRospis ? 'Родоначальник' : 'Кто в центре' }}</span>
         <select v-model="o.root"><option value="">{{ store.me?.person_id ? 'Я' : 'Первый в списке' }}</option><option v-for="p in people" :key="p.id" :value="p.id">{{ fullName(p) }}</option></select>
       </label>
       <div class="field"><div class="seg">
-        <button :class="{ on: !isFan }" @click="o.mode = isFan ? 'hourglass' : o.mode">Дерево</button>
+        <button :class="{ on: !isFan && !isRospis }" @click="o.mode = isFan || isRospis ? 'hourglass' : o.mode">Дерево</button>
         <button :class="{ on: isFan }" @click="o.mode = 'fan'">Веер предков</button>
+        <button :class="{ on: isRospis }" @click="o.mode = 'rospis'">Роспись</button>
       </div></div>
-      <div class="field" v-if="!isFan"><div class="seg">
+      <template v-if="isRospis">
+        <p class="muted small" style="margin-top:0">Все потомки по коленам, у каждого свой номер; браки, дети со ссылками на номера, в конце — указатель имён. Читается как книга.</p>
+        <div class="field"><span class="small muted">Сколько колен</span>
+          <div class="chips">
+            <button class="chip" :class="{ on: !ro.gens }" @click="ro.gens = 0">Все</button>
+            <button v-for="g in Math.max(0, Math.min(Math.max(allGens, ro.gens + 1), 15) - 2)" :key="g" class="chip" :class="{ on: ro.gens === g + 1 }" @click="ro.gens = g + 1">{{ g + 1 }}</button>
+          </div>
+        </div>
+        <label class="row field check"><input type="checkbox" v-model="ro.male" /> Только по мужской линии (фамильная роспись)</label>
+        <h2>Что писать о каждом</h2>
+        <label class="row field check"><input type="checkbox" v-model="ro.events" /> События жизни</label>
+        <label class="row field check"><input type="checkbox" v-model="ro.notes" /> Заметки</label>
+        <label class="row field check"><input type="checkbox" v-model="ro.sources" /> Источники</label>
+        <p class="muted small">Даты и места рождения и смерти, род занятий, браки и дети пишутся всегда.</p>
+      </template>
+      <div class="field" v-if="!isFan && !isRospis"><div class="seg">
         <button :class="{ on: o.mode === 'ancestors' }" @click="o.mode = 'ancestors'">Предки</button>
         <button :class="{ on: o.mode === 'hourglass' }" @click="o.mode = 'hourglass'">Предки и потомки</button>
         <button :class="{ on: o.mode === 'descendants' }" @click="o.mode = 'descendants'">Потомки</button>
@@ -139,11 +199,12 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         </div></div>
         <label class="row field check"><input type="checkbox" v-model="o.empty" /> Показывать пустые места — вписать неизвестных от руки</label>
       </template>
-      <div class="grid2" v-else>
+      <div class="grid2" v-else-if="!isRospis">
         <label class="field" v-if="o.mode !== 'descendants'"><span>Поколений вверх</span><input type="number" min="1" max="12" v-model.number="o.up" /></label>
         <label class="field" v-if="o.mode !== 'ancestors'"><span>Поколений вниз</span><input type="number" min="1" max="12" v-model.number="o.down" /></label>
       </div>
 
+      <template v-if="!isRospis">
       <h2>Бумага</h2>
       <div class="chips"><button v-for="p in Object.keys(PAPER)" :key="p" class="chip" :class="{ on: o.paper === p }" @click="o.paper = p">{{ p }}</button></div>
       <div class="field"><div class="seg">
@@ -159,6 +220,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <input type="range" min="40" max="250" step="10" v-model.number="o.scale" />
       </label>
       <p class="muted small" v-if="o.fit === 'tiles'">Пунктир на листах показывает, где накладывать соседний лист при склейке (1 см).</p>
+      </template>
 
       <h2>Оформление</h2>
       <div class="chips">
@@ -166,8 +228,9 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <button class="chip" :class="{ on: o.theme === 'modern' }" @click="o.theme = 'modern'">Современное</button>
         <button class="chip" :class="{ on: o.theme === 'bw' }" @click="o.theme = 'bw'">Чёрно-белое</button>
       </div>
-      <label class="field"><span>Заголовок</span><input v-model="o.title" :placeholder="store.title" /></label>
-      <label class="row field check"><input type="checkbox" v-model="o.photos" /> {{ isFan ? 'Фото в середине' : 'Фотографии' }}</label>
+      <label v-if="isRospis" class="field"><span>Заголовок</span><input v-model="ro.title" placeholder="Поколенная роспись" /></label>
+      <label v-else class="field"><span>Заголовок</span><input v-model="o.title" :placeholder="store.title" /></label>
+      <label v-if="!isRospis" class="row field check"><input type="checkbox" v-model="o.photos" /> {{ isFan ? 'Фото в середине' : 'Фотографии' }}</label>
       <label v-if="canTalk()" class="row field"><input type="checkbox" v-model="o.hideLiving" /> Скрыть даты и фото живых — для печати не для семьи</label>
       <p v-else class="muted small">Даты и фото живых родственников на печати не показываются.</p>
     </template>
