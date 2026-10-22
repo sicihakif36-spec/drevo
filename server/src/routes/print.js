@@ -3,11 +3,12 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
 import { q } from '../db.js';
+import { ownerPerson } from '../tree.js';
 import { need } from '../auth.js';
 import { mediaPath } from './media.js';
 import { buildIndex, fullName, isPrivate, lifespan, shortName } from '../../../shared/names.js';
 import { guestTree, isGuest } from '../privacy.js';
-import { layoutTree, BOX } from '../../../shared/layout.js';
+import { layoutTree, homePerson, BOX } from '../../../shared/layout.js';
 import { PAPER, planPages } from '../../../shared/printplan.js';
 import { layoutFan, parseFanOptions } from '../../../shared/fan.js';
 import { drawFan } from '../fan.js';
@@ -33,7 +34,7 @@ export function parsePrintOptions(qs) {
   const num = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) && v !== '' && v !== undefined ? Number(v) : d));
   return {
     root: qs.root,
-    mode: ['ancestors', 'descendants', 'hourglass', 'fan'].includes(qs.mode) ? qs.mode : 'hourglass',
+    mode: ['all', 'ancestors', 'descendants', 'hourglass', 'fan'].includes(qs.mode) ? qs.mode : 'hourglass',
     up: num(qs.up, 4, 0, 12),
     down: num(qs.down, 3, 0, 12),
     paper: PAPER[qs.paper] ? qs.paper : 'A4',
@@ -89,7 +90,8 @@ export function renderPdf(stream, data, o) {
     const m = p.photo_id && data.photos?.[p.photo_id];
     p._photo = m ? [m.thumb && mediaPath(m.id, true), mediaPath(m.id)].find((f) => f && fs.existsSync(f)) : null;
   }
-  const root = idx.persons.has(o.root) ? o.root : data.persons[0]?.id;
+  // Кто в центре: выбранный, иначе сам вошедший или человек владельца (o.home), иначе — из самой большой части дерева.
+  const root = homePerson(idx, o.root, o.home);
   if (o.mode === 'fan' && root) {
     // В середине фото крупное: лучше оригинал, чем миниатюра. Нет файла — нет и места под фото.
     const m = data.photos?.[idx.persons.get(root).photo_id];
@@ -98,7 +100,7 @@ export function renderPdf(stream, data, o) {
     fan.center.file = file;
     return sheets(stream, fan.plan, fan.bounds, o, (doc) => drawFan(doc, fan, o));
   }
-  const layout = layoutTree(idx, root, { mode: o.mode, up: o.up, down: o.down });
+  const layout = layoutTree(idx, root, { mode: o.mode, up: o.up, down: o.down, anchor: homePerson(idx, o.home) });
   return sheets(stream, planPages(layout, o), layout.bounds, o, (doc) => drawTree(doc, idx, layout, o, o.theme));
 }
 
@@ -170,8 +172,8 @@ export default async function printRoutes(app) {
     if (isGuest(req.user)) o.hideLiving = true;
     const data = await loadTreeData(req.user, o.hideLiving);
     if (!o.title) o.title = data.title || 'Семейное древо';
-    if (!o.root) o.root = req.user.person_id;
-    const center = o.mode === 'fan' && data.persons.find((p) => p.id === o.root);
+    o.home = req.user.person_id || await ownerPerson({ q });
+    const center = o.mode === 'fan' && data.persons.find((p) => p.id === (o.root || o.home));
     // Собирается в отдельном потоке (pdfpool.js): большое дерево не задерживает остальные запросы.
     return sendPdf(reply, renderInWorker('tree', data, o), center ? disposition(req.query.download === '1', `Веер предков — ${fullName(center)}`)
       : `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="drevo.pdf"`);

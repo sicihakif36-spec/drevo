@@ -9,12 +9,12 @@ const RANK = { viewer: 1, relative: 2, editor: 3, owner: 4 };
 export const hash = (t) => crypto.createHash('sha256').update(t).digest('hex');
 export const newToken = () => crypto.randomBytes(32).toString('base64url');
 
-export async function createInvite({ role, label = '', createdBy = null, forUser = null, days = 14 }) {
+export async function createInvite({ role, label = '', createdBy = null, forUser = null, days = 14, personId = null }) {
   const token = newToken();
   await q(
-    `insert into invites (token_hash, role, label, created_by, for_user, expires_at)
-     values ($1, $2, $3, $4, $5, now() + make_interval(days => $6))`,
-    [hash(token), role, label, createdBy, forUser, days],
+    `insert into invites (token_hash, role, label, created_by, for_user, expires_at, person_id)
+     values ($1, $2, $3, $4, $5, now() + make_interval(days => $6), $7)`,
+    [hash(token), role, label, createdBy, forUser, days, personId],
   );
   return { token, url: `${config.publicUrl}/#/invite/${token}` };
 }

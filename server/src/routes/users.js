@@ -26,7 +26,9 @@ export default async function userRoutes(app) {
     if (!inv) return reply.code(400).send({ error: 'Ссылка недействительна или уже использована. Попросите новую.' });
     let userId = inv.for_user;
     if (!userId) {
-      userId = (await q('insert into users (name, role) values ($1, $2) returning id', [name || inv.label || 'Родственник', inv.role]))[0].id;
+      // «Кто это в дереве» из приглашения — если человек ещё есть
+      const person = inv.person_id && (await q('select id from persons where id = $1 and deleted_at is null', [inv.person_id]))[0];
+      userId = (await q('insert into users (name, role, person_id) values ($1, $2, $3) returning id', [name || inv.label || 'Родственник', inv.role, person?.id || null]))[0].id;
     }
     await q('update invites set used_by = $1 where token_hash = $2', [userId, inv.token_hash]);
     await startSession(reply, userId, req.headers['user-agent'] || '');
@@ -51,7 +53,7 @@ export default async function userRoutes(app) {
   });
 
   app.get('/api/invites', { preHandler: need('owner') }, async () => q(
-    `select token_hash as id, role, label, created_at, expires_at, for_user from invites
+    `select token_hash as id, role, label, created_at, expires_at, for_user, person_id from invites
      where used_at is null and expires_at > now() order by created_at desc`,
   ));
 
@@ -59,7 +61,11 @@ export default async function userRoutes(app) {
     const role = req.body?.role;
     if (!ROLES.includes(role)) return reply.code(400).send({ error: 'Неизвестная роль' });
     const days = Math.min(90, Math.max(1, Number(req.body?.days) || 14));
-    return createInvite({ role, label: String(req.body?.label || '').trim().slice(0, 80), createdBy: req.user.id, days });
+    const personId = req.body?.person_id || null;
+    if (personId && !(await q('select 1 from persons where id = $1 and deleted_at is null', [personId]))[0]) {
+      return reply.code(404).send({ error: 'Человек не найден' });
+    }
+    return createInvite({ role, label: String(req.body?.label || '').trim().slice(0, 80), createdBy: req.user.id, days, personId });
   });
 
   app.delete('/api/invites/:id', { preHandler: need('owner') }, async (req) => {

@@ -72,7 +72,7 @@ test('семья из родителей, ребёнка и супруга; от
   assert.equal(t3.persons.length, 7);
   assert.ok(t3.families.some((f) => f.partner1 === dad.id || f.partner2 === dad.id));
 
-  for (const qs of ['', '?mode=ancestors&paper=A3', `?fit=tiles&scale=150&root=${me.id}`]) {
+  for (const qs of ['', '?mode=ancestors&paper=A3', `?fit=tiles&scale=150&root=${me.id}`, '?mode=all', `?mode=all&fit=tiles&root=${dad.id}`]) {
     const pdf = await call(ownerCookie, 'GET', `/api/print.pdf${qs}`);
     assert.equal(pdf.statusCode, 200);
     assert.equal(pdf.rawPayload.subarray(0, 5).toString(), '%PDF-');
@@ -361,4 +361,40 @@ test('обсуждение: кто пишет, правит и удаляет; �
   assert.equal((await call(ownerCookie, 'POST', `/api/changes/${del.changeId}/revert`)).statusCode, 200);
   assert.equal((await list(ownerCookie, gone.id)).json().length, 1);
   assert.ok((await feed(ownerCookie)).items.some((i) => i.id === c1.id));
+});
+
+test('с кого начинать дерево: человек владельца в данных дерева; приглашение сразу связывает с человеком', async () => {
+  const anna = (await call(ownerCookie, 'POST', '/api/persons', { person: { given: 'Анна', surname: 'Кузнецова', sex: 'F' } })).json();
+  const son = (await call(ownerCookie, 'POST', '/api/persons', { person: { given: 'Илья', sex: 'M' }, relation: { to: anna.id, type: 'child' } })).json();
+  // владелец себя не отметил — человека владельца нет
+  assert.equal((await call(ownerCookie, 'GET', '/api/tree')).json().owner_person_id, null);
+  assert.equal((await call(ownerCookie, 'PATCH', '/api/me', { person_id: anna.id })).statusCode, 200);
+  // участнику без «себя» и гостю — человек владельца
+  const editor = await login('editor');
+  const t = (await call(editor, 'GET', '/api/tree')).json();
+  assert.equal(t.owner_person_id, anna.id);
+  assert.equal(t.me.person_id, null);
+  const guest = await login('viewer');
+  assert.equal((await call(guest, 'GET', '/api/tree')).json().owner_person_id, anna.id);
+
+  // «Кто это в дереве» в приглашении
+  assert.equal((await call(ownerCookie, 'POST', '/api/invites', { role: 'editor', label: 'Илья', person_id: '00000000-0000-4000-8000-000000000000' })).statusCode, 404);
+  assert.equal((await call(editor, 'POST', '/api/invites', { role: 'editor', person_id: son.id })).statusCode, 403);
+  const inv = (await call(ownerCookie, 'POST', '/api/invites', { role: 'relative', label: 'Илья', person_id: son.id })).json();
+  assert.equal((await call(ownerCookie, 'GET', '/api/invites')).json().find((i) => i.label === 'Илья').person_id, son.id);
+  const r = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token: inv.url.split('/').pop(), name: 'Илья' } });
+  assert.equal(r.statusCode, 200, r.body);
+  const ilya = r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  assert.equal((await call(ilya, 'GET', '/api/tree')).json().me.person_id, son.id);
+  // человека удалили до входа — вошедший просто без «себя»
+  const gone = (await call(ownerCookie, 'POST', '/api/persons', { person: { given: 'Пётр', sex: 'M' } })).json();
+  const inv2 = (await call(ownerCookie, 'POST', '/api/invites', { role: 'viewer', person_id: gone.id })).json();
+  await call(ownerCookie, 'DELETE', `/api/persons/${gone.id}`);
+  const r2 = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token: inv2.url.split('/').pop() } });
+  assert.equal(r2.statusCode, 200);
+  const c2 = r2.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  assert.equal((await call(c2, 'GET', '/api/me')).json().user.person_id, null);
+  // печать «Всего дерева» гостем — без дат живых, как и раньше
+  const pdf = await call(guest, 'GET', '/api/print.pdf?mode=all');
+  assert.equal(pdf.statusCode, 200);
 });
