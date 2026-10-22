@@ -3,11 +3,12 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import PDFDocument from 'pdfkit';
 import { q } from '../db.js';
+import { ownerPerson } from '../tree.js';
 import { need } from '../auth.js';
 import { mediaPath } from './media.js';
 import { buildIndex, fullName, isPrivate, lifespan, shortName } from '../../../shared/names.js';
 import { guestTree, isGuest } from '../privacy.js';
-import { layoutTree, BOX } from '../../../shared/layout.js';
+import { layoutTree, homePerson, BOX } from '../../../shared/layout.js';
 import { PAPER, planPages } from '../../../shared/printplan.js';
 import { layoutFan, parseFanOptions } from '../../../shared/fan.js';
 import { drawFan } from '../fan.js';
@@ -33,7 +34,7 @@ export function parsePrintOptions(qs) {
   const num = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) && v !== '' && v !== undefined ? Number(v) : d));
   return {
     root: qs.root,
-    mode: ['ancestors', 'descendants', 'hourglass', 'fan'].includes(qs.mode) ? qs.mode : 'hourglass',
+    mode: ['all', 'ancestors', 'descendants', 'hourglass', 'fan'].includes(qs.mode) ? qs.mode : 'hourglass',
     up: num(qs.up, 4, 0, 12),
     down: num(qs.down, 3, 0, 12),
     paper: PAPER[qs.paper] ? qs.paper : 'A4',
@@ -62,23 +63,27 @@ function drawTree(doc, idx, layout, o, theme) {
     const p = idx.persons.get(n.id);
     if (!p) continue;
     const [fill, stroke] = t[p.sex] || t.U;
-    doc.lineWidth(n.root ? 3 : 1.4).roundedRect(n.x, n.y, BOX.w, BOX.h, 9).fillAndStroke(fill, stroke);
-    let tx = n.x + 8;
+    // Рамка в своих координатах: pdfkit сам начинает новую страницу, если текст ниже края листа
+    // в координатах до сдвига, — у высокого дерева (всё дерево, 7 рядов и больше) это тысячи пустых листов.
+    doc.save().translate(n.x, n.y);
+    doc.lineWidth(n.root ? 3 : 1.4).roundedRect(0, 0, BOX.w, BOX.h, 9).fillAndStroke(fill, stroke);
+    let tx = 8;
     const hidden = o.hideLiving && isPrivate(p);
     if (o.photos && p.photo_id && !hidden && p._photo) {
       try {
-        doc.save().roundedRect(n.x + 6, n.y + 6, BOX.h - 12, BOX.h - 12, 6).clip();
-        doc.image(p._photo, n.x + 6, n.y + 6, { cover: [BOX.h - 12, BOX.h - 12], align: 'center', valign: 'center' });
+        doc.save().roundedRect(6, 6, BOX.h - 12, BOX.h - 12, 6).clip();
+        doc.image(p._photo, 6, 6, { cover: [BOX.h - 12, BOX.h - 12], align: 'center', valign: 'center' });
         doc.restore();
-        tx = n.x + BOX.h;
+        tx = BOX.h;
       } catch { doc.restore(); }
     }
-    const w = n.x + BOX.w - 6 - tx;
+    const w = BOX.w - 6 - tx;
     const nm = shortName(p);
-    doc.fillColor('#1d1d1d').font(t.bold).fontSize(12.5).text(nm.last || nm.first, tx, n.y + 9, { width: w, lineBreak: false, ellipsis: true });
-    if (nm.last) doc.font(t.font).fontSize(11).text(nm.first, tx, n.y + 27, { width: w, lineBreak: false, ellipsis: true });
+    doc.fillColor('#1d1d1d').font(t.bold).fontSize(12.5).text(nm.last || nm.first, tx, 9, { width: w, lineBreak: false, ellipsis: true });
+    if (nm.last) doc.font(t.font).fontSize(11).text(nm.first, tx, 27, { width: w, lineBreak: false, ellipsis: true });
     const life = hidden ? '' : lifespan(p);
-    if (life) doc.fillColor('#555555').fontSize(10).text(life, tx, n.y + 50, { width: w, lineBreak: false, ellipsis: true });
+    if (life) doc.fillColor('#555555').fontSize(10).text(life, tx, 50, { width: w, lineBreak: false, ellipsis: true });
+    doc.restore();
   }
 }
 
@@ -89,7 +94,8 @@ export function renderPdf(stream, data, o) {
     const m = p.photo_id && data.photos?.[p.photo_id];
     p._photo = m ? [m.thumb && mediaPath(m.id, true), mediaPath(m.id)].find((f) => f && fs.existsSync(f)) : null;
   }
-  const root = idx.persons.has(o.root) ? o.root : data.persons[0]?.id;
+  // Кто в центре: выбранный, иначе сам вошедший или человек владельца (o.home), иначе — из самой большой части дерева.
+  const root = homePerson(idx, o.root, o.home);
   if (o.mode === 'fan' && root) {
     // В середине фото крупное: лучше оригинал, чем миниатюра. Нет файла — нет и места под фото.
     const m = data.photos?.[idx.persons.get(root).photo_id];
@@ -98,7 +104,7 @@ export function renderPdf(stream, data, o) {
     fan.center.file = file;
     return sheets(stream, fan.plan, fan.bounds, o, (doc) => drawFan(doc, fan, o));
   }
-  const layout = layoutTree(idx, root, { mode: o.mode, up: o.up, down: o.down });
+  const layout = layoutTree(idx, root, { mode: o.mode, up: o.up, down: o.down, anchor: homePerson(idx, o.home) });
   return sheets(stream, planPages(layout, o), layout.bounds, o, (doc) => drawTree(doc, idx, layout, o, o.theme));
 }
 
@@ -170,8 +176,8 @@ export default async function printRoutes(app) {
     if (isGuest(req.user)) o.hideLiving = true;
     const data = await loadTreeData(req.user, o.hideLiving);
     if (!o.title) o.title = data.title || 'Семейное древо';
-    if (!o.root) o.root = req.user.person_id;
-    const center = o.mode === 'fan' && data.persons.find((p) => p.id === o.root);
+    o.home = req.user.person_id || await ownerPerson({ q });
+    const center = o.mode === 'fan' && data.persons.find((p) => p.id === (o.root || o.home));
     // Собирается в отдельном потоке (pdfpool.js): большое дерево не задерживает остальные запросы.
     return sendPdf(reply, renderInWorker('tree', data, o), center ? disposition(req.query.download === '1', `Веер предков — ${fullName(center)}`)
       : `${req.query.download === '1' ? 'attachment' : 'inline'}; filename="drevo.pdf"`);

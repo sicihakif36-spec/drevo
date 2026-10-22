@@ -2,7 +2,7 @@ import { q, tx } from '../db.js';
 import { need } from '../auth.js';
 import { logChange, listOps, countNew } from '../changes.js';
 import { revertOp } from '../revert.js';
-import { HttpError, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
+import { HttpError, ownerPerson, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
 import { guestTree, isGuest, privateIds } from '../privacy.js';
 import { listPlaces } from './places.js';
 
@@ -32,13 +32,14 @@ async function insertPerson(db, data, userId) {
 export default async function personRoutes(app) {
   app.get('/api/tree', { preHandler: need('viewer') }, async (req) => {
     const guest = isGuest(req.user);
-    const [persons, families, children, settings, feedNew, places] = await Promise.all([
+    const [persons, families, children, settings, feedNew, places, owner] = await Promise.all([
       q('select * from persons where deleted_at is null order by surname, given'),
       q('select * from families order by created_at'),
       q('select * from family_children'),
       q('select key, value from settings'),
       countNew(req.user.id, guest ? await privateIds() : [], ['owner', 'editor'].includes(req.user.role)),
       listPlaces(),
+      ownerPerson({ q }),
     ]);
     const data = { persons, families, children };
     return {
@@ -47,6 +48,8 @@ export default async function personRoutes(app) {
       // Справочник мест: в нём нет данных людей, гостю тоже.
       places,
       me: req.user,
+      // С кого начинать дерево тем, кто себя не отметил. Гостю тоже: это лишь id человека, которого он и так видит.
+      owner_person_id: owner,
       feed_new: feedNew,
     };
   });

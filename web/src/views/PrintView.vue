@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { store, canTalk } from '../store.js';
 import { api, thumbUrl } from '../api.js';
 import { layoutTree, BOX } from '@shared/layout.js';
+import { homePerson } from '@shared/wholetree.js';
 import { planPages, PAPER, MM } from '@shared/printplan.js';
 import { layoutFan, sectorPath, FAN } from '@shared/fan.js';
 import { fullName } from '@shared/names.js';
@@ -26,10 +27,12 @@ const ro = reactive({ gens: 0, male: false, events: true, notes: true, sources: 
 watch(ro, () => { try { localStorage.setItem('drevo.rospis', JSON.stringify(ro)); } catch {} });
 
 const people = computed(() => [...(store.idx?.persons.values() || [])].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru')));
-const rootId = computed(() => (store.idx?.persons.has(o.root) ? o.root : store.me?.person_id && store.idx?.persons.has(store.me.person_id) ? store.me.person_id : people.value[0]?.id));
+// Кто в центре: выбранный, иначе сам вошедший или человек владельца, иначе — из самой большой части (как на сервере).
+const home = computed(() => (store.idx ? homePerson(store.idx, store.me?.person_id, store.tree?.owner_person_id) : null));
+const rootId = computed(() => (store.idx?.persons.has(o.root) ? o.root : home.value));
 const isFan = computed(() => o.mode === 'fan');
 const isRospis = computed(() => o.mode === 'rospis');
-const layout = computed(() => (store.idx && rootId.value && !isFan.value && !isRospis.value ? layoutTree(store.idx, rootId.value, { mode: o.mode, up: o.up, down: o.down }) : null));
+const layout = computed(() => (store.idx && rootId.value && !isFan.value && !isRospis.value ? layoutTree(store.idx, rootId.value, { mode: o.mode, up: o.up, down: o.down, anchor: home.value }) : null));
 // Веер: та же раскладка, что в PDF (shared/fan.js). Гостю дерево уже пришло без дат и фото живых.
 const fan = computed(() => (store.idx && rootId.value && isFan.value ? layoutFan(store.idx, rootId.value, { ...o, hideLiving: o.hideLiving || !canTalk() }) : null));
 const scheme = computed(() => layout.value || fan.value);
@@ -157,7 +160,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
       </div>
 
       <label class="field"><span>{{ isRospis ? 'Родоначальник' : 'Кто в центре' }}</span>
-        <select v-model="o.root"><option value="">{{ store.me?.person_id ? 'Я' : 'Первый в списке' }}</option><option v-for="p in people" :key="p.id" :value="p.id">{{ fullName(p) }}</option></select>
+        <select v-model="o.root"><option value="">{{ store.me?.person_id ? 'Я' : home ? `${fullName(store.idx.persons.get(home))} (начало дерева)` : 'Начало дерева' }}</option><option v-for="p in people" :key="p.id" :value="p.id">{{ fullName(p) }}</option></select>
       </label>
       <div class="field"><div class="seg">
         <button :class="{ on: !isFan && !isRospis }" @click="o.mode = isFan || isRospis ? 'hourglass' : o.mode">Дерево</button>
@@ -179,9 +182,10 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <label class="row field check"><input type="checkbox" v-model="ro.sources" /> Источники</label>
         <p class="muted small">Даты и места рождения и смерти, род занятий, браки и дети пишутся всегда.</p>
       </template>
-      <div class="field" v-if="!isFan && !isRospis"><div class="seg">
-        <button :class="{ on: o.mode === 'ancestors' }" @click="o.mode = 'ancestors'">Предки</button>
+      <div class="field" v-if="!isFan && !isRospis"><div class="seg two">
+        <button :class="{ on: o.mode === 'all' }" @click="o.mode = 'all'">Всё дерево</button>
         <button :class="{ on: o.mode === 'hourglass' }" @click="o.mode = 'hourglass'">Предки и потомки</button>
+        <button :class="{ on: o.mode === 'ancestors' }" @click="o.mode = 'ancestors'">Предки</button>
         <button :class="{ on: o.mode === 'descendants' }" @click="o.mode = 'descendants'">Потомки</button>
       </div></div>
       <template v-if="isFan">
@@ -199,11 +203,12 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         </div></div>
         <label class="row field check"><input type="checkbox" v-model="o.empty" /> Показывать пустые места — вписать неизвестных от руки</label>
       </template>
-      <div class="grid2" v-else-if="!isRospis">
+      <div class="grid2" v-else-if="!isRospis && o.mode !== 'all'">
         <label class="field" v-if="o.mode !== 'descendants'"><span>Поколений вверх</span><input type="number" min="1" max="12" v-model.number="o.up" /></label>
         <label class="field" v-if="o.mode !== 'ancestors'"><span>Поколений вниз</span><input type="number" min="1" max="12" v-model.number="o.down" /></label>
       </div>
 
+      <p class="muted small" v-if="o.mode === 'all'" style="margin-top:0">Все, кто связан с выбранным человеком родством и браками, — каждый один раз. Большое дерево удобнее «Склеить из листов».</p>
       <template v-if="!isRospis">
       <h2>Бумага</h2>
       <div class="chips"><button v-for="p in Object.keys(PAPER)" :key="p" class="chip" :class="{ on: o.paper === p }" @click="o.paper = p">{{ p }}</button></div>
@@ -246,6 +251,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
 .nd.F { fill: #f8e3eb; stroke: #b15b7d; }
 .fan text { text-anchor: middle; dominant-baseline: central; fill: #1d1d1d; }
 .num { font-size: 120px; fill: rgba(0,0,0,.18); text-anchor: middle; dominant-baseline: middle; font-weight: 700; }
+.seg.two { display: grid; grid-template-columns: 1fr 1fr; }
 .check { align-items: flex-start; min-height: 2.667rem; }
 .check input { flex: none; margin: 0.111rem 0 0; }
 </style>

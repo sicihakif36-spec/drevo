@@ -1,18 +1,22 @@
 <script setup>
 import { computed, nextTick, onDeactivated, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { store, canEdit } from '../store.js';
+import { store, canEdit, loadTree, toast } from '../store.js';
 import { layoutTree } from '@shared/layout.js';
+import { homePerson, treeParts, centralPerson } from '@shared/wholetree.js';
 import { fullName, lifespan, kinship, personHas } from '@shared/names.js';
 import TreeCanvas from '../components/TreeCanvas.vue';
 import { openAdd } from '../components/addState.js';
-import { photoUrl } from '../api.js';
+import { ask } from '../components/ask.js';
+import { api, photoUrl } from '../api.js';
 
 defineOptions({ name: 'TreeView' });
 const router = useRouter();
 
 const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.view') || '{}'); } catch { return {}; } })();
-const mode = ref(saved.mode || 'hourglass');
+// Вид: всё дерево (по умолчанию), предки, потомки. Прежняя «прямая линия» (hourglass) открывается как всё дерево.
+const MODES = ['all', 'ancestors', 'descendants'];
+const mode = ref(MODES.includes(saved.mode) ? saved.mode : 'all');
 const up = ref(saved.up ?? 4);
 const down = ref(saved.down ?? 3);
 const rootId = ref(saved.root || null);
@@ -27,14 +31,24 @@ watch(searching, (on) => { if (on) nextTick(() => searchInput.value?.focus()); }
 onDeactivated(() => { searching.value = false; });
 
 const idx = computed(() => store.idx);
+// С кого начинать: сам вошедший, иначе человек владельца, иначе — из самой большой части дерева.
+const home = computed(() => (idx.value ? homePerson(idx.value, store.me?.person_id, store.tree?.owner_person_id) : null));
 const root = computed(() => {
   if (!idx.value) return null;
   if (rootId.value && idx.value.persons.has(rootId.value)) return rootId.value;
-  return store.me?.person_id && idx.value.persons.has(store.me.person_id) ? store.me.person_id : store.tree.persons[0]?.id || null;
+  return home.value;
 });
+// Во «всём дереве» раскладка начинается от своего (home): выбор другого человека той же части её не перестраивает.
 const layout = computed(() => (idx.value && root.value
-  ? layoutTree(idx.value, root.value, { mode: mode.value, up: up.value, down: down.value, placeholders: canEdit() })
+  ? layoutTree(idx.value, root.value, { mode: mode.value, up: up.value, down: down.value, placeholders: canEdit(), anchor: home.value })
   : { nodes: [], edges: [], bounds: { w: 0 } }));
+// Кто не связан с показанной частью: переход к самой большой из остальных.
+const others = computed(() => (mode.value === 'all' ? layout.value.others || 0 : 0));
+function toOthers() {
+  const { list, partOf } = treeParts(idx.value);
+  const ids = list.find((_, i) => i !== partOf.get(root.value));
+  if (ids) makeRoot(centralPerson(idx.value, ids));
+}
 
 watch([mode, up, down, rootId], () => {
   try { localStorage.setItem('drevo.view', JSON.stringify({ mode: mode.value, up: up.value, down: down.value, root: rootId.value })); } catch {}
@@ -67,10 +81,44 @@ function pick(p) {
 // «Ко мне»: дерево от себя, себя — в середину экрана.
 const meId = computed(() => (store.me?.person_id && idx.value?.persons.has(store.me.person_id) ? store.me.person_id : null));
 function toMe() {
-  const id = meId.value || root.value;
+  const id = meId.value || home.value;
   rootId.value = id;
   setTimeout(() => canvas.value?.centerOn(id, 0.95), 0);
 }
+// «Найдите себя»: у вошедшего нет себя в дереве — родство не считается. Плашку можно убрать.
+const findHidden = ref((() => { try { return localStorage.getItem('drevo.findme') === 'hide'; } catch { return false; } })());
+const showFind = computed(() => Boolean(store.me && idx.value?.persons.size) && !meId.value && !findHidden.value);
+function hideFind() {
+  findHidden.value = true;
+  try { localStorage.setItem('drevo.findme', 'hide'); } catch {}
+}
+const finding = ref(false);
+const findQuery = ref('');
+const findInput = ref(null);
+watch(finding, (on) => { if (on) nextTick(() => findInput.value?.focus()); });
+onDeactivated(() => { finding.value = false; });
+const findResults = computed(() => {
+  const s = findQuery.value.trim();
+  if (!s || !idx.value) return [];
+  return [...idx.value.persons.values()].filter((p) => personHas(p, s)).slice(0, 8);
+});
+async function itsMe(id, confirm = false) {
+  if (confirm && !await ask({ text: `Вы — ${fullName(idx.value.persons.get(id))}?`, note: 'Родство будет считаться от вас. Изменить можно в карточке.', yes: 'Да, это я', no: 'Нет' })) return;
+  try {
+    await api('PATCH', '/api/me', { person_id: id });
+  } catch (e) {
+    toast(e.message);
+    return;
+  }
+  finding.value = false;
+  findQuery.value = '';
+  await loadTree();
+  toast('Теперь родство считается от вас');
+  rootId.value = id;
+  selected.value = null;
+  setTimeout(() => canvas.value?.centerOn(id, 0.95), 0);
+}
+
 const gensLabel = computed(() => (mode.value === 'ancestors' ? `${up.value} вверх` : mode.value === 'descendants' ? `${down.value} вниз` : `${up.value} вверх, ${down.value} вниз`));
 function gens(delta) {
   if (mode.value !== 'descendants') up.value = Math.min(12, Math.max(1, up.value + delta));
@@ -82,14 +130,23 @@ function gens(delta) {
   <div class="tree-page">
     <div class="top">
       <div class="seg">
+        <button :class="{ on: mode === 'all' }" @click="mode = 'all'">Всё дерево</button>
         <button :class="{ on: mode === 'ancestors' }" @click="mode = 'ancestors'">Предки</button>
-        <button :class="{ on: mode === 'hourglass' }" @click="mode = 'hourglass'">Все</button>
         <button :class="{ on: mode === 'descendants' }" @click="mode = 'descendants'">Потомки</button>
       </div>
       <button class="round" @click="searching = true" aria-label="Найти человека">
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       </button>
       <div class="banner offline" v-if="store.offline">Нет связи. Показано сохранённое дерево.</div>
+      <div class="note" v-if="showFind && !sel">
+        <span class="grow">Найдите себя — родство будет считаться от вас</span>
+        <button class="primary" @click="finding = true">Найти себя</button>
+        <button class="ghost x" @click="hideFind" aria-label="Убрать подсказку">✕</button>
+      </div>
+      <div class="note" v-if="others && !sel">
+        <span class="grow">Ещё {{ others }} {{ others % 10 === 1 && others % 100 !== 11 ? 'человек не связан' : 'человек не связаны' }} с этой веткой</span>
+        <button @click="toOthers">Показать</button>
+      </div>
     </div>
 
     <div v-if="!store.tree" class="page muted">Загрузка дерева…</div>
@@ -104,7 +161,7 @@ function gens(delta) {
     <div class="tools" v-if="store.tree?.persons.length && !sel">
       <div class="row tools-top">
         <div class="views">
-          <button @click="canvas.fitAll()">Всё дерево</button>
+          <button @click="canvas.fitAll()">Показать целиком</button>
           <button @click="toMe">{{ meId ? 'Ко мне' : 'К началу' }}</button>
         </div>
         <div class="zoom">
@@ -112,7 +169,7 @@ function gens(delta) {
           <button @click="canvas.zoomAt(1 / 1.35)" aria-label="Мельче">−</button>
         </div>
       </div>
-      <div class="gens">
+      <div class="gens" v-if="mode !== 'all'">
         <button @click="gens(-1)" aria-label="Меньше поколений">−</button>
         <span class="grow">Поколений: <b class="nowrap">{{ gensLabel }}</b></span>
         <button @click="gens(1)" aria-label="Больше поколений">+</button>
@@ -135,6 +192,7 @@ function gens(delta) {
         <button class="primary" :class="{ wide: !canEdit() }" @click="router.push(`/person/${sel.id}`)">Открыть карточку</button>
         <button v-if="canEdit()" @click="add(null)">Добавить родственника</button>
         <button v-if="sel.id !== root" class="wide" @click="makeRoot(sel.id)">Дерево от этого человека</button>
+        <button v-if="!meId && store.me" class="wide" @click="itsMe(sel.id, true)">Это я</button>
       </div>
     </div>
 
@@ -152,6 +210,22 @@ function gens(delta) {
         <p class="muted" v-else-if="query.trim()">Никого не нашлось. Попробуйте только фамилию.</p>
       </div>
     </Teleport>
+
+    <Teleport to="body" v-if="finding">
+      <div class="sheet-backdrop" @click="finding = false" />
+      <div class="sheet" role="dialog" aria-modal="true" aria-label="Найти себя">
+        <div class="row"><h2 class="grow" style="margin:0">Найдите себя</h2><button class="ghost" @click="finding = false" aria-label="Закрыть">✕</button></div>
+        <p class="muted small" style="margin:4px 0 0">Тогда родство будет считаться от вас, а дерево — открываться с вас.</p>
+        <input ref="findInput" v-model="findQuery" type="search" placeholder="Ваше имя или фамилия" enterkeyhint="search" style="margin-top:8px" />
+        <div class="list" style="margin-top:10px" v-if="findResults.length">
+          <div v-for="p in findResults" :key="p.id" class="me-row">
+            <div class="grow"><div>{{ fullName(p) }}</div><div class="muted small">{{ lifespan(p) }}</div></div>
+            <button class="primary" @click="itsMe(p.id)">Это я</button>
+          </div>
+        </div>
+        <p class="muted" v-else-if="findQuery.trim()">Никого не нашлось. Попробуйте только фамилию.</p>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -163,6 +237,12 @@ function gens(delta) {
 .top .seg { flex: 1 1 12rem; background: color-mix(in srgb, var(--line) 88%, transparent); backdrop-filter: blur(6px); }
 .round { flex: none; margin-left: auto; width: 3.111rem; min-height: 3.111rem; padding: 0; border-color: var(--field); border-width: 1.5px; color: var(--text); }
 .offline { flex: 1 1 100%; margin: 0; }
+.note { flex: 1 1 100%; display: flex; align-items: center; gap: 0.444rem; background: var(--card); border: 1.5px solid var(--field); border-radius: var(--radius-s); padding: 0.333rem 0.333rem 0.333rem 0.667rem; font-size: 0.889rem; line-height: 1.3; box-shadow: 0 2px 10px rgba(0,0,0,.1); }
+.note .grow { flex: 1 1 auto; min-width: 0; }
+.note button { flex: none; min-height: 2.667rem; padding: 0.25rem 0.667rem; font-size: 0.889rem; }
+.note .x { width: 2.222rem; padding: 0; color: var(--muted); }
+.me-row { display: flex; align-items: center; gap: 0.5rem; }
+.me-row button { flex: none; }
 .nowrap { white-space: nowrap; }
 .empty { padding-top: calc(7.5rem + var(--safe-t)); }
 .tools { position: absolute; z-index: 5; left: 0.667rem; right: 0.667rem; bottom: 0.667rem; display: flex; flex-direction: column; gap: 0.444rem; pointer-events: none; }

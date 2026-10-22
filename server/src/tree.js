@@ -10,6 +10,14 @@ export class HttpError extends Error {
   constructor(statusCode, message) { super(message); this.statusCode = statusCode; }
 }
 
+// Человек владельца дерева в дереве: с него начинается дерево у тех, кто себя ещё не отметил.
+export async function ownerPerson(db) {
+  return (await db.q(
+    `select u.person_id from users u join persons p on p.id = u.person_id and p.deleted_at is null
+     where u.role = 'owner' and not u.disabled order by u.created_at limit 1`,
+  ))[0]?.person_id || null;
+}
+
 export async function alive(db, id) {
   return Boolean((await db.q('select 1 from persons where id = $1 and deleted_at is null', [id]))[0]);
 }
