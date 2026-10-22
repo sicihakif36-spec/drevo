@@ -226,8 +226,28 @@ function placeLines(entries, name) {
   return lines;
 }
 
+// Загрузка из файла — одной строкой-сводкой: «загрузка из файла «семья.ged» — 186 человек, 52 семьи, 40 событий».
+// Подробности — только у небольших загрузок: тысячи строк никто читать не будет.
+export function importSummary(x, undo = false) {
+  const what = [
+    x?.persons && count(x.persons, 'новый человек', 'новых человека', 'новых человек'),
+    x?.matched && `дополнено ${count(x.matched, 'карточка', 'карточки', 'карточек')}`,
+    x?.families && count(x.families, 'семья', 'семьи', 'семей'),
+    x?.events && count(x.events, 'событие', 'события', 'событий'),
+    x?.sources && count(x.sources, 'источник', 'источника', 'источников'),
+  ].filter(Boolean).join(', ');
+  return `${undo ? 'отменена загрузка из файла' : 'загрузка из файла'}${x?.file ? ` «${x.file}»` : ''}${what ? ` — ${what}` : ''}`;
+}
+const SMALL_IMPORT = 40;
+
 // Строки действия, главная — первой. Служебные записи (пустая семья создана или убрана) не показываем.
 export function opLines(op, name) {
+  const imp = op.entries.find((e) => e.entity === 'import');
+  if (imp) {
+    const head = importSummary(imp.after || imp.before, imp.action === 'revert');
+    if ((op.total || op.entries.length) > SMALL_IMPORT) return [head];
+    return [head, ...opLines({ ...op, entries: op.entries.filter((e) => e !== imp) }, name).filter((l) => l !== 'изменены связи')];
+  }
   if (op.entries.some((e) => e.entity === 'place')) return placeLines(op.entries, name);
   // Первое фото само становится главным, удалённое перестаёт им быть — отдельной строкой это не показываем.
   const withFiles = op.entries.some((e) => e.entity === 'media' && ['add', 'delete', 'restore'].includes(e.action));

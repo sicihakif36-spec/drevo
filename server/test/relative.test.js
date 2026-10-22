@@ -37,7 +37,7 @@ function writeRoutes() {
   const out = [];
   for (const f of files) {
     const text = fs.readFileSync(f, 'utf8');
-    for (const m of text.matchAll(/app\.(post|put|patch|delete)\('([^']+)'(?:, \{ preHandler: need\('(\w+)'\) \})?/g)) {
+    for (const m of text.matchAll(/app\.(post|put|patch|delete)\('([^']+)'(?:, \{ preHandler: need\('(\w+)'\)[^}]*\})?/g)) {
       out.push({ method: m[1].toUpperCase(), url: m[2], role: m[3] || null });
     }
   }

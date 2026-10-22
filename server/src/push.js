@@ -41,8 +41,15 @@ export function digestText(name, sex, entries, ops) {
     stories: 0, dropStories: 0, storyEdits: new Set(), sources: 0, dropSources: 0, sourceEdits: new Set(), cited: new Set(), quality: 0,
     events: 0, dropEvents: 0, eventEdits: new Set(), places: 0, dropPlaces: 0, placeEdits: new Set() };
   let links = 0;
+  const loads = [];
   for (const op of ops) {
     const mine = entries.filter((e) => e.op === op);
+    // Загрузка из файла — одной фразой по сводке, без счёта сотен записей.
+    const imp = mine.find((e) => e.entity === 'import');
+    if (imp) {
+      loads.push(imp.action === 'load' ? imp.after || {} : null);
+      continue;
+    }
     // Первое фото само становится главным, удалённое перестаёт им быть: это часть добавления или удаления файла.
     const withFiles = mine.some((e) => e.entity === 'media' && ['add', 'delete'].includes(e.action));
     // Новый источник сразу привязывается к сведению: это часть добавления, а не правка.
@@ -100,6 +107,14 @@ export function digestText(name, sex, entries, ops) {
     [verb('удалил', sex), [n.removed && plural(n.removed, 'человека', 'человек', 'человек'), n.dropPhotos && `${n.dropPhotos} фото`, docs(n.dropDocs), stories(n.dropStories),
       events(n.dropEvents), sources(n.dropSources), places(n.dropPlaces)]],
   ].map(([v, items]) => [v, items.filter(Boolean)]).filter(([, items]) => items.length);
+  const files = loads.filter(Boolean);
+  if (files.length) {
+    const n = files.reduce((sum, x) => sum + (x.persons || 0), 0);
+    const m = files.reduce((sum, x) => sum + (x.matched || 0), 0);
+    if (n || !m) groups.unshift([`${verb('загрузил', sex)} из файла`, [plural(n, 'человека', 'человек', 'человек')]]);
+    else groups.unshift([`${verb('дополнил', sex)} из файла`, [plural(m, 'карточку', 'карточки', 'карточек')]]);
+  }
+  if (loads.some((x) => !x)) groups.push([verb('отменил', sex), ['загрузку из файла']]);
   const what = groups.map(([v, items]) => `${v} ${items.length > 1 ? `${items.slice(0, -1).join(', ')} и ${items.at(-1)}` : items[0]}`).join(', ');
   return `${name || 'Кто-то'} ${what || `${verb('сделал', sex)} ${plural(ops.length, 'правку', 'правки', 'правок')}`}`;
 }

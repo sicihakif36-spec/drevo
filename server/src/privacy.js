@@ -51,6 +51,8 @@ export function trimEntry(e, hidden = new Set()) {
   // у достоверности — само сведение и есть ли отметка, без самой отметки.
   // Места справочника: только вид и полное название — сам справочник гостю виден, данных людей в нём нет.
   if (e.entity === 'place') return both((x) => pick(x, ['kind', 'title']));
+  // Загрузка из файла: только числа и имя файла.
+  if (e.entity === 'import') return both((x) => pick(x, ['file', 'persons', 'matched', 'families', 'events', 'sources']));
   if (e.entity === 'source') return { ...both((x) => pick(x, ['kind'])), entity_id: null };
   if (e.entity === 'citation') return { ...both((x) => pick(x, ['kind', 'subject', 'fact'])), entity_id: null };
   if (e.entity === 'quality') return { ...both((x) => x && { ...pick(x, ['subject', 'fact']), marked: Boolean(x.quality) }), entity_id: null };

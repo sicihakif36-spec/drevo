@@ -57,9 +57,10 @@ async function newPerson(db, userId, data) {
 
 // Человек уже есть в дереве: дописать пустые поля; непустые — только из replace (явный выбор).
 // «Жив» стоит по умолчанию, поэтому «умер» из анкеты без сведений о смерти в дереве — тоже дописывание.
-export function fillPlan(cur, data, replace = []) {
+// fields — какие текстовые поля сравнивать (у загрузки из файла их больше, чем в анкете).
+export function fillPlan(cur, data, replace = [], fields = TEXT_FIELDS) {
   const set = {};
-  for (const k of TEXT_FIELDS) if (data[k] && data[k] !== cur[k] && (!cur[k] || replace.includes(k))) set[k] = data[k];
+  for (const k of fields) if (data[k] && data[k] !== cur[k] && (!cur[k] || replace.includes(k))) set[k] = data[k];
   if (data.sex !== 'U' && data.sex !== cur.sex && (cur.sex === 'U' || replace.includes('sex'))) set.sex = data.sex;
   if (data.living !== cur.living) {
     const defaultLiving = cur.living && !cur.death_date && !cur.death_place;
