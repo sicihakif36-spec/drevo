@@ -1,5 +1,6 @@
 // Раскладка дерева: одна и та же для экрана телефона и для печати.
 import { parentsOf, spousesOf } from './names.js';
+import { layoutWhole } from './wholetree.js';
 
 export const BOX = { w: 168, h: 76, hgap: 22, vgap: 64 };
 
@@ -131,12 +132,13 @@ function placeDesc(u, left, depth, out) {
 // ---------- Общая точка входа ----------
 
 /**
- * mode: 'ancestors' | 'descendants' | 'hourglass'
+ * mode: 'all' (всё дерево, shared/wholetree.js) | 'ancestors' | 'descendants' | 'hourglass' (прямая линия: предки и потомки)
  * Возвращает узлы (x, y — левый верхний угол), линии и границы.
  */
-export function layoutTree(idx, rootId, { mode = 'hourglass', up = 4, down = 3, placeholders = false } = {}) {
+export function layoutTree(idx, rootId, { mode = 'hourglass', up = 4, down = 3, placeholders = false, anchor } = {}) {
   const out = { nodes: [], edges: [] };
   if (!rootId || !idx.persons.has(rootId)) return { ...out, bounds: { x: 0, y: 0, w: 0, h: 0 } };
+  if (mode === 'all') return layoutWhole(idx, rootId, { anchor });
 
   let rootCx = 0;
   if (mode !== 'ancestors') {
@@ -164,3 +166,4 @@ export function layoutTree(idx, rootId, { mode = 'hourglass', up = 4, down = 3, 
 }
 
 export { parentsOf };
+export { treeParts, homePerson } from './wholetree.js';
