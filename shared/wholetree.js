@@ -235,7 +235,10 @@ function compute(idx, ids, start) {
         let below = null;
         while (A && A.row > X.row) { below = A; A = A.tree?.a; }
         if (A) A.guests.push({ root: X, after: below });
-        else forest.splice(forest.indexOf(host) + 1, 0, X);
+        else {
+          const i = forest.indexOf(host);
+          forest.splice(i < 0 ? forest.length : i + 1, 0, X);
+        }
         queue.push(X);
       }
     }
