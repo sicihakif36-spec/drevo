@@ -3,7 +3,7 @@ import { computed, reactive, ref } from 'vue';
 import { store, canEdit, toast } from '../store.js';
 import { api } from '../api.js';
 import { factInfo } from '../sources.js';
-import { fullName, dateText, lifespan, parentsOf, spousesOf, childrenOf, nameGenitive } from '@shared/names.js';
+import { fullName, dateText, lifespan, parentsOf, spousesOf, childrenOf, nameGenitive, personHas } from '@shared/names.js';
 import DateInput from './DateInput.vue';
 import PlaceInput from './PlaceInput.vue';
 import { EVENT_KINDS, eventTitle } from '@shared/events.js';
@@ -39,7 +39,7 @@ const found = computed(() => {
   if (!idx) return [];
   const words = query.value.toLowerCase().split(/\s+/).filter(Boolean);
   const pool = words.length
-    ? [...idx.persons.values()].filter((p) => words.every((w) => fullName(p).toLowerCase().includes(w)))
+    ? [...idx.persons.values()].filter((p) => personHas(p, query.value))
     : [...spousesOf(idx, props.person.id).map((s) => s.spouseId), ...childrenOf(idx, props.person.id), ...parentsOf(idx, props.person.id)]
       .map((id) => idx.persons.get(id)).filter(Boolean);
   return pool.filter((p) => !taken.value.has(p.id)).slice(0, 20);

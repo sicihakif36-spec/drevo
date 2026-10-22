@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { store, onLive } from '../store.js';
 import { api } from '../api.js';
-import { fullName, lifespan } from '@shared/names.js';
+import { fullName, lifespan, personHas } from '@shared/names.js';
 import { STATUS, shareSurvey } from '../surveys.js';
 
 // Анкеты для родственников, которые приложением не пользуются: ссылка в мессенджер, ответы — в дерево.
@@ -23,7 +23,7 @@ const person = computed(() => store.idx?.persons.get(personId.value));
 const candidates = computed(() => {
   const s = find.value.trim().toLowerCase();
   if (s.length < 2) return [];
-  return [...(store.idx?.persons.values() || [])].filter((p) => fullName(p).toLowerCase().includes(s)).slice(0, 6);
+  return [...(store.idx?.persons.values() || [])].filter((p) => personHas(p, s)).slice(0, 6);
 });
 function pick(p) {
   personId.value = p.id;

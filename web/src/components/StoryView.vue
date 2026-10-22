@@ -2,7 +2,7 @@
 import { computed, reactive, ref } from 'vue';
 import { store, canEdit, toast } from '../store.js';
 import { api, upload, photoUrl } from '../api.js';
-import { fullName, lifespan, namePrepositional, nameGenitive } from '@shared/names.js';
+import { fullName, lifespan, namePrepositional, nameGenitive, personHas } from '@shared/names.js';
 import { ask } from './ask.js';
 import AudioPlayer from './AudioPlayer.vue';
 import VoiceRecorder from './VoiceRecorder.vue';
@@ -29,7 +29,7 @@ const found = computed(() => {
   if (!words.length || !store.idx) return [];
   const linked = new Set(s.value?.persons || []);
   return [...store.idx.persons.values()]
-    .filter((p) => !linked.has(p.id) && words.every((w) => fullName(p).toLowerCase().includes(w)))
+    .filter((p) => !linked.has(p.id) && personHas(p, query.value))
     .slice(0, 20);
 });
 

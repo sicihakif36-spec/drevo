@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { store } from '../store.js';
 import { photoUrl } from '../api.js';
-import { fullName, lifespan, missingFields } from '@shared/names.js';
+import { fullName, lifespan, missingFields, personHas, textHas } from '@shared/names.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -17,9 +17,9 @@ onMounted(() => document.querySelector('.chip.on')?.scrollIntoView({ inline: 'ce
 
 const people = computed(() => {
   if (!store.idx) return [];
-  const s = query.value.trim().toLowerCase();
+  const s = query.value.trim();
   return [...store.idx.persons.values()]
-    .filter((p) => !s || fullName(p).toLowerCase().includes(s) || p.birth_surname.toLowerCase().includes(s) || p.birth_place.toLowerCase().includes(s))
+    .filter((p) => !s || personHas(p, s) || textHas(p.birth_place, s))
     .filter((p) => {
       if (filter.value === 'nophoto') return !p.photo_id;
       if (filter.value === 'nodates') return !p.birth_date;

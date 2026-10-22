@@ -5,7 +5,7 @@ import { store, loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { STATUS, shareSurvey } from '../surveys.js';
 import { FIELDS, ROLES, surveyPeople, findMatches } from '@shared/survey.js';
-import { fullName, lifespan, parentsOf, spousesOf, childrenOf, siblingsOf } from '@shared/names.js';
+import { fullName, lifespan, parentsOf, spousesOf, childrenOf, siblingsOf, personHas } from '@shared/names.js';
 import ChangeList from '../components/ChangeList.vue';
 import { ask } from '../components/ask.js';
 
@@ -103,7 +103,7 @@ function edit(r) {
 }
 const found = (r) => {
   const t = r.d.find.trim().toLowerCase();
-  return t.length < 2 ? [] : persons.value.filter((p) => fullName(p).toLowerCase().includes(t)).slice(0, 6);
+  return t.length < 2 ? [] : persons.value.filter((p) => personHas(p, t)).slice(0, 6);
 };
 const nameOf = (x) => [x.surname, x.given, x.patronymic].map((v) => (v || '').trim()).filter(Boolean).join(' ');
 const dates = (x) => [x.birth_date && `родил${x.sex === 'F' ? 'ась' : 'ся'} ${x.birth_date}`, dead(x) && (x.death_date ? `умер${x.sex === 'F' ? 'ла' : ''} ${x.death_date}` : x.sex === 'F' ? 'умерла' : 'умер')].filter(Boolean).join(', ');

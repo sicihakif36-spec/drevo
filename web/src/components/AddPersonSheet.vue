@@ -5,7 +5,7 @@ import { api } from '../api.js';
 import { addState, closeAdd } from './addState.js';
 import DateInput from './DateInput.vue';
 import PlaceInput from './PlaceInput.vue';
-import { fullName, nameGenitive, lifespan, patronymicFrom, surnameFor, guessSex, parentsOf, spousesOf } from '@shared/names.js';
+import { fullName, nameGenitive, lifespan, patronymicFrom, surnameFor, guessSex, parentsOf, spousesOf, personHas, sameName } from '@shared/names.js';
 
 const emit = defineEmits(['done']);
 const REL = [
@@ -85,9 +85,9 @@ function setSex(s) { f.sex = s; sexTouched.value = true; }
 
 const duplicates = computed(() => {
   if (!f.given || !idx.value) return [];
-  const g = f.given.trim().toLowerCase();
-  const s = f.surname.trim().toLowerCase();
-  return [...idx.value.persons.values()].filter((p) => p.given.toLowerCase() === g && (!s || p.surname.toLowerCase() === s || p.birth_surname.toLowerCase() === s) && p.id !== to.value).slice(0, 3);
+  // Без различий татарских и русских букв и похожих написаний: «Ринат» найдёт «Рената».
+  const s = f.surname.trim();
+  return [...idx.value.persons.values()].filter((p) => sameName(p.given, f.given) && (!s || sameName(p.surname, s) || sameName(p.birth_surname, s)) && p.id !== to.value).slice(0, 3);
 });
 
 const title = computed(() => {
@@ -121,9 +121,9 @@ async function save(existingId) {
 
 const pickTarget = ref('');
 const candidates = computed(() => {
-  const s = pickTarget.value.trim().toLowerCase();
+  const s = pickTarget.value.trim();
   const all = [...(idx.value?.persons.values() || [])];
-  return (s ? all.filter((p) => fullName(p).toLowerCase().includes(s)) : all).slice(0, 8);
+  return (s ? all.filter((p) => personHas(p, s)) : all).slice(0, 8);
 });
 </script>
 

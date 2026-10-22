@@ -19,6 +19,7 @@ import PlacesView from './views/PlacesView.vue';
 import SurveysView from './views/SurveysView.vue';
 import SurveyView from './views/SurveyView.vue';
 import SurveyFillView from './views/SurveyFillView.vue';
+import ImportView from './views/ImportView.vue';
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -37,6 +38,7 @@ const router = createRouter({
     { path: '/places', component: PlacesView },
     { path: '/surveys', component: SurveysView },
     { path: '/surveys/:id', component: SurveyView, props: true },
+    { path: '/import', component: ImportView },
     { path: '/invite/:token', component: InviteView, props: true, meta: { public: true } },
     // Анкета для родственника: без входа и без дерева.
     { path: '/survey/:token', component: SurveyFillView, props: true, meta: { public: true } },

@@ -82,6 +82,7 @@ async function logout() {
       <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
       <a v-if="isOwner()" href="#" @click.prevent="openArchive">Скачать всё: дерево, фото, документы</a>
       <a href="/api/export.ged" download><span>Скачать дерево для другой программы<br /><span class="muted small">файл GEDCOM</span></span></a>
+      <router-link v-if="isOwner()" to="/import"><span>Загрузить дерево из файла<br /><span class="muted small">из другой программы, файл GEDCOM</span></span></router-link>
       <router-link v-if="isOwner()" to="/family">Родственники и приглашения</router-link>
     </div>
 

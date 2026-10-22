@@ -274,6 +274,8 @@ const WAS = {
   story: ['title', 'date'], place: ['title', 'now'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'url'], event: ['date', 'place', 'title', 'unit', 'rank'],
 };
 export function opWas(op) {
+  // Загрузка из файла показывается сводкой — без «было».
+  if (op.entries.some((e) => e.entity === 'import')) return [];
   // У правки места — только само место: в карточках было его прежнее название.
   const withPlace = op.entries.some((e) => e.entity === 'place');
   return op.entries

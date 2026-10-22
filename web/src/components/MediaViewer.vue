@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { store, loadTree, canEdit, toast } from '../store.js';
 import { api, photoUrl } from '../api.js';
-import { fullName, lifespan } from '@shared/names.js';
+import { fullName, lifespan, personHas } from '@shared/names.js';
 import { ask } from './ask.js';
 
 // Просмотр во весь экран: листание пальцем влево-вправо, увеличение щипком или нажатием, подпись и кто на фото.
@@ -153,7 +153,7 @@ const tagging = ref(false);
 const search = ref('');
 const found = computed(() => {
   const words = search.value.toLowerCase().split(/\s+/).filter(Boolean);
-  const all = (store.tree?.persons || []).filter((p) => words.every((w) => fullName(p).toLowerCase().includes(w)));
+  const all = (store.tree?.persons || []).filter((p) => !words.length || personHas(p, search.value));
   const on = new Set(m.value.persons);
   return all.sort((a, b) => on.has(b.id) - on.has(a.id)).slice(0, 40).map((p) => ({ p, on: on.has(p.id) }));
 });
