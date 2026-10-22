@@ -347,7 +347,7 @@ test('обсуждение: кто пишет, правит и удаляет; �
   assert.ok(f.items.slice(1).every((i, n) => i.at <= f.items[n].at), 'по времени, новые сверху');
   const g = await feed(guest);
   assert.deepEqual(g.items.filter((i) => i.kind === 'comment').map((i) => i.id), [c1.id]);
-  assert.ok(!JSON.stringify(g.items).includes('8-900'));
+  assert.ok(!JSON.stringify(g.items).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '').includes('8-900'));
   assert.ok((await feed(other)).items.length <= 50);
 
   // Комментарии удалённого человека не видны нигде, после возврата — снова видны.

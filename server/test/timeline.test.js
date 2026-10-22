@@ -175,7 +175,10 @@ test('гость: событие с живым скрыто везде, собы
   // Лента: без описаний, мест, дат и названий; у события с живым — и без вида.
   const feed = (await json(guest, 'GET', '/api/feed')).items;
   const text = JSON.stringify(feed);
-  for (const t of ['Медаль', 'Калининский', 'За бой', '1943', 'Тайный', 'Секретный', '1955', award.id, move.id]) assert.ok(!text.includes(t), t);
+  for (const id of [award.id, move.id]) assert.ok(!text.includes(id), id);
+  // Без номеров записей: случайный uuid может содержать «1943» или «1955».
+  const values = text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '');
+  for (const t of ['Медаль', 'Калининский', 'За бой', '1943', 'Тайный', 'Секретный', '1955']) assert.ok(!values.includes(t), t);
   const added = (ids) => feed.find((i) => i.kind === 'op' && i.entries[0].entity === 'event' && i.entries[0].action === 'add'
     && i.entries[0].persons.sort().join() === ids.sort().join()).entries[0];
   assert.deepEqual(added([dead.id, kid.id]).after, {});
