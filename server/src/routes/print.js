@@ -63,23 +63,27 @@ function drawTree(doc, idx, layout, o, theme) {
     const p = idx.persons.get(n.id);
     if (!p) continue;
     const [fill, stroke] = t[p.sex] || t.U;
-    doc.lineWidth(n.root ? 3 : 1.4).roundedRect(n.x, n.y, BOX.w, BOX.h, 9).fillAndStroke(fill, stroke);
-    let tx = n.x + 8;
+    // Рамка в своих координатах: pdfkit сам начинает новую страницу, если текст ниже края листа
+    // в координатах до сдвига, — у высокого дерева (всё дерево, 7 рядов и больше) это тысячи пустых листов.
+    doc.save().translate(n.x, n.y);
+    doc.lineWidth(n.root ? 3 : 1.4).roundedRect(0, 0, BOX.w, BOX.h, 9).fillAndStroke(fill, stroke);
+    let tx = 8;
     const hidden = o.hideLiving && isPrivate(p);
     if (o.photos && p.photo_id && !hidden && p._photo) {
       try {
-        doc.save().roundedRect(n.x + 6, n.y + 6, BOX.h - 12, BOX.h - 12, 6).clip();
-        doc.image(p._photo, n.x + 6, n.y + 6, { cover: [BOX.h - 12, BOX.h - 12], align: 'center', valign: 'center' });
+        doc.save().roundedRect(6, 6, BOX.h - 12, BOX.h - 12, 6).clip();
+        doc.image(p._photo, 6, 6, { cover: [BOX.h - 12, BOX.h - 12], align: 'center', valign: 'center' });
         doc.restore();
-        tx = n.x + BOX.h;
+        tx = BOX.h;
       } catch { doc.restore(); }
     }
-    const w = n.x + BOX.w - 6 - tx;
+    const w = BOX.w - 6 - tx;
     const nm = shortName(p);
-    doc.fillColor('#1d1d1d').font(t.bold).fontSize(12.5).text(nm.last || nm.first, tx, n.y + 9, { width: w, lineBreak: false, ellipsis: true });
-    if (nm.last) doc.font(t.font).fontSize(11).text(nm.first, tx, n.y + 27, { width: w, lineBreak: false, ellipsis: true });
+    doc.fillColor('#1d1d1d').font(t.bold).fontSize(12.5).text(nm.last || nm.first, tx, 9, { width: w, lineBreak: false, ellipsis: true });
+    if (nm.last) doc.font(t.font).fontSize(11).text(nm.first, tx, 27, { width: w, lineBreak: false, ellipsis: true });
     const life = hidden ? '' : lifespan(p);
-    if (life) doc.fillColor('#555555').fontSize(10).text(life, tx, n.y + 50, { width: w, lineBreak: false, ellipsis: true });
+    if (life) doc.fillColor('#555555').fontSize(10).text(life, tx, 50, { width: w, lineBreak: false, ellipsis: true });
+    doc.restore();
   }
 }
 

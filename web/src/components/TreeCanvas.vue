@@ -10,8 +10,13 @@ const emit = defineEmits(['select', 'placeholder', 'open']);
 const el = ref(null);
 const size = reactive({ w: 360, h: 600 });
 const view = reactive({ x: 0, y: 0, k: 0.95 });
-const MIN = 0.06;
 const MAX = 3;
+// Мельче всего — чтобы и большое «всё дерево» влезало целиком.
+const fitK = () => {
+  const b = props.layout.bounds;
+  return b.w ? Math.min((size.w - 32) / b.w, (size.h - 140) / b.h) : 1;
+};
+const minK = () => Math.min(0.06, fitK());
 
 const detail = computed(() => (view.k < 0.22 ? 0 : view.k < 0.45 ? 1 : 2));
 
@@ -24,6 +29,42 @@ const visible = computed(() => {
   const y1 = (size.h - view.y + pad) / view.k;
   return props.layout.nodes.filter((n) => n.x + BOX.w > x0 && n.x < x1 && n.y + BOX.h > y0 && n.y < y1);
 });
+// Линии — одним путём (сплошные и пунктир отдельно) и тоже только видимые: тысячи линий не тормозят.
+const edgeBoxes = computed(() => props.layout.edges.map((e) => {
+  const xs = e.points.map((p) => p[0]);
+  const ys = e.points.map((p) => p[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}));
+const edgePaths = computed(() => {
+  const pad = 200;
+  const x0 = (-view.x - pad) / view.k;
+  const y0 = (-view.y - pad) / view.k;
+  const x1 = (size.w - view.x + pad) / view.k;
+  const y1 = (size.h - view.y + pad) / view.k;
+  let solid = '';
+  let dashed = '';
+  props.layout.edges.forEach((e, i) => {
+    const b = edgeBoxes.value[i];
+    if (b[2] < x0 || b[0] > x1 || b[3] < y0 || b[1] > y1) return;
+    if (e.dashed) dashed += pathOf(e);
+    else solid += pathOf(e);
+  });
+  return { solid, dashed };
+});
+
+// Очень мелко и людей много — рамки тремя путями (мужчины, женщины, остальные): быстро даже на 4000 человек.
+const bulk = computed(() => detail.value === 0 && visible.value.length > 300);
+const bulkPaths = computed(() => {
+  if (!bulk.value) return null;
+  const out = { M: '', F: '', U: '' };
+  for (const n of visible.value) {
+    const p = n.id && props.idx.persons.get(n.id);
+    if (!p) continue;
+    out[p.sex === 'M' || p.sex === 'F' ? p.sex : 'U'] += `M${n.x},${n.y}h${BOX.w}v${BOX.h}h${-BOX.w}z`;
+  }
+  return out;
+});
+const marked = computed(() => (bulk.value ? props.layout.nodes.filter((n) => n.id && (n.root || n.id === props.selectedId)) : []));
 
 function pathOf(e) {
   return e.points.map((p, i) => `${i ? 'L' : 'M'}${p[0]},${p[1]}`).join('');
@@ -40,14 +81,14 @@ function centerOn(id, k = view.k) {
 function fitAll() {
   const b = props.layout.bounds;
   if (!b.w) return;
-  const k = Math.max(MIN, Math.min(1.2, Math.min((size.w - 32) / b.w, (size.h - 140) / b.h)));
+  const k = Math.min(1.2, fitK());
   view.k = k;
   view.x = (size.w - b.w * k) / 2 - b.x * k;
   view.y = (size.h - b.h * k) / 2 - b.y * k + 20;
 }
 
 function zoomAt(factor, cx = size.w / 2, cy = size.h / 2) {
-  const k = Math.min(MAX, Math.max(MIN, view.k * factor));
+  const k = Math.min(MAX, Math.max(minK(), view.k * factor));
   const f = k / view.k;
   view.x = cx - (cx - view.x) * f;
   view.y = cy - (cy - view.y) * f;
@@ -166,8 +207,14 @@ function fit(str, w, fs, bold) {
       <defs>
         <clipPath id="ph" clipPathUnits="objectBoundingBox"><rect width="1" height="1" rx=".18" /></clipPath>
       </defs>
-      <g :transform="`translate(${view.x},${view.y}) scale(${view.k})`">
-        <path v-for="(e, i) in layout.edges" :key="'e' + i" :d="pathOf(e)" class="edge" :class="{ dashed: e.dashed }" />
+      <g :transform="`translate(${view.x},${view.y}) scale(${view.k})`" :class="{ far: detail === 0 }">
+        <path v-if="edgePaths.solid" :d="edgePaths.solid" class="edge" />
+        <path v-if="edgePaths.dashed" :d="edgePaths.dashed" class="edge dashed" />
+        <template v-if="bulk">
+          <path v-for="(d, sex) in bulkPaths" :key="'b' + sex" :d="d" class="box" :class="sex" />
+          <rect v-for="n in marked" :key="'m' + n.id" :x="n.x" :y="n.y" :width="BOX.w" :height="BOX.h" rx="12" class="box" :class="[person(n).sex, { root: n.root, sel: n.id === selectedId }]" />
+        </template>
+        <template v-else>
         <g v-for="n in visible" :key="n.id || n.placeholder.of + n.placeholder.relation" :data-node="nodeIndex.get(n)" :transform="`translate(${n.x},${n.y})`">
           <template v-if="n.placeholder">
             <rect :width="BOX.w" :height="BOX.h" rx="12" class="ph" />
@@ -186,6 +233,7 @@ function fit(str, w, fs, bold) {
             </template>
           </template>
         </g>
+        </template>
       </g>
     </svg>
   </div>
@@ -196,6 +244,8 @@ function fit(str, w, fs, bold) {
 svg { display: block; }
 .edge { fill: none; stroke: var(--edge); stroke-width: 2.5; }
 .edge.dashed { stroke-dasharray: 7 6; }
+/* Совсем мелко (всё большое дерево целиком): линии и рамки тонкие, но видны. */
+.far .edge, .far .box { vector-effect: non-scaling-stroke; stroke-width: 1.2; }
 .box { fill: var(--card); stroke: var(--field); stroke-width: 2.5; }
 .box.M { fill: var(--male-soft); stroke: var(--male); }
 .box.F { fill: var(--female-soft); stroke: var(--female); }

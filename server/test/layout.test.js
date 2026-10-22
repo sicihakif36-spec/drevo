@@ -8,6 +8,8 @@ import { buildIndex, fullName } from '../../shared/names.js';
 import { BOX, layoutTree } from '../../shared/layout.js';
 import { homePerson, treeParts, layoutWhole } from '../../shared/wholetree.js';
 import { clans, randomTree } from './fixtures/clans.js';
+import { PassThrough } from 'node:stream';
+import { parsePrintOptions, renderPdf } from '../src/routes/print.js';
 
 // Проверки раскладки: возвращает узлы по id.
 function check(idx, L, ids) {
@@ -168,5 +170,21 @@ test('прежние режимы не изменились: предки, по�
     const L = layoutTree(idx, root, { mode, up: 3, down: 2 });
     assert.ok(L.nodes.some((n) => n.id === root && n.root), mode);
     assert.ok(L.nodes.length > 2 && L.nodes.length < idx.persons.size, mode);
+  }
+});
+
+test('печать всего дерева: на одном листе и плакатом — ровно столько листов, сколько в плане', async () => {
+  const data = clans();
+  for (const qs of [{ fit: 'page', paper: 'A1' }, { fit: 'tiles', paper: 'A4' }, { fit: 'tiles', paper: 'A3', scale: '60' }]) {
+    const o = parsePrintOptions({ mode: 'all', ...qs });
+    const out = new PassThrough();
+    const chunks = [];
+    out.on('data', (c) => chunks.push(c));
+    const done = new Promise((r) => out.on('end', r));
+    const plan = renderPdf(out, data, o);
+    await done;
+    const pdf = Buffer.concat(chunks).toString('latin1');
+    assert.equal((pdf.match(/\/Type \/Page\b/g) || []).length, plan.cols * plan.rows, JSON.stringify(qs));
+    if (qs.fit === 'tiles') assert.ok(plan.cols > 1);
   }
 });

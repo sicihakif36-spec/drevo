@@ -1,8 +1,9 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { store, toast } from '../store.js';
 import { api } from '../api.js';
 import { ask } from '../components/ask.js';
+import { fullName, lifespan, personHas } from '@shared/names.js';
 
 // Кто что увидит и сможет.
 const ROLES = [
@@ -15,6 +16,21 @@ const HINT = Object.fromEntries(ROLES.map(([k, l, t]) => [k, `${l} — ${t}`]));
 const label = ref('');
 const role = ref('editor');
 const link = ref(null);
+// Кто это в дереве (можно не указывать): вошедший сразу связан с собой, родство считается от него.
+const personId = ref(null);
+const find = ref('');
+const person = computed(() => store.idx?.persons.get(personId.value));
+const candidates = computed(() => {
+  const s = find.value.trim();
+  if (s.length < 2) return [];
+  return [...(store.idx?.persons.values() || [])].filter((p) => personHas(p, s)).slice(0, 6);
+});
+function pick(p) {
+  personId.value = p.id;
+  find.value = '';
+  if (!label.value.trim()) label.value = [p.given, p.patronymic].filter(Boolean).join(' ');
+}
+const inTree = (id) => store.idx?.persons.get(id);
 const invites = ref([]);
 const users = ref([]);
 
@@ -24,8 +40,9 @@ async function load() {
 onMounted(load);
 
 async function create() {
-  link.value = { ...(await api('POST', '/api/invites', { label: label.value, role: role.value })), label: label.value };
+  link.value = { ...(await api('POST', '/api/invites', { label: label.value, role: role.value, person_id: personId.value })), label: label.value };
   label.value = '';
+  personId.value = null;
   load();
 }
 async function loginLink(u) {
@@ -59,6 +76,20 @@ const when = (t) => (t ? new Date(t).toLocaleDateString('ru-RU', { day: 'numeric
     <div class="card">
       <b>Пригласить</b>
       <label class="field"><span>Кого (для себя, например «Бабушка Валя»)</span><input v-model="label" /></label>
+      <div class="field">
+        <span>Кто это в дереве (можно не указывать)</span>
+        <p class="muted small hint">Тогда дерево откроется с него и родство будет считаться от него.</p>
+        <div v-if="person" class="row picked">
+          <span class="grow">{{ fullName(person) }} <span class="muted small">{{ lifespan(person) }}</span></span>
+          <button class="ghost" @click="personId = null">Убрать</button>
+        </div>
+        <template v-else>
+          <input v-model="find" placeholder="Начните вводить имя" />
+          <div v-if="candidates.length" class="list" style="margin-top:6px">
+            <a v-for="p in candidates" :key="p.id" href="#" @click.prevent="pick(p)">{{ fullName(p) }} <span class="muted small">{{ lifespan(p) }}</span></a>
+          </div>
+        </template>
+      </div>
       <div class="field"><span>Что можно этому человеку</span>
         <div class="roles" role="radiogroup" aria-label="Права">
           <button v-for="[k, l, t] in ROLES" :key="k" type="button" role="radio" :aria-checked="role === k" :class="{ on: role === k }" @click="role = k">
@@ -97,7 +128,7 @@ const when = (t) => (t ? new Date(t).toLocaleDateString('ru-RU', { day: 'numeric
     <h2 v-if="invites.length">Неиспользованные ссылки</h2>
     <div class="list" v-if="invites.length">
       <div v-for="i in invites" :key="i.id">
-        <div class="grow">{{ i.label || 'без подписи' }} <span class="muted small">· {{ ROLES.find((r) => r[0] === i.role)?.[1].toLowerCase() }} · до {{ when(i.expires_at) }}</span></div>
+        <div class="grow">{{ i.label || 'без подписи' }} <span class="muted small">· {{ ROLES.find((r) => r[0] === i.role)?.[1].toLowerCase() }}<template v-if="inTree(i.person_id)"> · в дереве: {{ fullName(inTree(i.person_id)) }}</template> · до {{ when(i.expires_at) }}</span></div>
         <button class="danger" @click="drop(i)">Отключить ссылку</button>
       </div>
     </div>
@@ -106,6 +137,9 @@ const when = (t) => (t ? new Date(t).toLocaleDateString('ru-RU', { day: 'numeric
 
 <style scoped>
 .user { align-items: flex-start !important; }
+.picked { background: var(--accent-soft); color: var(--accent-soft-text); border-radius: var(--radius-s); padding: 0.222rem 0.222rem 0.222rem 0.667rem; }
+.picked .ghost { color: var(--accent-soft-text); }
+.hint { margin: 0 0 0.333rem; }
 .roles { display: flex; flex-direction: column; gap: 0.444rem; margin-top: 0.222rem; }
 .acts { display: grid; gap: 0.444rem; margin-top: 0.444rem; }
 .acts > * { width: 100%; }
