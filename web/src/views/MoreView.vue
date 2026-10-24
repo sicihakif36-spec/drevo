@@ -78,6 +78,7 @@ async function logout() {
     </div>
 
     <div class="list" style="margin-top:12px">
+      <router-link v-if="canTalk() && !canEdit() && store.tree?.asks_waiting" to="/asks"><span class="grow"><b>Вас спросили</b></span><span class="count">{{ store.tree.asks_waiting }}</span></router-link>
       <router-link to="/notify">Уведомления</router-link>
     </div>
 
@@ -88,6 +89,7 @@ async function logout() {
       <router-link v-if="canTalk()" to="/changes">Последние правки</router-link>
       <router-link v-if="canEdit()" to="/checks"><span class="grow">Проверка дерева<br /><span class="muted small">{{ findings.length ? `вопросов к данным: ${findings.length}` : 'ошибки в датах, дубли, люди без связей' }}</span></span></router-link>
       <router-link v-if="canEdit()" to="/research"><span>Исследование<br /><span class="muted small">поиск предков в архивах, запрос ИИ-помощнику</span></span></router-link>
+      <router-link v-if="canEdit()" to="/asks"><span class="grow">Вопросы родным<br /><span class="muted small">кого о чём спросили, ответы — в дерево</span></span><span v-if="store.tree?.asks_waiting" class="count">{{ store.tree.asks_waiting }}</span></router-link>
       <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
       <a v-if="isOwner()" href="#" @click.prevent="openArchive">Скачать всё: дерево, фото, документы</a>
       <a href="/api/export.ged" download><span>Скачать дерево для другой программы<br /><span class="muted small">файл GEDCOM</span></span></a>
@@ -138,4 +140,5 @@ async function logout() {
 <style scoped>
 .nopass { margin-top: 12px; background: var(--warn-bg); color: var(--warn-text); border-color: transparent; }
 .nopass p { margin: 0.333rem 0 0.667rem; }
+.count { flex: none; min-width: 1.778rem; padding: 0 0.444rem; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 700; text-align: center; }
 </style>

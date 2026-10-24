@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { store, loadMe, loadTree, canEdit } from './store.js';
 import AddPersonSheet from './components/AddPersonSheet.vue';
 import AskDialog from './components/AskDialog.vue';
+import AskSheet from './components/AskSheet.vue';
+import { askSheet } from './asks.js';
 import PasswordView from './views/PasswordView.vue';
 import { addState, openAdd } from './components/addState.js';
 import { syncPush } from './push.js';
@@ -79,6 +81,7 @@ function added(id) {
       </router-link>
     </nav>
     <AddPersonSheet v-if="addState.open" @done="added" />
+    <AskSheet v-if="askSheet.open" />
   </template>
   <div class="toast" v-if="store.toast">{{ store.toast }}</div>
   <AskDialog />

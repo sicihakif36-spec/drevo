@@ -27,7 +27,7 @@ const editor = (u) => ['owner', 'editor'].includes(u?.role);
 const linkOf = (token) => `${config.publicUrl}/#/ask/${token}`;
 
 const LIST = `select a.id, a.person_id, a.about, a.question, a.field, a.research_id, a.created_by, cu.name as from_name, a.created_at,
-    a.to_user, coalesce(tu.name, a.to_name) as to_name, a.token_hash is not null as link, a.expires_at, a.opened_at, a.reminded_at,
+    a.to_user, coalesce(tu.name, a.to_name) as to_name, (select sex from persons where id = tu.person_id) as to_sex, a.token_hash is not null as link, a.expires_at, a.opened_at, a.reminded_at,
     a.answer, a.answered_at, a.closed_at, a.revoked_at, a.story_op, a.note_op,
     ${undone('story_op')} as story_undone, ${undone('note_op')} as note_undone,
     (select c.entity_id from changes c where c.op = a.story_op and c.entity = 'story' limit 1) as story_id,

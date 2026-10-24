@@ -6,8 +6,10 @@ import { namer, opLines, moreText } from '../history.js';
 import { fullName, missingFields, upcomingDates, yearsText } from '@shared/names.js';
 import { findings } from '../checks.js';
 import Finding from '../components/Finding.vue';
+import { when as day } from '../asks.js';
 
 const items = ref([]);
+const asked = ref([]); // «Вас спросили»: вопросы мне без ответа
 const open = ref(new Set()); // раскрытые «Ещё N изменений»
 const loaded = ref(false);
 const error = ref('');
@@ -16,6 +18,7 @@ async function load() {
   try {
     const feed = await api('GET', '/api/feed');
     items.value = feed.items;
+    asked.value = feed.asked || [];
     loaded.value = true;
     error.value = '';
     await api('POST', '/api/feed/seen', { at: feed.now });
@@ -53,6 +56,7 @@ const hints = computed(() => {
 
 const name = computed(() => namer(items.value.filter((i) => i.kind === 'op'), store.idx));
 const feed = computed(() => items.value.map((i) => (i.kind === 'op' ? { ...i, lines: opLines(i, name.value) } : i.kind === 'comment' ? { ...i, who: name.value.gen(i.person_id) } : i)));
+const short = (t, n = 160) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
 const toggle = (id) => { const s = new Set(open.value); if (s.has(id)) s.delete(id); else s.add(id); open.value = s; };
 const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 </script>
@@ -60,6 +64,19 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 <template>
   <div class="page">
     <h1>Лента</h1>
+
+    <template v-if="asked.length">
+      <h2>Вас спросили</h2>
+      <div class="list asked">
+        <router-link v-for="a in asked" :key="a.id" :to="`/asks/${a.id}`">
+          <div class="grow">
+            <div class="small muted">{{ a.from_name || 'Кто-то' }} · {{ day(a.created_at) }} · о ком: {{ a.about }}</div>
+            <div class="q">{{ short(a.question) }}</div>
+            <span class="btn primary go">Ответить</span>
+          </div>
+        </router-link>
+      </div>
+    </template>
 
     <template v-if="dates.length">
       <h2>Ближайшие даты</h2>
@@ -109,6 +126,15 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
           </div>
           <span class="muted" aria-hidden="true">›</span>
         </router-link>
+        <router-link v-else-if="it.kind === 'answer'" :to="`/asks/${it.id}`" :class="{ fresh: it.fresh }">
+          <div class="grow">
+            <div class="small muted">{{ when(it.at) }}<span v-if="it.fresh" class="badge">новое</span></div>
+            <div><b>{{ it.who || 'Родственник' }}</b> — ответ на ваш вопрос</div>
+            <div class="small muted">{{ it.about }}</div>
+            <div class="quote">{{ it.answer || 'Фото или запись голоса' }}</div>
+          </div>
+          <span class="muted" aria-hidden="true">›</span>
+        </router-link>
         <router-link v-else-if="it.kind === 'survey'" :to="`/surveys/${it.id}`" :class="{ fresh: it.fresh }">
           <div class="grow">
             <div class="small muted">{{ when(it.at) }}<span v-if="it.fresh" class="badge">новое</span></div>
@@ -145,6 +171,9 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 .round .muted, .round .date { color: var(--accent-soft-text); }
 .accent { color: var(--accent-soft-text); font-weight: 700; }
 .fresh { box-shadow: inset 4px 0 var(--accent); }
+.asked { border: 2px solid var(--accent); }
+.asked .q { font-weight: 700; margin: 0.111rem 0 0.444rem; overflow-wrap: anywhere; }
+.asked .go { width: 100%; min-height: 2.889rem; }
 .list > .op { display: block; }
 .line { overflow-wrap: anywhere; }
 .more-line { margin-top: 0.222rem; padding-left: 0.667rem; border-left: 3px solid var(--line); }

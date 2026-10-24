@@ -7,6 +7,8 @@ import { STATUSES, RESULTS, QUESTION_MAX } from '@shared/research.js';
 import { fullName } from '@shared/names.js';
 import { ask, askText } from './ask.js';
 import ResearchPrompt from './ResearchPrompt.vue';
+import { openAsk } from '../asks.js';
+import { researchAsk } from '@shared/asks.js';
 
 // Исследование в карточке (только владелец и участники): вопросы поиска — «что хотим узнать» — и записи по ходу:
 // где искали, что нашли. «Подготовить запрос» — текст для ИИ-помощника, «Загрузить результат» — его ответ в дерево.
@@ -190,6 +192,7 @@ const link = (url) => (/^https?:\/\//i.test(url) ? url : '');
         </div>
 
         <button class="primary block" @click="newNote(x)">+ Запись: где искали, что нашли</button>
+        <button class="block askbtn" @click="openAsk({ person: person.id, ...researchAsk(x) })">Спросить у родных</button>
         <div class="grid2 ai">
           <button @click="prompt = x">Подготовить запрос</button>
           <button @click="upload(x)">Загрузить результат</button>
@@ -257,4 +260,5 @@ const link = (url) => (/^https?:\/\//i.test(url) ? url : '');
 .hint { margin: 0.444rem 0 0.222rem; }
 .edit { flex: none; padding-left: 0.444rem; padding-right: 0.444rem; color: var(--accent-text); }
 .add { margin-top: 0.222rem; }
+.askbtn { margin-top: 0.5rem; }
 </style>

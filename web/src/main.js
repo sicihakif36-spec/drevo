@@ -25,6 +25,9 @@ import ChecksView from './views/ChecksView.vue';
 import MergeView from './views/MergeView.vue';
 import DevicesView from './views/DevicesView.vue';
 import PasswordView from './views/PasswordView.vue';
+import AsksView from './views/AsksView.vue';
+import AskView from './views/AskView.vue';
+import AskFillView from './views/AskFillView.vue';
 import { store } from './store.js';
 
 const router = createRouter({
@@ -49,10 +52,14 @@ const router = createRouter({
     { path: '/checks', component: ChecksView },
     { path: '/merge', component: MergeView, props: (r) => ({ a: r.query.a, b: r.query.b }) },
     { path: '/devices', component: DevicesView },
+    { path: '/asks', component: AsksView },
+    { path: '/asks/:id', component: AskView, props: true },
     { path: '/password', component: PasswordView, props: () => ({ mode: store.me?.has_password ? 'change' : 'create' }) },
     { path: '/invite/:token', component: InviteView, props: true, meta: { public: true } },
     // Анкета для родственника: без входа и без дерева.
     { path: '/survey/:token', component: SurveyFillView, props: true, meta: { public: true } },
+    // Вопрос родным по ссылке: тоже без входа и без дерева.
+    { path: '/ask/:token', component: AskFillView, props: true, meta: { public: true } },
   ],
   scrollBehavior: (to, from) => (to.path === from.path ? false : { top: 0 }),
 });

@@ -4,8 +4,11 @@ import { store, toast } from '../store.js';
 import { fullName } from '@shared/names.js';
 import { markOk, fixRoute, mergeRoute } from '../checks.js';
 import { ask } from './ask.js';
+import { openAsk } from '../asks.js';
+import { findingAsk } from '@shared/asks.js';
 
-// Одна находка проверки дерева: фраза, люди (переход в карточку) и что с ней сделать.
+// Одна находка проверки дерева: фраза, люди (переход в карточку) и что с ней сделать — исправить, отметить верной
+// или спросить у родных (вопрос уже составлен из находки).
 // plain — без списка людей (в карточке человека они и так понятны).
 const props = defineProps({ finding: { type: Object, required: true }, plain: Boolean });
 const busy = ref(false);
@@ -45,6 +48,7 @@ async function ok() {
       <router-link v-if="dup" class="btn primary" :to="mergeRoute(finding)">Объединить</router-link>
       <router-link v-else class="btn primary" :to="fixRoute(finding)">Исправить</router-link>
       <button :disabled="busy" @click="ok">{{ dup ? 'Это разные люди' : 'Всё верно' }}</button>
+      <button class="askbtn" @click="openAsk({ person: finding.fix, ...findingAsk(finding) })">Спросить у родных</button>
     </div>
   </div>
 </template>
@@ -56,6 +60,7 @@ async function ok() {
 .person { font-size: 0.889rem; font-weight: 700; color: var(--accent-text); overflow-wrap: anywhere; }
 .acts { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.556rem; }
 .acts > * { flex: 1 1 7rem; text-align: center; box-sizing: border-box; }
+.acts > .askbtn { flex-basis: 100%; border-color: transparent; background: transparent; text-decoration: underline; text-underline-offset: 3px; }
 /* В карточке человека — неброско: кнопки ниже и мельче. */
 .plain .acts > * { min-height: 2.667rem; font-size: 0.889rem; padding: 0.333rem 0.667rem; }
 .lv-error { box-shadow: inset 4px 0 var(--danger); }
