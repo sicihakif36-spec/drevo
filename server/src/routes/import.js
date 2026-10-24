@@ -1,8 +1,9 @@
-// «Ещё → Загрузить дерево из файла» — только владелец. Сначала файл присылается целиком и разбирается для предпросмотра
-// (src/gedcom.js); он полежит на сервере сутки, пока владелец решает, кто из файла уже есть в дереве. Потом — загрузка
-// одним действием (src/gedimport.js) по этому же файлу.
-// Участник загружает только ответ ИИ-помощника из «Исследования» (routes/research.js): тот же предпросмотр и загрузка,
-// но файл привязан к вопросу поиска, и после загрузки в журнал вопроса пишется запись о ней.
+// «Ещё → Загрузить дерево из файла» — владелец и участники. Сначала файл присылается целиком и разбирается для предпросмотра
+// (src/gedcom.js); он полежит на сервере сутки, пока загрузивший решает, кто из файла уже есть в дереве. Файл видит
+// только тот, кто его прислал. Потом — загрузка одним действием (src/gedimport.js) по этому же файлу; отменить её
+// может любой участник или владелец из «Последних правок», как любую правку.
+// Ответ ИИ-помощника из «Исследования» (routes/research.js) идёт так же, но файл привязан к вопросу поиска,
+// и после загрузки в журнал вопроса пишется запись о ней.
 import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -28,11 +29,10 @@ async function cleanup() {
   }
 }
 
-// Свой файл. Участнику — только ответ помощника из «Исследования» (question_id), остальное — владельцу.
+// Только свой файл: чужие незагруженные файлы не видны никому, даже владельцу.
 async function stored(id, user) {
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new HttpError(404, 'Файл не найден');
   const m = JSON.parse(await fsp.readFile(meta(id), 'utf8').catch(() => 'null'));
-  if (user.role !== 'owner' && !m?.question_id) throw new HttpError(403, 'Недостаточно прав');
   if (!m || m.user_id !== user.id) throw new HttpError(404, 'Файл уже загружен или устарел. Выберите его ещё раз.');
   return { ...m, buf: await fsp.readFile(file(id)) };
 }
@@ -60,7 +60,7 @@ const count = (n, one, few, many) => {
 export default async function importRoutes(app) {
   await fsp.mkdir(dir(), { recursive: true });
 
-  app.post('/api/import', { preHandler: need('owner') }, async (req) => {
+  app.post('/api/import', { preHandler: need('editor') }, async (req) => {
     const part = await req.file({ limits: { fileSize: MAX_BYTES } });
     if (!part) throw new HttpError(400, 'Выберите файл');
     let buf;

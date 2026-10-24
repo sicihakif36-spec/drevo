@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { store, loadTree, toast, isOwner, canEdit } from '../store.js';
+import { store, loadTree, toast, canEdit } from '../store.js';
 import { api, upload } from '../api.js';
 import { importSummary } from '../history.js';
 import { fullName, lifespan, personHas } from '@shared/names.js';
@@ -9,16 +9,16 @@ import ChangeList from '../components/ChangeList.vue';
 import ImportPerson from '../components/ImportPerson.vue';
 import { ask } from '../components/ask.js';
 
-// «Ещё → Загрузить дерево из файла» (только владелец). Файл GEDCOM из другой программы или переписанная от руки родословная:
+// «Ещё → Загрузить дерево из файла» (владелец и участники). Файл GEDCOM из другой программы или переписанная от руки родословная:
 // сначала предпросмотр — сколько людей и кто из них, возможно, уже есть в дереве; для каждого «это он», «новый» или «пропустить».
 // У найденного в дереве дописываются только пустые поля. Загрузка — одно действие: его можно отменить целиком.
-// ?q=<вопрос> — «Загрузить результат» из «Исследования» (владелец и участники): вместо файла вставляется ответ ИИ-помощника,
+// ?q=<вопрос> — «Загрузить результат» из «Исследования»: вместо файла вставляется ответ ИИ-помощника,
 // сервер сам вырезает из него GEDCOM; дальше — то же самое, а в журнал вопроса пишется запись о загрузке.
 const route = useRoute();
 const qid = String(route.query.q || '');
 const question = ref(null);
 const answer = ref('');
-const allowed = computed(() => (qid ? canEdit() : isOwner()));
+const allowed = computed(() => canEdit());
 onMounted(async () => {
   if (qid && canEdit()) question.value = await api('GET', `/api/research/${qid}`).catch((e) => ({ error: e.message }));
 });
@@ -163,7 +163,7 @@ async function reverted() {
     <router-link v-if="qid && question?.person_id" :to="{ path: `/person/${question.person_id}`, query: { q: qid } }" class="small">‹ К вопросу</router-link>
     <router-link v-else to="/more" class="small">‹ Ещё</router-link>
     <h1>{{ qid ? 'Загрузить результат поиска' : 'Загрузить дерево из файла' }}</h1>
-    <p v-if="!allowed" class="muted">{{ qid ? 'Загружать результат поиска могут владелец и участники.' : 'Загружать дерево из файла может только владелец.' }}</p>
+    <p v-if="!allowed" class="muted">Загружать {{ qid ? 'результат поиска' : 'дерево из файла' }} могут владелец и участники.</p>
 
     <template v-else-if="qid && step === 'choose'">
       <p v-if="question?.error" class="error">{{ question.error }}</p>

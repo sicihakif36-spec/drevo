@@ -281,7 +281,7 @@ test('загрузка ответа участником: предпросмот
   const i1 = pv.people.find((p) => p.ref === '@I1@');
   assert.deepEqual(i1.cands, [ivan.id], 'Иван Фёдорович найден в дереве');
 
-  // Чужой файл и обычная загрузка из файла участнику недоступны; родственнику и гостю — ни то, ни другое.
+  // Чужой файл недоступен даже владельцу; родственнику и гостю — ничего.
   for (const c of [relative, guest]) {
     assert.equal((await call(c, 'POST', `/api/import/${pv.id}/load`, {})).statusCode, 403);
     assert.equal((await call(c, 'DELETE', `/api/import/${pv.id}`)).statusCode, 403);
