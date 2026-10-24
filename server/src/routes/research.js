@@ -7,7 +7,7 @@ import { need } from '../auth.js';
 import { HttpError } from '../tree.js';
 import { createQuestion, updateQuestion, deleteQuestion, createNote, updateNote, deleteNote } from '../research.js';
 import { keepForImport } from './import.js';
-import { extractGedcom, QUESTION_MAX, NOTE_LIMITS, ANSWER_MAX } from '../../../shared/research.js';
+import { extractGedcom, QUESTION_MAX, NOTE_LIMITS, ANSWER_MAX, ANSWER_FILE } from '../../../shared/research.js';
 
 const NO_FILE = 'В ответе нет файла для загрузки — попросите помощника прислать результат в формате GEDCOM';
 
@@ -104,7 +104,7 @@ export default async function researchRoutes(app) {
     const found = extractGedcom(text);
     if (!found) throw new HttpError(400, NO_FILE);
     try {
-      return await keepForImport(Buffer.from(found.gedcom, 'utf8'), 'ответ помощника', req.user,
+      return await keepForImport(Buffer.from(found.gedcom, 'utf8'), ANSWER_FILE, req.user,
         { question_id: x.id, report: found.report.slice(0, 15000) });
     } catch (err) {
       if (err.statusCode === 400 && /не похоже/.test(err.message)) throw new HttpError(400, NO_FILE);

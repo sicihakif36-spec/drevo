@@ -3,6 +3,7 @@
 import { fullName, nameGenitive } from '@shared/names.js';
 import { KINDS, QUALITY, factLabel } from '@shared/sources.js';
 import { eventTitle } from '@shared/events.js';
+import { ANSWER_FILE } from '@shared/research.js';
 
 export const FIELDS = [
   ['surname', 'Фамилия'], ['given', 'Имя'], ['patronymic', 'Отчество'], ['birth_surname', 'Фамилия при рождении'],
@@ -226,6 +227,35 @@ function placeLines(entries, name) {
   return lines;
 }
 
+// Исследование (видят только владелец и участники): «новый вопрос поиска у Петра Ивановича — «Где погиб в 1943»»,
+// «новая запись поиска у … — «…»», «вопрос «…»: нашли».
+const STATUS_WORD = { open: 'ищем', found: 'нашли', notfound: 'не нашли' };
+const NOTE_FIELD = { result: 'итог', place: 'где искали', url: 'ссылка', ref: 'шифр', body: 'что нашли' };
+function researchLine(e, name) {
+  const x = e.after || e.before || {};
+  const title = x.title ? ` — «${x.title}»` : '';
+  const who = at(e.persons, name);
+  if (e.entity === 'research_note') {
+    switch (e.action) {
+      case 'add': return `новая запись поиска${who}${title}`;
+      case 'delete': return `удалена запись поиска${who}${title}`;
+      case 'restore': return `возвращена запись поиска${who}${title}`;
+      case 'update': return `исправлена запись поиска${who}${title}: ${Object.keys(e.before || {}).map((k) => NOTE_FIELD[k] || k).join(', ')}`;
+    }
+    return null;
+  }
+  switch (e.action) {
+    case 'add': return `новый вопрос поиска${who}${title}`;
+    case 'delete': return `удалён вопрос поиска${who}${title}`;
+    case 'restore': return `возвращён вопрос поиска${who}${title}`;
+    case 'update': {
+      if (Object.keys(e.before || {}).join() === 'status') return `вопрос поиска${who}${title}: ${STATUS_WORD[e.after?.status] || e.after?.status}`;
+      return `исправлен вопрос поиска${who}${title}`;
+    }
+  }
+  return null;
+}
+
 // Загрузка из файла — одной строкой-сводкой: «загрузка из файла «семья.ged» — 186 человек, 52 семьи, 40 событий».
 // Подробности — только у небольших загрузок: тысячи строк никто читать не будет.
 export function importSummary(x, undo = false) {
@@ -236,7 +266,9 @@ export function importSummary(x, undo = false) {
     x?.events && count(x.events, 'событие', 'события', 'событий'),
     x?.sources && count(x.sources, 'источник', 'источника', 'источников'),
   ].filter(Boolean).join(', ');
-  return `${undo ? 'отменена загрузка из файла' : 'загрузка из файла'}${x?.file ? ` «${x.file}»` : ''}${what ? ` — ${what}` : ''}`;
+  // Ответ ИИ-помощника из «Исследования» (routes/research.js) загружается как файл с этим именем.
+  const where = x?.file === ANSWER_FILE ? 'из ответа помощника' : `из файла${x?.file ? ` «${x.file}»` : ''}`;
+  return `${undo ? 'отменена загрузка' : 'загрузка'} ${where}${what ? ` — ${what}` : ''}`;
 }
 const SMALL_IMPORT = 40;
 
@@ -258,6 +290,7 @@ export function opLines(op, name) {
       if (e.entity === 'person') return e.action === 'photo' && withFiles ? null : personLine(e, name);
       if (e.entity === 'story') return storyLine(e, name);
       if (e.entity === 'event') return eventLine(e, name);
+      if (e.entity === 'research' || e.entity === 'research_note') return researchLine(e, name);
       return e.entity === 'family' ? familyLine(e, name) : null;
     }),
   ].filter(Boolean);
@@ -272,6 +305,7 @@ export const moreText = (n) => `Ещё ${count(n, 'изменение', 'изм�
 // У события — без вида и описания.
 const WAS = {
   story: ['title', 'date'], place: ['title', 'now'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'url'], event: ['date', 'place', 'title', 'unit', 'rank'],
+  research: ['title'], research_note: ['place', 'ref', 'url'],
 };
 export function opWas(op) {
   // Загрузка из файла показывается сводкой — без «было».

@@ -1,6 +1,7 @@
 <script setup>
-import { computed, reactive, ref } from 'vue';
-import { store, loadTree, toast, isOwner } from '../store.js';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { store, loadTree, toast, isOwner, canEdit } from '../store.js';
 import { api, upload } from '../api.js';
 import { importSummary } from '../history.js';
 import { fullName, lifespan, personHas } from '@shared/names.js';
@@ -11,6 +12,16 @@ import { ask } from '../components/ask.js';
 // «Ещё → Загрузить дерево из файла» (только владелец). Файл GEDCOM из другой программы или переписанная от руки родословная:
 // сначала предпросмотр — сколько людей и кто из них, возможно, уже есть в дереве; для каждого «это он», «новый» или «пропустить».
 // У найденного в дереве дописываются только пустые поля. Загрузка — одно действие: его можно отменить целиком.
+// ?q=<вопрос> — «Загрузить результат» из «Исследования» (владелец и участники): вместо файла вставляется ответ ИИ-помощника,
+// сервер сам вырезает из него GEDCOM; дальше — то же самое, а в журнал вопроса пишется запись о загрузке.
+const route = useRoute();
+const qid = String(route.query.q || '');
+const question = ref(null);
+const answer = ref('');
+const allowed = computed(() => (qid ? canEdit() : isOwner()));
+onMounted(async () => {
+  if (qid && canEdit()) question.value = await api('GET', `/api/research/${qid}`).catch((e) => ({ error: e.message }));
+});
 const step = ref('choose'); // choose -> preview -> done
 const sent = ref(0); // доля отправленного файла
 const error = ref('');
@@ -22,6 +33,28 @@ const shown = ref(20);
 const busy = ref(false);
 const result = ref(null);
 const op = ref(null);
+
+const ANSWER_MAX = 2 * 1024 * 1024;
+async function paste() {
+  error.value = '';
+  if (!answer.value.trim()) { error.value = 'Вставьте сюда ответ помощника целиком'; return; }
+  if (new Blob([answer.value]).size > ANSWER_MAX) { error.value = 'Ответ слишком большой. Попросите помощника прислать только найденных людей.'; return; }
+  sent.value = 0.5;
+  try {
+    pv.value = await api('POST', `/api/research/${qid}/import`, { text: answer.value });
+    preview();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    sent.value = 0;
+  }
+}
+function preview() {
+  for (const k of Object.keys(plan)) delete plan[k];
+  for (const p of pv.value.people) plan[p.ref] = { action: p.cands.length ? null : 'new', person_id: null, replace: [], find: '' };
+  step.value = 'preview';
+  window.scrollTo(0, 0);
+}
 
 async function choose(e) {
   const file = e.target.files?.[0];
@@ -35,10 +68,7 @@ async function choose(e) {
     const fd = new FormData();
     fd.append('file', file, file.name);
     pv.value = await upload('/api/import', fd, (x) => { sent.value = Math.max(0.01, x); });
-    for (const k of Object.keys(plan)) delete plan[k];
-    for (const p of pv.value.people) plan[p.ref] = { action: p.cands.length ? null : 'new', person_id: null, replace: [], find: '' };
-    step.value = 'preview';
-    window.scrollTo(0, 0);
+    preview();
   } catch (err) {
     error.value = err.message;
   } finally {
@@ -92,7 +122,7 @@ function restNew() {
 }
 
 async function cancel() {
-  if (!await ask({ text: 'Не загружать этот файл?', note: 'В дереве ничего не изменится.', yes: 'Не загружать', no: 'Вернуться к файлу' })) return;
+  if (!await ask({ text: qid ? 'Не загружать этот ответ?' : 'Не загружать этот файл?', note: 'В дереве ничего не изменится.', yes: 'Не загружать', no: qid ? 'Вернуться к ответу' : 'Вернуться к файлу' })) return;
   await api('DELETE', `/api/import/${pv.value.id}`).catch(() => {});
   pv.value = null;
   step.value = 'choose';
@@ -115,7 +145,7 @@ async function load() {
     await loadTree();
     op.value = (await api('GET', '/api/changes')).find((o) => o.id === result.value.change) || null;
     step.value = 'done';
-    toast('Дерево загружено из файла');
+    toast(qid ? 'Результат загружен в дерево' : 'Дерево загружено из файла');
     window.scrollTo(0, 0);
   } catch (err) {
     error.value = err.message;
@@ -130,9 +160,25 @@ async function reverted() {
 
 <template>
   <div class="page">
-    <router-link to="/more" class="small">‹ Ещё</router-link>
-    <h1>Загрузить дерево из файла</h1>
-    <p v-if="!isOwner()" class="muted">Загружать дерево из файла может только владелец.</p>
+    <router-link v-if="qid && question?.person_id" :to="{ path: `/person/${question.person_id}`, query: { q: qid } }" class="small">‹ К вопросу</router-link>
+    <router-link v-else to="/more" class="small">‹ Ещё</router-link>
+    <h1>{{ qid ? 'Загрузить результат поиска' : 'Загрузить дерево из файла' }}</h1>
+    <p v-if="!allowed" class="muted">{{ qid ? 'Загружать результат поиска могут владелец и участники.' : 'Загружать дерево из файла может только владелец.' }}</p>
+
+    <template v-else-if="qid && step === 'choose'">
+      <p v-if="question?.error" class="error">{{ question.error }}</p>
+      <div v-else class="card">
+        <p v-if="question" class="muted small" style="margin-top:0">Вопрос: «{{ question.title }}» — {{ tree(question.person_id) ? fullName(tree(question.person_id)) : '' }}</p>
+        <label class="field" style="margin-top:0">
+          <span>Ответ помощника</span>
+          <textarea v-model="answer" class="answer" placeholder="Вставьте сюда ответ помощника целиком — вместе с отчётом и файлом GEDCOM" />
+        </label>
+        <p class="small muted">Приложение само найдёт в ответе файл (он начинается с «0 HEAD») и покажет, кто в нём есть
+          и кто из них, возможно, уже есть в дереве. Ничего не загрузится, пока вы не нажмёте «Загрузить в дерево».</p>
+        <p v-if="error" class="error" role="alert">{{ error }}</p>
+        <button class="primary block" :disabled="sent > 0" @click="paste">{{ sent ? 'Читаю ответ…' : 'Найти людей в ответе' }}</button>
+      </div>
+    </template>
 
     <template v-else-if="step === 'choose'">
       <div class="card">
@@ -150,7 +196,7 @@ async function reverted() {
 
     <template v-else-if="step === 'preview' && pv">
       <div class="card">
-        <div class="muted small">Файл «{{ pv.name }}»</div>
+        <div class="muted small">{{ qid ? 'Из ответа помощника' : `Файл «${pv.name}»` }}</div>
         <div class="nums">
           <div><b>{{ pv.counts.persons }}</b><span>{{ count(pv.counts.persons, 'человек', 'человека', 'человек').replace(/^\d+ /, '') }}</span></div>
           <div><b>{{ pv.counts.families }}</b><span>{{ count(pv.counts.families, 'семья', 'семьи', 'семей').replace(/^\d+ /, '') }}</span></div>
@@ -215,13 +261,15 @@ async function reverted() {
         Не всё удалось связать:
         <div v-for="(n, i) in result.notes" :key="i">• {{ n }}</div>
       </div>
+      <p v-if="result.note" class="small">В журнал вопроса записано, что загружено, вместе с отчётом помощника.</p>
       <div class="grid2" style="margin-top:0.667rem">
         <router-link class="btn primary" to="/">Открыть дерево</router-link>
-        <router-link class="btn" to="/people">Люди</router-link>
+        <router-link v-if="qid && question?.person_id" class="btn" :to="{ path: `/person/${question.person_id}`, query: { q: qid } }">К вопросу</router-link>
+        <router-link v-else class="btn" to="/people">Люди</router-link>
       </div>
       <h2>Что сделано</h2>
       <ChangeList v-if="op" :ops="[op]" @reverted="reverted" />
-      <p class="muted small">Если загрузилось не то — нажмите «Отменить» выше: всё из файла уйдёт из дерева одним действием.</p>
+      <p class="muted small">Если загрузилось не то — нажмите «Отменить» выше: всё {{ qid ? 'из ответа' : 'из файла' }} уйдёт из дерева одним действием.</p>
     </template>
   </div>
 </template>
@@ -230,6 +278,7 @@ async function reverted() {
 .pick { position: relative; margin-top: 0.667rem; }
 .pick input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 .pick.disabled { opacity: 0.7; }
+.answer { min-height: 45vh; font-size: 0.889rem; }
 .nums { display: grid; grid-template-columns: 1fr 1fr; gap: 0.444rem 0.889rem; margin-top: 0.444rem; }
 .nums div { display: flex; flex-direction: column; }
 .nums b { font-size: 1.778rem; line-height: 1.1; }

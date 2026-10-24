@@ -11,6 +11,7 @@ import Stories from '../components/Stories.vue';
 import Life from '../components/Life.vue';
 import MarriageSheet from '../components/MarriageSheet.vue';
 import Sources from '../components/Sources.vue';
+import Research from '../components/Research.vue';
 import FactBadge from '../components/FactBadge.vue';
 import FactSheet from '../components/FactSheet.vue';
 import DateInput from '../components/DateInput.vue';
@@ -35,7 +36,7 @@ const album = ref(null);
 const marriage = ref(null); // { family, spouse } — окно «Брак»
 const linking = ref(false); // «Убрать связь»: у мужа, жены и детей появляется кнопка
 // Сколько фото, историй, источников, сообщений — для закладок под именем; null — ещё не знаем.
-const counts = reactive({ photo: null, stories: null, talk: null });
+const counts = reactive({ photo: null, stories: null, talk: null, research: null });
 
 const kin = computed(() => p.value && kinship(idx.value, store.me?.person_id, p.value.id));
 const missing = computed(() => (p.value ? missingFields(p.value, idx.value) : []));
@@ -132,6 +133,8 @@ const tabs = computed(() => {
   return [
     ['photo', `Фото${n(counts.photo)}`], ['family', 'Семья'], ['life', 'Жизнь'], ['stories', `Истории${n(counts.stories)}`],
     ['sources', `Источники${n(sources.value?.sources?.length)}`], ['talk', `Обсуждение${n(counts.talk)}`],
+    // Исследование — только владельцу и участникам; число — сколько вопросов «ищем».
+    ...(canEdit() ? [['research', `Исследование${n(counts.research)}`]] : []),
   ];
 });
 function jump(id) {
@@ -158,7 +161,7 @@ async function loadHistory() {
   if (showHistory.value) await reloadHistory();
 }
 
-watch(() => props.id, () => { editing.value = false; showHistory.value = false; linking.value = false; Object.assign(counts, { photo: null, stories: null, talk: null }); });
+watch(() => props.id, () => { editing.value = false; showHistory.value = false; linking.value = false; Object.assign(counts, { photo: null, stories: null, talk: null, research: null }); });
 onUnmounted(onLive((events) => {
   if (!events.some((e) => e.kind === 'tree')) return;
   loadSources();
@@ -303,6 +306,8 @@ onUnmounted(onLive((events) => {
     <section id="sec-sources" class="sec"><Sources :person="p" :data="sources" @cite="sheet = { fact: null }" @changed="loadSources" /></section>
 
     <section id="sec-talk" class="sec"><Discussion :person="p" @count="counts.talk = $event" /></section>
+
+    <section v-if="canEdit()" id="sec-research" class="sec"><Research :person="p" @count="counts.research = $event" /></section>
 
     <h2>Ещё</h2>
     <div class="list">

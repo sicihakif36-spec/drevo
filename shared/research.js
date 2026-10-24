@@ -1,7 +1,7 @@
 // Исследование: вопросы поиска, запрос для ИИ-помощника и разбор его ответа. Общий код телефона и сервера.
 // Помощником человек пользуется сам: приложение готовит текст запроса (PROMPT — тот же, что в docs/issledovanie.md)
 // и принимает ответ — вырезает из него файл GEDCOM для обычной загрузки из файла. Сервер ни к какому ИИ не обращается.
-import { fullName, lifespan, dateText, isPrivate, parentsOf, siblingsOf, spousesOf, childrenOf } from './names.js';
+import { fullName, lifespan, dateText, parsePeriod, isPrivate, parentsOf, siblingsOf, spousesOf, childrenOf } from './names.js';
 import { EVENT_KINDS, eventTitle } from './events.js';
 
 export const STATUSES = {
@@ -18,6 +18,8 @@ export const QUESTION_MAX = 300;
 export const NOTE_LIMITS = { place: 300, url: 1000, ref: 300, body: 20000 };
 // Ответ помощника целиком — не больше (в нём файл GEDCOM; большие деревья загружают файлом).
 export const ANSWER_MAX = 2 * 1024 * 1024;
+// Имя «файла» загрузки из ответа: по нему журнал пишет «загрузка из ответа помощника».
+export const ANSWER_FILE = 'ответ помощника';
 
 const GED_LINE = /^\s*\d{1,2}\s+(@[^@\s]+@\s+)?[A-Za-z0-9_]+( .*)?$/;
 const HEAD = /^\s*0\s+HEAD\s*$/;
@@ -168,8 +170,13 @@ export function buildPrompt({ person: p, idx, events = [], goal = '', faith = ''
   const open = (x) => living || !isPrivate(x, year);
   const get = (id) => idx.persons.get(id);
   const indent = '\n  ';
-  const self = [kinLine(p, open(p)), ...facts(p, open(p), now).map((x) => x[0].toUpperCase() + x.slice(1))];
-  if (open(p) && events.length) self.push(`Из жизни: ${events.map(eventLine).join('; ')}`);
+  // Сам человек: имя и годы, подробности — строками ниже (место рождения в первой строке не повторяем).
+  const head = open(p) && lifespan(p) ? `${fullName(p)}, ${lifespan(p)}` : kinLine(p, false);
+  const self = [head, ...facts(p, open(p), now).map((x) => x[0].toUpperCase() + x.slice(1))];
+  if (open(p) && events.length) {
+    const sorted = [...events].sort((a, b) => (parsePeriod(a.date)?.key ?? Infinity) - (parsePeriod(b.date)?.key ?? Infinity));
+    self.push(`Из жизни:${sorted.map((e) => `${indent}  ${eventLine(e)}`).join('')}`);
+  }
 
   const kin = [];
   for (const x of parentsOf(idx, p.id).map(get).filter(Boolean)) kin.push(`${by(x.sex, 'Отец', 'Мать', 'Родитель')}: ${kinLine(x, open(x))}`);
@@ -190,6 +197,6 @@ export function buildPrompt({ person: p, idx, events = [], goal = '', faith = ''
   return PROMPT
     .replace('{who}', self.join(indent))
     .replace('{faith}', String(faith || '').trim() || FAITH_UNKNOWN)
-    .replace('{kin}', kin.length ? indent + kin.join(indent) : 'пока ничего не известно')
+    .replace(' {kin}', kin.length ? indent + kin.join(indent) : ' пока ничего не известно')
     .replace('{goal}', String(goal || '').trim() || GOAL_EMPTY);
 }

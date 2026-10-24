@@ -79,6 +79,7 @@ async function logout() {
       <router-link to="/print">Печать и PDF</router-link>
       <router-link to="/places">Места</router-link>
       <router-link v-if="canTalk()" to="/changes">Последние правки</router-link>
+      <router-link v-if="canEdit()" to="/research"><span>Исследование<br /><span class="muted small">поиск предков в архивах, запрос ИИ-помощнику</span></span></router-link>
       <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
       <a v-if="isOwner()" href="#" @click.prevent="openArchive">Скачать всё: дерево, фото, документы</a>
       <a href="/api/export.ged" download><span>Скачать дерево для другой программы<br /><span class="muted small">файл GEDCOM</span></span></a>
