@@ -14,9 +14,10 @@ async function enter() {
   busy.value = true;
   error.value = '';
   try {
-    await api('POST', '/api/invites/redeem', { token: props.token, name: name.value });
+    const r = await api('POST', '/api/invites/redeem', { token: props.token, name: name.value });
     await loadMe();
-    await loadTree();
+    // Вход на новом телефоне у того, кто правит дерево, ждёт пароль: экран пароля покажет App.vue.
+    if (!r.password) await loadTree();
     router.replace('/');
   } catch (e) {
     error.value = e.message;

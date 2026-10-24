@@ -5,6 +5,8 @@ import { buildIndex } from '@shared/names.js';
 export const store = reactive({
   ready: false,
   me: null,
+  // Вход по ссылке на новом телефоне ждёт пароль: { name }.
+  pending: null,
   tree: null,
   idx: null,
   title: '',
@@ -22,7 +24,10 @@ export function toast(text) {
 
 export async function loadMe() {
   try {
-    store.me = (await api('GET', '/api/me')).user;
+    const r = await api('GET', '/api/me');
+    store.me = r.user;
+    store.pending = r.pending || null;
+    if (!r.user) forget();
   } catch (e) {
     store.offline = e.status === 0;
   }
@@ -39,18 +44,27 @@ export async function loadTree() {
     store.offline = false;
     listen();
   } catch (e) {
-    if (e.status === 401) store.me = null;
+    if (e.status === 401) await loadMe();
     else if (e.status === 0) store.offline = true;
     else store.error = e.message;
   }
 }
 
+// Вышли (или вывели с другого устройства) — на телефоне не остаётся сохранённого дерева и фото.
+export function forget() {
+  if (typeof caches === 'undefined') return;
+  for (const name of ['tree', 'photos']) caches.delete(name).catch(() => {});
+}
+
+// Участник или владелец без пароля пока только смотрит: правка — после того, как придумает пароль.
+export const needsPassword = () => Boolean(store.me?.needs_password);
+
 // Правят дерево владелец и участник. Родственник видит всё, как участник, и обсуждает, но не правит; гость у живых видит только имена.
-export const canEdit = () => ['owner', 'editor'].includes(store.me?.role);
+export const canEdit = () => ['owner', 'editor'].includes(store.me?.role) && !needsPassword();
 export const isGuest = () => store.me?.role === 'viewer';
 // Обсуждать и смотреть историю правок — все, кроме гостей.
 export const canTalk = () => Boolean(store.me) && !isGuest();
-export const isOwner = () => store.me?.role === 'owner';
+export const isOwner = () => store.me?.role === 'owner' && !needsPassword();
 
 // Обновления у всех сразу: сервер сообщает о правках (GET /api/events), телефон перечитывает нужное.
 // События: { kind: 'tree' } — дерево изменилось, { kind: 'comments', person_id } — новое в обсуждении

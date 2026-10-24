@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue';
-import { store, isOwner, canTalk, canEdit, loadTree, toast } from '../store.js';
+import { store, isOwner, canTalk, canEdit, loadTree, toast, forget } from '../store.js';
 import { api } from '../api.js';
 import { fullName } from '@shared/names.js';
 import { disablePush } from '../push.js';
@@ -48,10 +48,11 @@ function sizeText(n) {
 
 async function logout() {
   if (!await ask({ text: 'Выйти на этом телефоне?', note: 'Войти снова можно будет только по новой ссылке-приглашению.', yes: 'Выйти', no: 'Не выходить', danger: true })) return;
-  // Этот телефон больше не получает уведомлений.
+  // Этот телефон больше не получает уведомлений и не хранит дерево.
   await disablePush().catch(() => {});
   await api('POST', '/api/logout');
-  location.reload();
+  forget();
+  location.replace('/');
 }
 </script>
 
@@ -62,6 +63,11 @@ async function logout() {
       <div><b>{{ store.me.name }}</b></div>
       <div class="muted small">{{ ROLE[store.me.role] }}<template v-if="store.me.person_id && store.idx?.persons.get(store.me.person_id)"> · в дереве: {{ fullName(store.idx.persons.get(store.me.person_id)) }}</template></div>
       <button style="margin-top:0.667rem" @click="rename">Изменить имя</button>
+    </div>
+    <div v-if="store.me.needs_password" class="card nopass">
+      <b>Придумайте пароль, чтобы править дерево.</b>
+      <p class="small">Он нужен, только когда вы входите с нового телефона. Пока пароля нет, дерево можно только смотреть.</p>
+      <router-link class="btn primary block" to="/password">Придумать пароль</router-link>
     </div>
 
     <div v-if="!standalone" class="card" style="margin-top:12px">
@@ -101,7 +107,11 @@ async function logout() {
       и она покажется в обоих стилях: <b>12 (24) марта 1890</b>. Годовщины считаются по новому стилю.
     </div>
 
-    <div style="margin-top:24px"><button class="danger block" @click="logout">Выйти на этом устройстве</button></div>
+    <h2>Вход</h2>
+    <div class="list">
+      <router-link to="/devices"><span>Мои устройства{{ ['owner', 'editor'].includes(store.me.role) ? ' и пароль' : '' }}<br /><span class="muted small">где вы вошли, выйти на других устройствах</span></span></router-link>
+    </div>
+    <div style="margin-top:0.667rem"><button class="danger block" @click="logout">Выйти на этом устройстве</button></div>
 
     <template v-if="archive">
       <div class="sheet-backdrop" @click="archive = null" />
@@ -124,3 +134,8 @@ async function logout() {
     </template>
   </div>
 </template>
+
+<style scoped>
+.nopass { margin-top: 12px; background: var(--warn-bg); color: var(--warn-text); border-color: transparent; }
+.nopass p { margin: 0.333rem 0 0.667rem; }
+</style>
