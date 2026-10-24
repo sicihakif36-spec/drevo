@@ -48,7 +48,7 @@ function goBack() {
         </div>
       </template>
       <h4 class="gen" data-at="index">Указатель имён</h4>
-      <template v-for="(x, i) in r.index" :key="x.id">
+      <template v-for="(x, i) in r.index" :key="x.id + (x.alt ? ':alt' : '')">
         <div v-if="!i || r.index[i - 1].letter !== x.letter" class="letter">{{ x.letter }}</div>
         <p class="ix">
           <template v-for="(y, j) in x.parts" :key="j">

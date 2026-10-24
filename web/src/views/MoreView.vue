@@ -88,6 +88,7 @@ async function logout() {
       <router-link to="/places">Места</router-link>
       <router-link v-if="canTalk()" to="/changes">Последние правки</router-link>
       <router-link v-if="canEdit()" to="/checks"><span class="grow">Проверка дерева<br /><span class="muted small">{{ findings.length ? `вопросов к данным: ${findings.length}` : 'ошибки в датах, дубли, люди без связей' }}</span></span></router-link>
+      <router-link v-if="canEdit()" to="/names"><span class="grow">Написание имён<br /><span class="muted small">татарское и русское, как в документах</span></span></router-link>
       <router-link v-if="canEdit()" to="/research"><span>Исследование<br /><span class="muted small">поиск предков в архивах, запрос ИИ-помощнику</span></span></router-link>
       <router-link v-if="canEdit()" to="/asks"><span class="grow">Вопросы родным<br /><span class="muted small">кого о чём спросили, ответы — в дерево</span></span><span v-if="store.tree?.asks_waiting" class="count">{{ store.tree.asks_waiting }}</span></router-link>
       <router-link v-if="canTalk()" to="/interviews"><span class="grow">Интервью<br /><span class="muted small">воспоминания старших голосом, по вопросам</span></span></router-link>

@@ -10,7 +10,9 @@ export const FIELDS = [
   ['birth_date', 'Дата рождения'], ['birth_place', 'Место рождения'], ['death_date', 'Дата смерти'], ['death_place', 'Место смерти'],
   ['burial_place', 'Место захоронения'], ['occupation', 'Род занятий'], ['notes', 'Заметки и воспоминания'],
 ];
-const LABEL = Object.fromEntries([...FIELDS, ['sex', 'Пол'], ['living', 'Жив или умер']]);
+// Второе написание имени — отдельным блоком в правке карточки.
+export const ALT = [['alt_surname', 'Фамилия (второе написание)'], ['alt_given', 'Имя (второе написание)'], ['alt_patronymic', 'Отчество (второе написание)']];
+const LABEL = Object.fromEntries([...FIELDS, ...ALT, ['sex', 'Пол'], ['living', 'Жив или умер']]);
 
 // Имя по id: из дерева, а для удалённых — из снимков в самом журнале.
 // name(id) — «Смирнов Пётр Иванович», name.gen(ids) — «у кого»: «Петра Ивановича и Клавдии Николаевны», name.sex(id).

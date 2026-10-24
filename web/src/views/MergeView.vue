@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { store, canEdit, loadTree, toast } from '../store.js';
 import { api, photoUrl } from '../api.js';
-import { FIELDS } from '../history.js';
+import { FIELDS, ALT } from '../history.js';
 import { ask } from '../components/ask.js';
 import { fullName, lifespan, dateText, parentsOf, spousesOf, childrenOf, siblingsOf } from '@shared/names.js';
 import { MERGE_FIELDS, defaultChoice, mergedPerson } from '@shared/checks.js';
@@ -43,8 +43,8 @@ watch(pair, (v) => {
   photo.value = !v[0].photo_id && v[1].photo_id ? 'remove' : 'keep';
 }, { immediate: true });
 
-const LABEL = Object.fromEntries([...FIELDS, ['sex', 'Пол'], ['living', 'Жив или умер']]);
-const ORDER = ['surname', 'given', 'patronymic', 'birth_surname', 'sex', 'living', 'birth_date', 'birth_place', 'death_date', 'death_place', 'burial_place', 'occupation', 'notes'];
+const LABEL = Object.fromEntries([...FIELDS, ...ALT, ['sex', 'Пол'], ['living', 'Жив или умер']]);
+const ORDER = ['surname', 'given', 'patronymic', 'birth_surname', 'alt_surname', 'alt_given', 'alt_patronymic', 'sex', 'living', 'birth_date', 'birth_place', 'death_date', 'death_place', 'burial_place', 'occupation', 'notes'];
 function show(f, p) {
   const v = p[f];
   if (f === 'sex') return { M: 'Мужчина', F: 'Женщина' }[v] || 'Не указан';

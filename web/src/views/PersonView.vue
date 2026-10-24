@@ -18,8 +18,8 @@ import DateInput from '../components/DateInput.vue';
 import PlaceInput from '../components/PlaceInput.vue';
 import { placeKey } from '@shared/places.js';
 import { factInfo, personFacts } from '../sources.js';
-import { FIELDS } from '../history.js';
-import { fullName, dateText, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields, nameAccusative, nameGenitive } from '@shared/names.js';
+import { FIELDS, ALT } from '../history.js';
+import { fullName, dateText, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields, nameAccusative, nameGenitive, altName, altLabel, isTatarName, suggestRussian } from '@shared/names.js';
 import { ask } from '../components/ask.js';
 import Finding from '../components/Finding.vue';
 import { findingsOf } from '../checks.js';
@@ -81,9 +81,10 @@ const scrollTo = (x, y) => window.scrollTo(x, y);
 // «Дописать в карточку» из ответа на вопрос родным: ответ — над полями, нужное поле — сразу в фокусе.
 const answer = ref(null);
 function startEdit(askId = null) {
-  Object.assign(form, Object.fromEntries([...FIELDS.map(([k]) => [k, p.value[k]]), ['sex', p.value.sex], ['living', p.value.living]]));
+  Object.assign(form, Object.fromEntries([...FIELDS.map(([k]) => [k, p.value[k]]), ...ALT.map(([k]) => [k, p.value[k] || '']), ['sex', p.value.sex], ['living', p.value.living]]));
   editing.value = true;
   answer.value = null;
+  altNote.value = '';
   if (typeof askId !== 'string') return;
   api('GET', `/api/asks/${askId}`).then(async (a) => {
     answer.value = a;
@@ -94,6 +95,16 @@ function startEdit(askId = null) {
       el.focus({ preventScroll: true });
     }
   }, (e) => toast(e.message));
+}
+
+// «Подсказать, как по-русски»: татарские буквы и отчество — в поля второго написания. Человек проверяет и сохраняет сам.
+const altNote = ref('');
+function suggestAlt() {
+  const s = suggestRussian(form);
+  for (const [k] of ALT) if (s[k]) form[k] = s[k];
+  altNote.value = form.patronymic && !s.alt_patronymic
+    ? `Отчество «${form.patronymic}» по-русски подсказать не получилось — впишите, как в документах.`
+    : 'Проверьте по документам и нажмите «Сохранить».';
 }
 
 async function save() {
@@ -219,6 +230,7 @@ onUnmounted(onLive((events) => {
         <span v-else>{{ canEdit() ? '+ фото' : (p.given || '?')[0] }}</span>
       </div>
       <h1>{{ fullName(p) }}</h1>
+      <div v-if="altName(p)" class="alt">{{ altLabel(p) }}: {{ altName(p) }}</div>
       <div class="muted">{{ [lifespan(p), kin].filter(Boolean).join(' · ') }}</div>
       <div v-if="p.birth_surname && p.birth_surname !== p.surname" class="muted">{{ p.sex === 'F' ? 'урождённая' : 'урождённый' }} {{ p.birth_surname }}</div>
       <FactBadge v-if="!p.hidden" :info="info('person', p.id, 'name')" :editable="canEdit()" @open="sheet = { fact: fact('person', p.id, 'name') }" />
@@ -263,6 +275,16 @@ onUnmounted(onLive((events) => {
             <input v-else v-model="form[k]" />
           </label>
         </template>
+        <fieldset v-if="k === 'birth_surname'" class="altbox" data-field="alt">
+          <legend>Второе написание</legend>
+          <p class="small muted">Как записан в документах, по-русски. Например, «Галиев Рашит Хасанович», если в семейной схеме — «Галиев Рәшит Хәсән улы».</p>
+          <button v-if="isTatarName(form)" type="button" class="block" @click="suggestAlt">Подсказать, как по-русски</button>
+          <p v-if="altNote" class="small note" role="status">{{ altNote }}</p>
+          <label v-for="[a, text] in ALT" :key="a" class="field" :data-field="a">
+            <span>{{ text.replace(' (второе написание)', '') }}</span>
+            <input v-model="form[a]" autocapitalize="words" />
+          </label>
+        </fieldset>
       </template>
       <p class="error" v-if="error">{{ error }}</p>
       <div class="row">
@@ -383,6 +405,11 @@ onUnmounted(onLive((events) => {
 <style scoped>
 .head { text-align: center; margin: 0.222rem 0 0.889rem; }
 .head h1 { margin: 0.667rem 0 0.222rem; overflow-wrap: anywhere; }
+.head .alt { color: var(--muted); font-size: 0.889rem; margin: -0.111rem 0 0.222rem; overflow-wrap: anywhere; }
+.altbox { border: 1px solid var(--line); border-radius: var(--radius-s); padding: 0.444rem 0.778rem 0.222rem; margin: 0.444rem 0 0.667rem; }
+.altbox legend { font-weight: 700; padding: 0 0.333rem; }
+.altbox > p { margin: 0 0 0.444rem; }
+.altbox .note { color: var(--accent-text); font-weight: 700; }
 .photo { width: 8rem; height: 8rem; border-radius: 1.556rem; margin: 0 auto; overflow: hidden; display: grid; place-items: center; background: var(--line); color: var(--muted); font-size: 1rem; cursor: pointer; }
 .photo.M { background: var(--male-soft); color: var(--male); }
 .photo.F { background: var(--female-soft); color: var(--female); }

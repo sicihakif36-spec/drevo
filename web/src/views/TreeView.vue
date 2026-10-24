@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { store, canEdit, loadTree, toast } from '../store.js';
 import { layoutTree } from '@shared/layout.js';
 import { homePerson, treeParts, centralPerson } from '@shared/wholetree.js';
-import { fullName, lifespan, kinship, personHas } from '@shared/names.js';
+import { fullName, lifespan, kinship, personHas, altName } from '@shared/names.js';
 import TreeCanvas from '../components/TreeCanvas.vue';
 import { openAdd } from '../components/addState.js';
 import { ask } from '../components/ask.js';
@@ -211,7 +211,7 @@ function gens(delta) {
         <input ref="searchInput" v-model="query" type="search" placeholder="Имя или фамилия" enterkeyhint="search" style="margin-top:8px" />
         <div class="list" style="margin-top:10px" v-if="results.length">
           <a v-for="p in results" :key="p.id" href="#" @click.prevent="pick(p)">
-            <div class="grow"><div>{{ fullName(p) }}</div><div class="muted small">{{ lifespan(p) }}</div></div>
+            <div class="grow"><div>{{ fullName(p) }}</div><div class="muted small">{{ [altName(p), lifespan(p)].filter(Boolean).join(' · ') }}</div></div>
           </a>
         </div>
         <p class="muted" v-else-if="query.trim()">Никого не нашлось. Попробуйте только фамилию.</p>
@@ -226,7 +226,7 @@ function gens(delta) {
         <input ref="findInput" v-model="findQuery" type="search" placeholder="Ваше имя или фамилия" enterkeyhint="search" style="margin-top:8px" />
         <div class="list" style="margin-top:10px" v-if="findResults.length">
           <div v-for="p in findResults" :key="p.id" class="me-row">
-            <div class="grow"><div>{{ fullName(p) }}</div><div class="muted small">{{ lifespan(p) }}</div></div>
+            <div class="grow"><div>{{ fullName(p) }}</div><div class="muted small">{{ [altName(p), lifespan(p)].filter(Boolean).join(' · ') }}</div></div>
             <button class="primary" @click="itsMe(p.id)">Это я</button>
           </div>
         </div>

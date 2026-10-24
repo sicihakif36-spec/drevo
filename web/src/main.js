@@ -22,6 +22,7 @@ import SurveyFillView from './views/SurveyFillView.vue';
 import ImportView from './views/ImportView.vue';
 import ResearchView from './views/ResearchView.vue';
 import ChecksView from './views/ChecksView.vue';
+import NamesView from './views/NamesView.vue';
 import MergeView from './views/MergeView.vue';
 import DevicesView from './views/DevicesView.vue';
 import PasswordView from './views/PasswordView.vue';
@@ -53,6 +54,7 @@ const router = createRouter({
     { path: '/import', component: ImportView },
     { path: '/research', component: ResearchView },
     { path: '/checks', component: ChecksView },
+    { path: '/names', component: NamesView },
     { path: '/merge', component: MergeView, props: (r) => ({ a: r.query.a, b: r.query.b }) },
     { path: '/devices', component: DevicesView },
     { path: '/asks', component: AsksView },
