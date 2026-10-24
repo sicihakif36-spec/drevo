@@ -17,6 +17,7 @@ import {
   QUESTION_FIELDS, NOTE_FIELDS, deleteQuestion, restoreQuestion, updateQuestion, deleteNote, restoreNote, updateNote,
 } from './research.js';
 import { undoMerge } from './merge.js';
+import { undoInterview } from './interviews.js';
 
 const LATER = 'После этой правки были другие. Сначала отмените более поздние правки.';
 const GONE = 'Этот человек удалён. Сначала верните его.';
@@ -351,6 +352,7 @@ export async function revertOp(db, userId, changeId) {
     const undo = {
       person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory, source: undoSource, citation: undoCitation, quality: undoQuality,
       event: undoEvent, place: undoPlace, import: undoImport, research: undoResearch, research_note: undoResearchNote,
+      interview: undoInterview,
     }[e.entity];
     const id = await undo(db, userId, e);
     first ??= id;

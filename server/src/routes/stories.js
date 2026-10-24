@@ -8,11 +8,13 @@ import { isGuest, guestStories } from '../privacy.js';
 
 const LIMITS = { title: 200, date: 100, body: 20000 };
 
+// Истории из интервью (interview_id) собираются в карточке вместе, по порядку ответов (interview_no).
 const LIST = `select s.id, s.title, s.date, s.body, s.audio_id, m.mime as audio_mime, m.duration as audio_duration,
-    s.created_by, u.name as user_name, s.created_at,
+    s.created_by, u.name as user_name, s.created_at, s.interview_id, s.interview_no, iv.created_at as interview_at,
     array(select sp.person_id from story_persons sp join persons p on p.id = sp.person_id
           where sp.story_id = s.id and p.deleted_at is null order by sp.person_id) as persons
-  from stories s left join media m on m.id = s.audio_id left join users u on u.id = s.created_by`;
+  from stories s left join media m on m.id = s.audio_id left join users u on u.id = s.created_by
+  left join interviews iv on iv.id = s.interview_id`;
 
 // Поля из запроса: только присланные. audio_id null или '' — убрать запись.
 function clean(body) {
@@ -33,7 +35,7 @@ const one = async (id) => (await q(`${LIST} where s.id = $1 and s.deleted_at is 
 export default async function storyRoutes(app) {
   app.get('/api/persons/:id/stories', { preHandler: need('viewer') }, async (req) => visible(req, await q(
     `${LIST} join story_persons t on t.story_id = s.id and t.person_id = $1
-     where s.deleted_at is null order by s.created_at desc, s.id`, [req.params.id])));
+     where s.deleted_at is null order by s.created_at desc, s.interview_no, s.id`, [req.params.id])));
 
   app.get('/api/stories/:id', { preHandler: need('viewer') }, async (req) => {
     const s = await one(req.params.id);

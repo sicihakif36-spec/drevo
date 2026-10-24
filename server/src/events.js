@@ -1,7 +1,7 @@
 // Обновления у всех сразу: GET /api/events — поток Server-Sent Events.
 // Источник — NOTIFY из базы (migrations/005_events.sql): одно подключение с LISTEN на всё приложение,
 // при обрыве переподключается. События без данных людей: tree — дерево изменилось, comments — новое в обсуждении,
-// asks — в вопросах родным (гостям не шлётся).
+// asks — в вопросах родным, interviews — в черновиках интервью (обоих гостям не шлём).
 // Гость не узнаёт об обсуждении живых: по событиям было бы видно, что там пишут.
 import pg from 'pg';
 import { config } from './config.js';
@@ -63,8 +63,8 @@ export function eventsPlugin(app, { ping = PING } = {}) {
     for (const s of streams) {
       for (const { kind, ...data } of events) {
         if (isGuest(s.user) && data.person_id && (!hidden || hidden.has(data.person_id))) continue;
-        // Вопросы родным гостю не видны вовсе.
-        if (isGuest(s.user) && kind === 'asks') continue;
+        // Вопросы родным и черновики интервью гостю не видны вовсе.
+        if (isGuest(s.user) && (kind === 'asks' || kind === 'interviews')) continue;
         s.raw.write(`event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`);
       }
     }

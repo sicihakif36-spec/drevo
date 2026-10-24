@@ -96,7 +96,13 @@ test('родственник ничего не правит: каждый мар
     // Вопрос родным по ссылке — так же, по токену вопроса (test/asks.test.js).
     'DELETE /api/ask/files/:fid', 'POST /api/ask/answer', 'POST /api/ask/files',
     // Ответ на вопрос родным в приложении — только тому, кого спросили.
-    'DELETE /api/asks/:id/files/:fid', 'POST /api/asks/:id/answer', 'POST /api/asks/:id/files'];
+    'DELETE /api/asks/:id/files/:fid', 'POST /api/asks/:id/answer', 'POST /api/asks/:id/files',
+    // Интервью по ссылке — по токену интервью (test/interviews.test.js).
+    'PATCH /api/interview', 'POST /api/interview/questions', 'PUT /api/interview/answers/:qkey', 'POST /api/interview/answers/:qkey/files',
+    'DELETE /api/interview/files/:fid',
+    // Интервью в приложении записывает и родственник: черновик — не правка дерева; чужие черновики ему не видны.
+    'POST /api/interviews', 'PATCH /api/interviews/:id', 'POST /api/interviews/:id/questions', 'PUT /api/interviews/:id/answers/:qkey',
+    'POST /api/interviews/:id/answers/:qkey/files', 'DELETE /api/interviews/:id/files/:fid', 'DELETE /api/interviews/:id'];
   assert.deepEqual(open, [
     'DELETE /api/comments/:id', 'DELETE /api/push/subscription', 'PATCH /api/comments/:id', 'PATCH /api/me', 'PATCH /api/push/settings',
     'DELETE /api/me/sessions/:id', 'POST /api/me/sessions/others', 'POST /api/me/password', 'POST /api/login/password',

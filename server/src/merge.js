@@ -18,7 +18,7 @@ import { fullName } from '../../shared/names.js';
 // Таблицы «файл/история/событие — человек»: ключ строки — первый столбец.
 const LINKS = [['media_persons', 'media_id'], ['story_persons', 'story_id'], ['event_persons', 'event_id']];
 // Просто ссылки на человека: строка переносится целиком. Приглашение — по md5 хеша токена: сам хеш в журнал не пишем.
-const REFS = [['comments', 'id'], ['research_questions', 'id'], ['users', 'id'], ['surveys', 'id'], ['invites', 'md5(token_hash)'], ['asks', 'id']];
+const REFS = [['comments', 'id'], ['research_questions', 'id'], ['users', 'id'], ['surveys', 'id'], ['invites', 'md5(token_hash)'], ['asks', 'id'], ['interviews', 'id']];
 
 const LATER = 'После объединения были другие правки. Сначала отмените их.';
 

@@ -73,13 +73,14 @@ export async function archivePlan(user) {
                            and ((c.action = 'add' and c.persons[1] = mp.person_id)
                              or (c.action = 'tag' and c.after->>'person_id' = mp.person_id::text))) nulls last, mp.ctid) as persons
        from media m where m.deleted_at is null and m.kind in ('photo', 'doc') order by m.created_at, m.id`),
-    q(`select s.id, s.title, s.date, s.body, s.created_at, u.name as user_name,
+    q(`select s.id, s.title, s.date, s.body, s.created_at, u.name as user_name, s.interview_no, iv.created_at as interview_at,
          a.id as audio_id, a.mime as audio_mime, a.created_at as audio_at,
          array(select sp.person_id from story_persons sp join persons p on p.id = sp.person_id and p.deleted_at is null
                where sp.story_id = s.id order by sp.ctid) as persons
        from stories s left join users u on u.id = s.created_by
        left join media a on a.id = s.audio_id and a.kind = 'audio' and a.deleted_at is null
-       where s.deleted_at is null order by s.created_at, s.id`),
+       left join interviews iv on iv.id = s.interview_id
+       where s.deleted_at is null order by s.created_at, s.interview_no nulls first, s.id`),
     // Журнал поиска: удалённые вопросы и записи не берём.
     q(`select x.id, x.person_id, x.title, x.status, x.created_at, u.name as user_name
        from research_questions x left join users u on u.id = x.created_by
@@ -102,7 +103,7 @@ export async function archivePlan(user) {
   const names = new Names();
   const files = [];
   let missing = 0;
-  const addFile = async (m, kind, owner, base) => {
+  const addFile = async (m, kind, owner, base, max = 60) => {
     const st = await fsp.stat(mediaPath(m.id)).catch(() => null);
     if (!st?.isFile()) {
       missing++;
@@ -110,7 +111,7 @@ export async function archivePlan(user) {
     }
     const ext = EXT[m.mime] || 'bin';
     const f = { id: m.id, kind, size: st.size, mtime: m.created_at, file: mediaPath(m.id), ext,
-      path: names.take(`${DIRS[kind]}/${folder.get(owner)}`, safeName(base, kind === 'photo' ? 'фото' : kind === 'doc' ? 'документ' : 'запись'), ext) };
+      path: names.take(`${DIRS[kind]}/${folder.get(owner)}`, safeName(base, kind === 'photo' ? 'фото' : kind === 'doc' ? 'документ' : 'запись', max), ext) };
     files.push(f);
     return f;
   };
@@ -134,15 +135,17 @@ export async function archivePlan(user) {
   for (const s of stories) {
     const about = s.persons.filter((id) => live.has(id));
     if (!about.length) continue;
-    const story = { ...s, persons: about, audio: null };
+    // Ответ из интервью — по порядку: «Интервью 24.10.2026 — 03 — Какой была ваша мама».
+    const base = s.interview_at ? `Интервью ${shortDay(s.interview_at)} — ${String(s.interview_no).padStart(2, '0')} — ${s.title}` : s.title;
+    const story = { ...s, base, persons: about, audio: null };
     if (s.audio_id) {
-      story.audio = await addFile({ id: s.audio_id, mime: s.audio_mime, created_at: s.audio_at }, 'audio', about[0], s.title || 'запись');
+      story.audio = await addFile({ id: s.audio_id, mime: s.audio_mime, created_at: s.audio_at }, 'audio', about[0], base || 'запись', s.interview_at ? 90 : 60);
       if (story.audio) objects.push({ id: s.audio_id, file: story.audio.path, form: story.audio.ext, type: 'audio', title: s.title, persons: about, kind: 'audio' });
     }
     storyList.push(story);
   }
   for (const s of storyList) {
-    s.path = names.take(`Истории/${folder.get(s.persons[0])}`, safeName(s.title, 'история'), 'txt');
+    s.path = names.take(`Истории/${folder.get(s.persons[0])}`, safeName(s.base, 'история', s.interview_at ? 90 : 60), 'txt');
   }
 
   // Журнал поиска — один файл на человека, все его вопросы с записями.
@@ -189,6 +192,7 @@ function storyText(s, idx) {
   const who = s.persons.map((id) => fullName(idx.persons.get(id))).join(', ');
   const head = [
     s.title || 'История',
+    s.interview_at && `Интервью ${shortDay(s.interview_at)}, ответ ${s.interview_no}`,
     s.date && `Когда: ${dateText(s.date)}`,
     `О ком: ${who}`,
     s.user_name && `Записал(а): ${s.user_name}`,
