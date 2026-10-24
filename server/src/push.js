@@ -39,7 +39,7 @@ function moscow(now) {
 export function digestText(name, sex, entries, ops) {
   const n = { added: 0, removed: 0, photos: 0, docs: 0, dropPhotos: 0, dropDocs: 0, cards: new Set(), files: new Set(),
     stories: 0, dropStories: 0, storyEdits: new Set(), sources: 0, dropSources: 0, sourceEdits: new Set(), cited: new Set(), quality: 0,
-    events: 0, dropEvents: 0, eventEdits: new Set(), places: 0, dropPlaces: 0, placeEdits: new Set() };
+    events: 0, dropEvents: 0, eventEdits: new Set(), places: 0, dropPlaces: 0, placeEdits: new Set(), merged: 0 };
   let links = 0;
   const loads = [];
   for (const op of ops) {
@@ -85,7 +85,10 @@ export function digestText(name, sex, entries, ops) {
       } else if (e.entity === 'quality') {
         n.quality++;
       } else if (e.entity === 'person') {
-        if (e.action === 'create') n.added++;
+        // Объединение дублей — одной фразой: правка оставшейся карточки и удаление второй — его части.
+        if (e.action === 'merge') n.merged++;
+        else if (mine.some((x) => x.entity === 'person' && x.action === 'merge')) continue;
+        else if (e.action === 'create') n.added++;
         else if (e.action === 'delete') n.removed++;
         else if (e.action !== 'photo' || !withFiles) n.cards.add(e.entity_id);
       }
@@ -102,6 +105,7 @@ export function digestText(name, sex, entries, ops) {
       events(n.events), sources(n.sources), places(n.places)]],
     [verb('изменил', sex), [n.cards.size && plural(n.cards.size, 'карточку', 'карточки', 'карточек'), n.files.size && `${n.files.size} фото`,
       stories(n.storyEdits.size), events(n.eventEdits.size), sources(n.sourceEdits.size), places(n.placeEdits.size), links && plural(links, 'связь', 'связи', 'связей')]],
+    [verb('объединил', sex), [n.merged && `${plural(n.merged, 'пару', 'пары', 'пар')} карточек-дублей`]],
     [verb('указал', sex), [sources(n.cited.size)]],
     [verb('отметил', sex), [n.quality && `достоверность ${plural(n.quality, 'сведения', 'сведений', 'сведений')}`]],
     [verb('удалил', sex), [n.removed && plural(n.removed, 'человека', 'человек', 'человек'), n.dropPhotos && `${n.dropPhotos} фото`, docs(n.dropDocs), stories(n.dropStories),

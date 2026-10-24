@@ -16,6 +16,7 @@ import { deletePlace, restorePlace, updatePlace } from './places.js';
 import {
   QUESTION_FIELDS, NOTE_FIELDS, deleteQuestion, restoreQuestion, updateQuestion, deleteNote, restoreNote, updateNote,
 } from './research.js';
+import { undoMerge } from './merge.js';
 
 const LATER = 'После этой правки были другие. Сначала отмените более поздние правки.';
 const GONE = 'Этот человек удалён. Сначала верните его.';
@@ -50,6 +51,9 @@ async function undoPerson(db, userId, e) {
       return deletePerson(db, userId, cur.id);
     case 'delete':
       return restorePerson(db, userId, cur.id, before);
+    case 'merge':
+    case 'unmerge':
+      return undoMerge(db, userId, e);
   }
   throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
 }

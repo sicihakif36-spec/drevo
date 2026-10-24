@@ -38,6 +38,8 @@ export function trimEntry(e, hidden = new Set()) {
     if (e.action === 'create') return both((x) => pick(x, NAME));
     if (e.action === 'delete') return both((x) => x && { person: pick(x.person, NAME) });
     if (e.action === 'photo') return both((x) => x && { photo_id: Boolean(x.photo_id) });
+    // Объединение дублей: кого с кем, без перенесённых привязок.
+    if (e.action === 'merge' || e.action === 'unmerge') return both((x) => x && pick(x, ['from', 'into']));
     return both(fieldsOnly);
   }
   // Файлы: без подписей, имён и id — только вид (фото или документ) и кто отмечен.

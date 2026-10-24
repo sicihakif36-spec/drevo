@@ -43,6 +43,9 @@ function personLine(e, name) {
   if (e.action === 'restore') return `${bySex(sex, 'возвращён', 'возвращена')} в дерево: ${n}`;
   if (e.action === 'photo') return `${e.after?.photo_id ? 'другое фото на карточке' : 'убрано фото с карточки'}${at([e.entity_id], name)}`;
   if (e.action === 'update') return `исправлено${at([e.entity_id], name)}: ${Object.keys(e.after || {}).map((k) => (LABEL[k] || k).toLowerCase()).join(', ')}`;
+  // Объединение дублей: вторая карточка — в снимке её удаления в том же действии.
+  if (e.action === 'merge') return `объединены две карточки одного человека: ${n} и ${name(e.after?.from)}`;
+  if (e.action === 'unmerge') return `отменено объединение карточек: ${n} и ${name(e.before?.from)}`;
   return null;
 }
 
@@ -281,6 +284,9 @@ export function opLines(op, name) {
     return [head, ...opLines({ ...op, entries: op.entries.filter((e) => e !== imp) }, name).filter((l) => l !== 'изменены связи')];
   }
   if (op.entries.some((e) => e.entity === 'place')) return placeLines(op.entries, name);
+  // Объединение: удаление второй карточки — часть объединения, отдельной строкой не показываем.
+  const merge = op.entries.find((e) => e.entity === 'person' && e.action === 'merge');
+  if (merge) op = { ...op, entries: op.entries.filter((e) => !(e.entity === 'person' && e.action === 'delete' && e.entity_id === merge.after?.from)) };
   // Первое фото само становится главным, удалённое перестаёт им быть — отдельной строкой это не показываем.
   const withFiles = op.entries.some((e) => e.entity === 'media' && ['add', 'delete', 'restore'].includes(e.action));
   const lines = [

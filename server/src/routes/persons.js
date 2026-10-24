@@ -5,6 +5,7 @@ import { revertOp } from '../revert.js';
 import { HttpError, ownerPerson, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
 import { guestTree, isGuest, privateIds } from '../privacy.js';
 import { listPlaces } from './places.js';
+import { listMarks } from './checks.js';
 
 function clean(body, fields) {
   const out = {};
@@ -32,14 +33,16 @@ async function insertPerson(db, data, userId) {
 export default async function personRoutes(app) {
   app.get('/api/tree', { preHandler: need('viewer') }, async (req) => {
     const guest = isGuest(req.user);
-    const [persons, families, children, settings, feedNew, places, owner] = await Promise.all([
+    const editor = ['owner', 'editor'].includes(req.user.role);
+    const [persons, families, children, settings, feedNew, places, owner, marks] = await Promise.all([
       q('select * from persons where deleted_at is null order by surname, given'),
       q('select * from families order by created_at'),
       q('select * from family_children'),
       q('select key, value from settings'),
-      countNew(req.user.id, guest ? await privateIds() : [], ['owner', 'editor'].includes(req.user.role)),
+      countNew(req.user.id, guest ? await privateIds() : [], editor),
       listPlaces(),
       ownerPerson({ q }),
+      editor ? listMarks() : null,
     ]);
     const data = { persons, families, children };
     return {
@@ -51,6 +54,8 @@ export default async function personRoutes(app) {
       // С кого начинать дерево тем, кто себя не отметил. Гостю тоже: это лишь id человека, которого он и так видит.
       owner_person_id: owner,
       feed_new: feedNew,
+      // Отметки проверки дерева — только владельцу и участникам: в них даты живых.
+      ...(editor ? { check_marks: marks } : {}),
     };
   });
 
