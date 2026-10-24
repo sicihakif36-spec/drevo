@@ -14,9 +14,10 @@ defineOptions({ name: 'TreeView' });
 const router = useRouter();
 
 const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.view') || '{}'); } catch { return {}; } })();
-// Вид: всё дерево (по умолчанию), предки, потомки. Прежняя «прямая линия» (hourglass) открывается как всё дерево.
-const MODES = ['all', 'ancestors', 'descendants'];
-const mode = ref(MODES.includes(saved.mode) ? saved.mode : 'all');
+// Вид: ветка выбранного человека — его предки и потомки (hourglass, по умолчанию), только предки, только потомки
+// или всё дерево — все ветки сразу.
+const MODES = ['hourglass', 'ancestors', 'descendants', 'all'];
+const mode = ref(MODES.includes(saved.mode) ? saved.mode : 'hourglass');
 const up = ref(saved.up ?? 4);
 const down = ref(saved.down ?? 3);
 const rootId = ref(saved.root || null);
@@ -64,6 +65,11 @@ function makeRoot(id) {
   setTimeout(() => canvas.value?.centerOn(id), 0);
 }
 watch(() => store.treeRoot, (id) => { if (id) { makeRoot(id); store.treeRoot = null; } }, { immediate: true });
+// Из всего дерева — к ветке выбранного: его предки и потомки.
+function branchOf(id) {
+  if (mode.value === 'all') mode.value = 'hourglass';
+  makeRoot(id);
+}
 function add(type) { openAdd({ to: selected.value, type }); }
 function onPlaceholder(ph) { selected.value = ph.of; openAdd({ to: ph.of, type: ph.relation }); }
 
@@ -130,9 +136,10 @@ function gens(delta) {
   <div class="tree-page">
     <div class="top">
       <div class="seg">
-        <button :class="{ on: mode === 'all' }" @click="mode = 'all'">Всё дерево</button>
+        <button :class="{ on: mode === 'hourglass' }" @click="mode = 'hourglass'">Ветка</button>
         <button :class="{ on: mode === 'ancestors' }" @click="mode = 'ancestors'">Предки</button>
         <button :class="{ on: mode === 'descendants' }" @click="mode = 'descendants'">Потомки</button>
+        <button :class="{ on: mode === 'all' }" @click="mode = 'all'">Всё дерево</button>
       </div>
       <button class="round" @click="searching = true" aria-label="Найти человека">
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -191,7 +198,7 @@ function gens(delta) {
       <div class="grid2 actions">
         <button class="primary" :class="{ wide: !canEdit() }" @click="router.push(`/person/${sel.id}`)">Открыть карточку</button>
         <button v-if="canEdit()" @click="add(null)">Добавить родственника</button>
-        <button v-if="sel.id !== root" class="wide" @click="makeRoot(sel.id)">Дерево от этого человека</button>
+        <button v-if="sel.id !== root || mode === 'all'" class="wide" @click="branchOf(sel.id)">Ветка этого человека</button>
         <button v-if="!meId && store.me" class="wide" @click="itsMe(sel.id, true)">Это я</button>
       </div>
     </div>

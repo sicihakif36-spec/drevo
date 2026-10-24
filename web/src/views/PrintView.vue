@@ -184,7 +184,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
       </template>
       <div class="field" v-if="!isFan && !isRospis"><div class="seg two">
         <button :class="{ on: o.mode === 'all' }" @click="o.mode = 'all'">Всё дерево</button>
-        <button :class="{ on: o.mode === 'hourglass' }" @click="o.mode = 'hourglass'">Предки и потомки</button>
+        <button :class="{ on: o.mode === 'hourglass' }" @click="o.mode = 'hourglass'">Ветка</button>
         <button :class="{ on: o.mode === 'ancestors' }" @click="o.mode = 'ancestors'">Предки</button>
         <button :class="{ on: o.mode === 'descendants' }" @click="o.mode = 'descendants'">Потомки</button>
       </div></div>
