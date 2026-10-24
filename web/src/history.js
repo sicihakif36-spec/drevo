@@ -325,4 +325,5 @@ export function opWas(op) {
     .map((vals) => 'было: ' + vals.map((v) => (v === '' ? '—' : String(v))).join(', '));
 }
 
-export const restoresSomeone = (op) => op.entries.some((e) => e.entity !== 'family' && e.action === 'delete');
+// Объединение дублей тоже удаляет вторую карточку, но отменяется как действие: «Отменить объединение».
+export const restoresSomeone = (op) => !op.entries.some((e) => e.action === 'merge') && op.entries.some((e) => e.entity !== 'family' && e.action === 'delete');

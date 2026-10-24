@@ -342,7 +342,7 @@ function findDuplicates(idx, range) {
     const kids = childrenOf(idx, a.id);
     if (childrenOf(idx, b.id).some((u) => kids.includes(u))) reasons.push('общие дети');
     if (t(a.birth_date) && foldName(a.birth_date) === foldName(b.birth_date)) reasons.push('одна дата рождения');
-    const desc = (p) => [fullName(p), t(p.birth_date) && `${yearText(p.birth_date)} г. р.`].filter(Boolean).join(', ');
+    const desc = (p) => `${fullName(p)}${t(p.birth_date) ? ` (р. ${yearText(p.birth_date)})` : ''}`;
     out.push({
       key: `dup:${a.id},${b.id}`,
       kind: 'dup',
@@ -350,7 +350,7 @@ function findDuplicates(idx, range) {
       persons: [a.id, b.id],
       fix: a.id,
       strong: reasons.length > 0,
-      text: `Похоже, это один человек: ${desc(a)} — и ${desc(b)}${reasons.length ? `. Совпадает: ${reasons.join(', ')}` : ''}`,
+      text: `Похоже, это один человек: ${desc(a)} и ${desc(b)}${reasons.length ? `. Совпадает: ${reasons.join(', ')}` : ''}`,
     });
   };
   for (const list of byKey.values()) {

@@ -21,6 +21,8 @@ import SurveyView from './views/SurveyView.vue';
 import SurveyFillView from './views/SurveyFillView.vue';
 import ImportView from './views/ImportView.vue';
 import ResearchView from './views/ResearchView.vue';
+import ChecksView from './views/ChecksView.vue';
+import MergeView from './views/MergeView.vue';
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -41,6 +43,8 @@ const router = createRouter({
     { path: '/surveys/:id', component: SurveyView, props: true },
     { path: '/import', component: ImportView },
     { path: '/research', component: ResearchView },
+    { path: '/checks', component: ChecksView },
+    { path: '/merge', component: MergeView, props: (r) => ({ a: r.query.a, b: r.query.b }) },
     { path: '/invite/:token', component: InviteView, props: true, meta: { public: true } },
     // Анкета для родственника: без входа и без дерева.
     { path: '/survey/:token', component: SurveyFillView, props: true, meta: { public: true } },

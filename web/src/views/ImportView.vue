@@ -8,6 +8,7 @@ import { fullName, lifespan, personHas } from '@shared/names.js';
 import ChangeList from '../components/ChangeList.vue';
 import ImportPerson from '../components/ImportPerson.vue';
 import { ask } from '../components/ask.js';
+import { findings } from '../checks.js';
 
 // «Ещё → Загрузить дерево из файла» (владелец и участники). Файл GEDCOM из другой программы или переписанная от руки родословная:
 // сначала предпросмотр — сколько людей и кто из них, возможно, уже есть в дереве; для каждого «это он», «новый» или «пропустить».
@@ -153,6 +154,11 @@ async function load() {
     busy.value = false;
   }
 }
+// Проверка дерева по загруженным людям: сколько вопросов к данным появилось.
+const questions = computed(() => {
+  const ids = new Set(Object.values(result.value?.ids || {}));
+  return ids.size ? findings.value.filter((x) => x.persons.some((id) => ids.has(id))).length : 0;
+});
 async function reverted() {
   op.value = (await api('GET', '/api/changes')).find((o) => o.id === result.value.change) || null;
 }
@@ -261,6 +267,10 @@ async function reverted() {
         Не всё удалось связать:
         <div v-for="(n, i) in result.notes" :key="i">• {{ n }}</div>
       </div>
+      <router-link v-if="questions && op && !op.reverted" to="/checks" class="card questions">
+        <span class="grow">В загруженном есть вопросы к данным: {{ questions }}. Посмотреть в «Проверке дерева»</span>
+        <span aria-hidden="true">›</span>
+      </router-link>
       <p v-if="result.note" class="small">В журнал вопроса записано, что загружено, вместе с отчётом помощника.</p>
       <div class="grid2" style="margin-top:0.667rem">
         <router-link class="btn primary" to="/">Открыть дерево</router-link>
@@ -275,6 +285,7 @@ async function reverted() {
 </template>
 
 <style scoped>
+.questions { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.667rem; color: var(--accent-text); font-weight: 700; text-decoration: none; }
 .pick { position: relative; margin-top: 0.667rem; }
 .pick input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 .pick.disabled { opacity: 0.7; }

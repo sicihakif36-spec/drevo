@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onUnmounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { store, loadTree, canEdit, canTalk, toast, onLive } from '../store.js';
 import { api, photoUrl } from '../api.js';
 import { openAdd } from '../components/addState.js';
@@ -21,9 +21,12 @@ import { factInfo, personFacts } from '../sources.js';
 import { FIELDS } from '../history.js';
 import { fullName, dateText, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields, nameAccusative, nameGenitive } from '@shared/names.js';
 import { ask } from '../components/ask.js';
+import Finding from '../components/Finding.vue';
+import { findingsOf } from '../checks.js';
 
 const props = defineProps({ id: String });
 const router = useRouter();
+const route = useRoute();
 const idx = computed(() => store.idx);
 const p = computed(() => idx.value?.persons.get(props.id));
 const editing = ref(false);
@@ -162,6 +165,19 @@ async function loadHistory() {
 }
 
 watch(() => props.id, () => { editing.value = false; showHistory.value = false; linking.value = false; Object.assign(counts, { photo: null, stories: null, talk: null, research: null }); });
+// Пришли из проверки дерева: «Исправить» открывает правку (?edit=1) или «Убрать связь» (?links=1).
+watch(() => [props.id, route.query.edit, route.query.links, Boolean(p.value)], () => {
+  if (!p.value || !canEdit() || p.value.hidden) return;
+  if (route.query.edit) startEdit();
+  else if (route.query.links) {
+    linking.value = true;
+    nextTick(() => jump('family'));
+  } else return;
+  router.replace({ query: {} });
+}, { immediate: true });
+// Проверка дерева: вопросы к данным этого человека — только владельцу и участникам.
+const checks = computed(() => (p.value && canEdit() ? findingsOf(p.value.id) : []));
+
 onUnmounted(onLive((events) => {
   if (!events.some((e) => e.kind === 'tree')) return;
   loadSources();
@@ -194,6 +210,12 @@ onUnmounted(onLive((events) => {
     </nav>
 
     <div v-if="missing.length && canEdit() && !editing" class="banner">Не хватает: {{ missing.join(', ') }}</div>
+
+    <div v-if="checks.length && !editing" class="check">
+      <div class="check-head">Проверьте</div>
+      <Finding :finding="checks[0]" plain />
+      <router-link v-if="checks.length > 1" to="/checks" class="small check-more">Ещё {{ checks.length - 1 }} — в «Проверке дерева»</router-link>
+    </div>
 
     <form v-if="editing" @submit.prevent="save" class="card">
       <div class="seg" style="margin-bottom:0.444rem">
@@ -354,4 +376,7 @@ onUnmounted(onLive((events) => {
 .add > button { flex: 1 1 auto; }
 .add > .wide, .add > p { flex-basis: 100%; margin: 0; }
 .danger-link { color: var(--danger) !important; }
+.check { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 0.556rem 0.889rem 0.778rem; margin-bottom: 0.667rem; }
+.check-head { font-size: 0.889rem; font-weight: 700; color: var(--muted); }
+.check-more { display: inline-block; margin-top: 0.444rem; color: var(--accent-text); }
 </style>

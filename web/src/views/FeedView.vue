@@ -4,6 +4,8 @@ import { store, canEdit, onLive } from '../store.js';
 import { api, thumbUrl } from '../api.js';
 import { namer, opLines, moreText } from '../history.js';
 import { fullName, missingFields, upcomingDates, yearsText } from '@shared/names.js';
+import { findings } from '../checks.js';
+import Finding from '../components/Finding.vue';
 
 const items = ref([]);
 const open = ref(new Set()); // раскрытые «Ещё N изменений»
@@ -78,6 +80,17 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
       <div class="list">
         <router-link v-for="h in hints" :key="h.f" :to="`/people?f=${h.f}`">
           <div class="grow">{{ h.label }} у {{ people(h.n) }}</div>
+          <span class="muted" aria-hidden="true">›</span>
+        </router-link>
+      </div>
+    </template>
+
+    <template v-if="canEdit() && findings.length">
+      <h2>Помогите уточнить</h2>
+      <div class="list">
+        <Finding v-for="x in findings.slice(0, 3)" :key="x.key" :finding="x" />
+        <router-link v-if="findings.length > 3" to="/checks">
+          <div class="grow">Все вопросы к данным ({{ findings.length }})</div>
           <span class="muted" aria-hidden="true">›</span>
         </router-link>
       </div>

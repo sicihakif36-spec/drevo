@@ -5,6 +5,7 @@ import { api } from '../api.js';
 import { fullName } from '@shared/names.js';
 import { disablePush } from '../push.js';
 import { ask, askText } from '../components/ask.js';
+import { findings } from '../checks.js';
 
 const ROLE = { owner: 'владелец', editor: 'участник', relative: 'родственник: видит всё, не правит', viewer: 'гость (только просмотр)' };
 const title = ref(store.title);
@@ -79,6 +80,7 @@ async function logout() {
       <router-link to="/print">Печать и PDF</router-link>
       <router-link to="/places">Места</router-link>
       <router-link v-if="canTalk()" to="/changes">Последние правки</router-link>
+      <router-link v-if="canEdit()" to="/checks"><span class="grow">Проверка дерева<br /><span class="muted small">{{ findings.length ? `вопросов к данным: ${findings.length}` : 'ошибки в датах, дубли, люди без связей' }}</span></span></router-link>
       <router-link v-if="canEdit()" to="/research"><span>Исследование<br /><span class="muted small">поиск предков в архивах, запрос ИИ-помощнику</span></span></router-link>
       <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
       <a v-if="isOwner()" href="#" @click.prevent="openArchive">Скачать всё: дерево, фото, документы</a>
