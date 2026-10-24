@@ -8,7 +8,7 @@ import { q } from './db.js';
 import { config } from './config.js';
 import { need } from './auth.js';
 import { HttpError } from './tree.js';
-import { STANDS } from './changes.js';
+import { STANDS, RESEARCH } from './changes.js';
 import { isGuest, hideLiving } from './privacy.js';
 import { fullName, isPrivate, upcomingDates, yearsText } from '../../shared/names.js';
 
@@ -258,8 +258,9 @@ export function pushPlugin(app, opts = {}) {
         `select c.op, c.entity, c.entity_id, c.action, c.before, c.after from changes c where c.op in (
            select c.op from changes c where c.user_id = $1 group by c.op
            having max(c.id) > $2 and max(c.id) <= $3 and ${STANDS})
+         and c.entity <> all($4)
          order by c.id`,
-        [d.user_id, d.prev, d.last],
+        [d.user_id, d.prev, d.last, RESEARCH],
       );
       if (!entries.length) continue;
       const [author] = await q('select u.name, p.sex from users u left join persons p on p.id = u.person_id where u.id = $1', [d.user_id]);

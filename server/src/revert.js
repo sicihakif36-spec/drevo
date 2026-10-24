@@ -13,6 +13,9 @@ import { EVENT_FIELDS } from '../../shared/events.js';
 import { deleteEvent, restoreEvent, updateEvent, addParticipant, removeParticipant } from './timeline.js';
 import { PLACE_FIELDS } from '../../shared/places.js';
 import { deletePlace, restorePlace, updatePlace } from './places.js';
+import {
+  QUESTION_FIELDS, NOTE_FIELDS, deleteQuestion, restoreQuestion, updateQuestion, deleteNote, restoreNote, updateNote,
+} from './research.js';
 
 const LATER = 'После этой правки были другие. Сначала отмените более поздние правки.';
 const GONE = 'Этот человек удалён. Сначала верните его.';
@@ -283,6 +286,49 @@ async function undoQuality(db, userId, e) {
   return setQuality(db, userId, { subject, subject_id: e.entity_id, fact }, e.before.quality);
 }
 
+// Исследование: вопрос поиска и запись по ходу поиска.
+async function undoResearch(db, userId, e) {
+  const x = (await db.q('select * from research_questions where id = $1 for update', [e.entity_id]))[0];
+  if (!x) throw new HttpError(404, 'Вопрос не найден');
+  switch (e.action) {
+    case 'add':
+    case 'restore':
+      if (x.deleted_at) throw new HttpError(409, 'Этот вопрос уже удалён');
+      return deleteQuestion(db, userId, x.id);
+    case 'delete':
+      return restoreQuestion(db, userId, x.id);
+    case 'update': {
+      if (x.deleted_at) throw new HttpError(409, 'Этот вопрос удалён. Сначала верните его.');
+      const before = e.before || {};
+      const id = await updateQuestion(db, userId, x.id, pick(before, Object.keys(before).filter((c) => QUESTION_FIELDS.includes(c))));
+      if (!id) throw new HttpError(409, 'Здесь уже всё как было до этой правки');
+      return id;
+    }
+  }
+  throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
+}
+
+async function undoResearchNote(db, userId, e) {
+  const n = (await db.q('select * from research_notes where id = $1 for update', [e.entity_id]))[0];
+  if (!n) throw new HttpError(404, 'Запись не найдена');
+  switch (e.action) {
+    case 'add':
+    case 'restore':
+      if (n.deleted_at) throw new HttpError(409, 'Эта запись уже удалена');
+      return deleteNote(db, userId, n.id);
+    case 'delete':
+      return restoreNote(db, userId, n.id);
+    case 'update': {
+      if (n.deleted_at) throw new HttpError(409, 'Эта запись удалена. Сначала верните её.');
+      const before = e.before || {};
+      const id = await updateNote(db, userId, n.id, pick(before, Object.keys(before).filter((c) => NOTE_FIELDS.includes(c))));
+      if (!id) throw new HttpError(409, 'Здесь уже всё как было до этой правки');
+      return id;
+    }
+  }
+  throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
+}
+
 // Сводка загрузки из файла: сама ничего не меняет, люди и связи отменяются своими записями.
 async function undoImport(db, userId, e) {
   if (e.action === 'load') return logChange(db, userId, 'import', e.entity_id, 'revert', e.after, null, []);
@@ -300,7 +346,7 @@ export async function revertOp(db, userId, changeId) {
     if (e.entity === 'family') families.push(e.entity_id);
     const undo = {
       person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory, source: undoSource, citation: undoCitation, quality: undoQuality,
-      event: undoEvent, place: undoPlace, import: undoImport,
+      event: undoEvent, place: undoPlace, import: undoImport, research: undoResearch, research_note: undoResearchNote,
     }[e.entity];
     const id = await undo(db, userId, e);
     first ??= id;

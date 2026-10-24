@@ -1,6 +1,6 @@
 import { q, tx } from '../db.js';
 import { need } from '../auth.js';
-import { logChange, listOps, countNew } from '../changes.js';
+import { logChange, listOps, countNew, canResearch } from '../changes.js';
 import { revertOp } from '../revert.js';
 import { HttpError, ownerPerson, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
 import { guestTree, isGuest, privateIds } from '../privacy.js';
@@ -138,9 +138,10 @@ export default async function personRoutes(app) {
   });
 
   // История — всем, кроме гостей: в старых значениях есть данные живых. Откат — только тем, кто правит.
-  app.get('/api/persons/:id/history', { preHandler: need('relative') }, async (req) => listOps({ person: req.params.id, limit: 100 }));
+  // Записи исследования — только владельцу и участникам. op — одно действие (ссылка из журнала поиска).
+  app.get('/api/persons/:id/history', { preHandler: need('relative') }, async (req) => listOps({ person: req.params.id, limit: 100, research: canResearch(req.user) }));
 
-  app.get('/api/changes', { preHandler: need('relative') }, async () => listOps({ limit: 50 }));
+  app.get('/api/changes', { preHandler: need('relative') }, async (req) => listOps({ limit: 50, op: req.query.op || null, research: canResearch(req.user) }));
 
   // Отменить действие, в которое входит правка :id.
   app.post('/api/changes/:id/revert', { preHandler: need('editor') }, async (req) => {

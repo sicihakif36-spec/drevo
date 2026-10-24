@@ -2,6 +2,7 @@
 // Родственник (роль relative) — не гость: видит всё, как участник, только не правит.
 import { isPrivate } from '../../shared/names.js';
 import { q } from './db.js';
+import { RESEARCH } from './changes.js';
 
 const HIDDEN = {
   birth_surname: '', birth_date: '', birth_place: '', death_date: '', death_place: '', burial_place: '',
@@ -31,6 +32,8 @@ const familySnap = (s) => s && { family: pick(s.family || s, ['id', ...LINK]), c
 // hidden — живые (см. privateIds): о событии с живым участником гостю известно только, что оно есть.
 export function trimEntry(e, hidden = new Set()) {
   const both = (fn) => ({ ...e, before: fn(e.before), after: fn(e.after) });
+  // Исследование гостю не отдаётся вовсе (listOps research: false); если запись всё же сюда попала — без содержимого.
+  if (RESEARCH.includes(e.entity)) return { ...e, before: null, after: null, entity_id: null };
   if (e.entity === 'person') {
     if (e.action === 'create') return both((x) => pick(x, NAME));
     if (e.action === 'delete') return both((x) => x && { person: pick(x.person, NAME) });

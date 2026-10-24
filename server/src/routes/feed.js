@@ -21,7 +21,7 @@ export default async function feedRoutes(app) {
     const guest = isGuest(req.user);
     const hidden = new Set(guest ? await privateIds() : []);
     const [ops, comments, [u], surveys] = await Promise.all([
-      listOps({ limit: 50, standing: true }),
+      listOps({ limit: 50, standing: true, research: false }),
       recentComments({ hidden: [...hidden], limit: 50 }),
       q('select feed_seen_at, now() as now from users where id = $1', [req.user.id]),
       // Отправленные анкеты — только владельцу и участникам: в ответах данные живых.
