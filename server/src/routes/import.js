@@ -37,7 +37,7 @@ async function stored(id, user) {
   return { ...m, buf: await fsp.readFile(file(id)) };
 }
 
-const treePersons = () => q('select id, sex, surname, given, patronymic, birth_surname, birth_date, death_date, living from persons where deleted_at is null');
+const treePersons = () => q('select id, sex, surname, given, patronymic, birth_surname, alt_surname, alt_given, alt_patronymic, birth_date, death_date, living from persons where deleted_at is null');
 
 // Разобрать файл и оставить его на сутки для загрузки. extra — что запомнить вместе с ним (вопрос поиска, отчёт помощника).
 export async function keepForImport(buf, name, user, extra = {}) {

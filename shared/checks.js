@@ -2,7 +2,7 @@
 // Неточные даты («около 1890», «до 1917», «между 1880 и 1885», только год) читаются как промежуток лет:
 // находка — только если противоречие есть при любом прочтении промежутка. Старый стиль расхождением не считается.
 import {
-  buildIndex, parentsOf, childrenOf, spousesOf, fullName, foldName, looseName, sameName, samePatronymic, exactDate, isOldStyle, withOldStyle,
+  buildIndex, parentsOf, childrenOf, spousesOf, fullName, foldName, looseName, sameName, samePatronymic, spellings, exactDate, isOldStyle, withOldStyle,
   yearsText, parseDate, nameGenitive,
 } from './names.js';
 import { treeParts } from './wholetree.js';
@@ -105,7 +105,7 @@ const yearsOld = (a, b, approx) => `${approx ? 'около ' : ''}${yearsText(Ma
 export const LEVELS = ['error', 'warn', 'dup', 'alone'];
 export const LEVEL_TITLE = { error: 'Ошибки', warn: 'Стоит проверить', dup: 'Возможно, один человек', alone: 'Без связей' };
 // Что входит в отметку «Всё верно»: если у людей находки что-то из этого изменится, находка вернётся.
-const SIG_FIELDS = ['surname', 'given', 'patronymic', 'birth_surname', 'sex', 'living', 'birth_date', 'death_date'];
+const SIG_FIELDS = ['surname', 'given', 'patronymic', 'birth_surname', 'alt_surname', 'alt_given', 'alt_patronymic', 'sex', 'living', 'birth_date', 'death_date'];
 
 export const PERSON_DATES = [['birth_date', 'рождения'], ['death_date', 'смерти']];
 
@@ -301,14 +301,17 @@ function findDuplicates(idx, range) {
   // Указатель: имя + фамилия (или девичья) в грубом написании. Внутри — по году рождения, сравниваем только соседей по годам.
   const info = new Map();
   const byKey = new Map();
+  // Оба написания имени (основное и как в документах) — в указатель: «Рәшит Галиев» найдётся рядом с «Рашит Галиев».
   for (const p of idx.persons.values()) {
-    const g = looseName(p.given);
-    const sur = [...new Set(surnames(p).map(looseName).filter(Boolean))];
-    if (!g || !sur.length) continue;
+    const keys = new Set();
+    for (const v of spellings(p)) {
+      const g = looseName(v.given);
+      if (g) for (const s of surnames(v)) if (looseName(s)) keys.add(`${g}|${looseName(s)}`);
+    }
+    if (!keys.size) continue;
     const b = range.get(p.id).birth;
     info.set(p.id, { p, pat: looseName(p.patronymic), b: b && !b.bad ? b : null });
-    for (const s of sur) {
-      const k = `${g}|${s}`;
+    for (const k of keys) {
       if (!byKey.has(k)) byKey.set(k, []);
       byKey.get(k).push(info.get(p.id));
     }
@@ -326,7 +329,7 @@ function findDuplicates(idx, range) {
     if (seen.has(key)) return;
     seen.add(key);
     if (a.sex !== 'U' && b.sex !== 'U' && a.sex !== b.sex) return;
-    if (x.pat && y.pat && x.pat !== y.pat && !samePatronymic(a.patronymic, b.patronymic)) return;
+    if (x.pat && y.pat && x.pat !== y.pat && !spellings(a).some((u) => spellings(b).some((v) => samePatronymic(u.patronymic, v.patronymic)))) return;
     if (farYears(range.get(a.id).death, range.get(b.id).death)) return;
     if (ancestorsOf(idx, a.id, anc).has(b.id) || ancestorsOf(idx, b.id, anc).has(a.id)) return;
     const pa = parentsOf(idx, a.id);
@@ -385,7 +388,7 @@ export function countByLevel(findings) {
 
 // ---------- Объединение дублей ----------
 
-export const MERGE_FIELDS = ['surname', 'given', 'patronymic', 'birth_surname', 'sex', 'living', 'birth_date', 'birth_place', 'death_date',
+export const MERGE_FIELDS = ['surname', 'given', 'patronymic', 'birth_surname', 'alt_surname', 'alt_given', 'alt_patronymic', 'sex', 'living', 'birth_date', 'birth_place', 'death_date',
   'death_place', 'burial_place', 'occupation', 'notes'];
 
 // Насколько точна дата: точный день лучше месяца, месяц лучше года, год лучше «около».

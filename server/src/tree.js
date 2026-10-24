@@ -1,7 +1,7 @@
 // Изменения связей между людьми. Каждое пишется в журнал так, чтобы его можно было отменить (см. revert.js).
 import { logChange } from './changes.js';
 
-export const PERSON_FIELDS = ['sex', 'surname', 'given', 'patronymic', 'birth_surname', 'living', 'birth_date', 'birth_place', 'death_date', 'death_place', 'burial_place', 'occupation', 'notes'];
+export const PERSON_FIELDS = ['sex', 'surname', 'given', 'patronymic', 'birth_surname', 'alt_surname', 'alt_given', 'alt_patronymic', 'living', 'birth_date', 'birth_place', 'death_date', 'death_place', 'burial_place', 'occupation', 'notes'];
 export const FAMILY_FIELDS = ['kind', 'start_date', 'place', 'end_date', 'ended'];
 export const SLOTS = ['partner1', 'partner2'];
 

@@ -1,7 +1,7 @@
 // Исследование: вопросы поиска, запрос для ИИ-помощника и разбор его ответа. Общий код телефона и сервера.
 // Помощником человек пользуется сам: приложение готовит текст запроса (PROMPT — тот же, что в docs/issledovanie.md)
 // и принимает ответ — вырезает из него файл GEDCOM для обычной загрузки из файла. Сервер ни к какому ИИ не обращается.
-import { fullName, lifespan, dateText, parsePeriod, isPrivate, parentsOf, siblingsOf, spousesOf, childrenOf } from './names.js';
+import { altLabel, altName, fullName, lifespan, dateText, parsePeriod, isPrivate, parentsOf, siblingsOf, spousesOf, childrenOf } from './names.js';
 import { EVENT_KINDS, eventTitle } from './events.js';
 
 export const STATUSES = {
@@ -87,6 +87,7 @@ export const PROMPT = `Ты — помощник-генеалог. Помога�
 6. О живых людях — только то, что сообщил я. Не ищи адреса и телефоны.
 7. Учитывай разные написания имён: Ситдик/Ситдыйк/Сиддик, Габдулла/Абдулла,
    Ногман/Нугуман, Рафгат/Рәфгат; до 1928 года — арабская графика, в 1928–1939 — латиница.
+   Если указано, как человек записан в документах, — ищи по обоим написаниям.
 
 ГДЕ ИСКАТЬ (выбери подходящее)
 — Великая Отечественная: «Память народа», ОБД «Мемориал», «Подвиг народа»,
@@ -106,7 +107,9 @@ export const PROMPT = `Ты — помощник-генеалог. Помога�
 — 0 HEAD / 1 CHAR UTF-8 / 1 GEDC / 2 VERS 5.5.1 / 2 FORM LINEAGE-LINKED; в конце 0 TRLR.
 — Человек: 0 @I1@ INDI; 1 NAME Имя Отчество /Фамилия/; 2 GIVN Имя; 2 SURN Фамилия;
   2 _PATR Отчество (татарское тоже, например «Дәүләтшә кызы»).
-  Девичья фамилия — второй 1 NAME Имя Отчество /Девичья/ с 2 TYPE birth. 1 SEX M или F.
+  Девичья фамилия — второй 1 NAME Имя Отчество /Девичья/ с 2 TYPE birth.
+  Другое написание (по-татарски и по-русски, как в документах: «Рәшит Хәсән улы»
+  и «Рашит Хасанович») — ещё один 1 NAME с 2 TYPE aka. 1 SEX M или F.
 — 1 BIRT, 1 DEAT, 1 BURI с 2 DATE и 2 PLAC — место полностью: «д. Урманче,
   Мамадышский уезд, Казанская губерния». Умер, дата неизвестна — 1 DEAT Y.
 — Даты: 12 MAR 1890; ABT 1890 (около); BEF 1890 (до); AFT 1890 (после);
@@ -147,12 +150,15 @@ function facts(p, open, now) {
   return out;
 }
 
+// Второе написание — это имя, его видно всегда: « (в документах: Галиев Рашит Хасанович)».
+const alt = (p) => (altName(p) ? ` (${altLabel(p).toLowerCase()}: ${altName(p)})` : '');
+
 // Короткая строка о родном: «Смирнов Иван Фёдорович, 1860 – 1920» или у живого без дат: «Смирнова Анна Петровна (жива)».
 function kinLine(p, open) {
   const alive = p.living ? ` (${by(p.sex, 'жив', 'жива', 'жив(а)')})` : '';
-  if (!open) return `${fullName(p)}${alive}`;
+  if (!open) return `${fullName(p)}${alt(p)}${alive}`;
   const extra = [lifespan(p), p.birth_place && `род. ${p.birth_place}`].filter(Boolean).join(', ');
-  return `${fullName(p)}${extra ? `, ${extra}` : ''}${p.living ? alive : ''}`;
+  return `${fullName(p)}${alt(p)}${extra ? `, ${extra}` : ''}${p.living ? alive : ''}`;
 }
 
 // Событие ленты жизни: «1941–1945 — Война: Калининский фронт, 30-я армия, рядовой, д. Ржев».
@@ -171,7 +177,7 @@ export function buildPrompt({ person: p, idx, events = [], goal = '', faith = ''
   const get = (id) => idx.persons.get(id);
   const indent = '\n  ';
   // Сам человек: имя и годы, подробности — строками ниже (место рождения в первой строке не повторяем).
-  const head = open(p) && lifespan(p) ? `${fullName(p)}, ${lifespan(p)}` : kinLine(p, false);
+  const head = open(p) && lifespan(p) ? `${fullName(p)}${alt(p)}, ${lifespan(p)}` : kinLine(p, false);
   const self = [head, ...facts(p, open(p), now).map((x) => x[0].toUpperCase() + x.slice(1))];
   if (open(p) && events.length) {
     const sorted = [...events].sort((a, b) => (parsePeriod(a.date)?.key ?? Infinity) - (parsePeriod(b.date)?.key ?? Infinity));

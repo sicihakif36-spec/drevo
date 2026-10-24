@@ -8,21 +8,22 @@ import { fillPlan } from './surveys.js';
 import { createEvent } from './timeline.js';
 import { createSource, cite, setQuality } from './sources.js';
 import { matchScore } from '../../shared/survey.js';
-import { looseName, fullName } from '../../shared/names.js';
+import { looseName, fullName, spellings } from '../../shared/names.js';
 import { citeText } from '../../shared/sources.js';
 
 // Поля человека, которые дописываются найденному в дереве.
-export const FILL_FIELDS = ['surname', 'given', 'patronymic', 'birth_surname', 'birth_date', 'birth_place', 'death_date', 'death_place',
+export const FILL_FIELDS = ['surname', 'given', 'patronymic', 'birth_surname', 'alt_surname', 'alt_given', 'alt_patronymic', 'birth_date', 'birth_place', 'death_date', 'death_place',
   'burial_place', 'occupation', 'notes'];
 
 // Кто из дерева может быть этим человеком, самые похожие первыми (как findMatches в анкете, но по указателю имён: людей тысячи).
 export function matchIndex(treePersons) {
   const byName = new Map();
+  // По имени в любом написании: «Рәшит» и «Рашит» — в одной ячейке, «Гыйльмия» и «Гильмия» — тоже.
   for (const p of treePersons) {
-    const k = looseName(p.given);
-    if (k) byName.set(k, [...(byName.get(k) || []), p]);
+    for (const k of new Set(spellings(p).map((x) => looseName(x.given)))) if (k) byName.set(k, [...(byName.get(k) || []), p]);
   }
-  return (rec, limit = 3) => (byName.get(looseName(rec.given)) || [])
+  const cands = (rec) => [...new Set(spellings(rec).flatMap((x) => byName.get(looseName(x.given)) || []))];
+  return (rec, limit = 3) => cands(rec)
     .map((p) => ({ p, score: matchScore(rec, p) }))
     .filter((x) => x.score >= 2)
     .sort((a, b) => b.score - a.score)

@@ -4,7 +4,7 @@ import { sourceData } from './sources.js';
 import { eventData } from './timeline.js';
 import { citeText, sourceTitle, QUALITY, KINDS } from '../../../shared/sources.js';
 import { EVENT_KINDS } from '../../../shared/events.js';
-import { parsePeriod, isOldStyle, withOldStyle } from '../../../shared/names.js';
+import { parsePeriod, isOldStyle, withOldStyle, altName, altPerson } from '../../../shared/names.js';
 import { placeKey } from '../../../shared/places.js';
 import { listPlaces } from './places.js';
 
@@ -133,6 +133,15 @@ export function toGedcom(data) {
     if (p.birth_surname && p.birth_surname !== p.surname) {
       L.push(`1 NAME ${given} /${p.birth_surname}/`.replace(/\s+/g, ' ').trim());
       L.push('2 TYPE birth');
+    }
+    // Второе написание (как в документах) — вторым именем с TYPE aka: его понимают Gramps («Также известен как») и MyHeritage.
+    if (altName(p)) {
+      const a = altPerson(p);
+      L.push(`1 NAME ${[a.given, a.patronymic].filter(Boolean).join(' ')} /${a.surname}/`.replace(/\s+/g, ' ').trim());
+      L.push('2 TYPE aka');
+      line(2, 'GIVN', a.given);
+      line(2, 'SURN', a.surname);
+      line(2, '_PATR', a.patronymic);
     }
     line(1, 'SEX', p.sex === 'U' ? 'U' : p.sex);
     event('BIRT', p.birth_date, p.birth_place, p.id);

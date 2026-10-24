@@ -22,9 +22,11 @@ export function hideLiving(data) {
 
 // Запись журнала для гостя. В before/after лежат старые значения, в том числе данные живых,
 // поэтому оставляем только то, что нужно для подписи: имена и пол, названия полей, «есть фото или нет», кто с кем связан.
-const NAME = ['surname', 'given', 'patronymic', 'sex'];
+const NAME = ['surname', 'given', 'patronymic', 'alt_surname', 'alt_given', 'alt_patronymic', 'sex'];
 const LINK = ['partner1', 'partner2', 'partners', 'children', 'child_id', 'kind'];
 const pick = (o, keys) => o && Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k]]));
+// Имя для подписи: второе написание — только если оно есть.
+const nameOf = (o) => o && Object.fromEntries(Object.entries(pick(o, NAME)).filter(([k, v]) => !k.startsWith('alt_') || v));
 const fieldsOnly = (o) => o && Object.fromEntries(Object.keys(o).map((k) => [k, null]));
 // В старых записях снимок семьи — сама строка семьи, без детей.
 const familySnap = (s) => s && { family: pick(s.family || s, ['id', ...LINK]), children: (s.children || []).map((c) => pick(c, ['child_id', 'kind'])) };
@@ -35,8 +37,8 @@ export function trimEntry(e, hidden = new Set()) {
   // Исследование гостю не отдаётся вовсе (listOps research: false); если запись всё же сюда попала — без содержимого.
   if (RESEARCH.includes(e.entity)) return { ...e, before: null, after: null, entity_id: null };
   if (e.entity === 'person') {
-    if (e.action === 'create') return both((x) => pick(x, NAME));
-    if (e.action === 'delete') return both((x) => x && { person: pick(x.person, NAME) });
+    if (e.action === 'create') return both(nameOf);
+    if (e.action === 'delete') return both((x) => x && { person: nameOf(x.person) });
     if (e.action === 'photo') return both((x) => x && { photo_id: Boolean(x.photo_id) });
     // Объединение дублей: кого с кем, без перенесённых привязок.
     if (e.action === 'merge' || e.action === 'unmerge') return both((x) => x && pick(x, ['from', 'into']));

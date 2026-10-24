@@ -2,6 +2,7 @@ import { q, tx } from '../db.js';
 import { need, meOf } from '../auth.js';
 import { logChange, listOps, countNew, canResearch } from '../changes.js';
 import { revertOp } from '../revert.js';
+import { ALT_FIELDS } from '../../../shared/names.js';
 import { HttpError, ownerPerson, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
 import { guestTree, isGuest, privateIds } from '../privacy.js';
 import { listPlaces } from './places.js';
@@ -100,6 +101,33 @@ export default async function personRoutes(app) {
       await logChange(db, req.user.id, 'person', cur.id, 'update',
         Object.fromEntries(changed.map((k) => [k, cur[k]])), Object.fromEntries(changed.map((k) => [k, next[k]])));
       return next;
+    });
+  });
+
+  // «Ещё → Написание имён»: второе написание нескольким людям сразу — одно действие в журнале, отменяется одной кнопкой.
+  // items: [{ id, alt_surname, alt_given, alt_patronymic }]. Уже заполненное другим второе написание не трогаем.
+  app.post('/api/persons/alt-names', { preHandler: need('editor') }, async (req) => {
+    const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 2000) : [];
+    if (!items.length) throw new HttpError(400, 'Никто не отмечен');
+    return tx(async (db) => {
+      let saved = 0;
+      for (const item of items) {
+        const data = clean(item, ALT_FIELDS);
+        if (!/^[0-9a-f-]{36}$/.test(String(item?.id || ''))) continue;
+        const cur = (await db.q('select * from persons where id = $1 and deleted_at is null for update', [item.id]))[0];
+        if (!cur || ALT_FIELDS.some((k) => cur[k])) continue;
+        const changed = ALT_FIELDS.filter((k) => data[k] && data[k] !== cur[k]);
+        if (!changed.length) continue;
+        const next = (await db.q(
+          `update persons set ${changed.map((k, i) => `${k} = $${i + 2}`).join(', ')}, version = version + 1, updated_at = now() where id = $1 returning *`,
+          [cur.id, ...changed.map((k) => data[k])],
+        ))[0];
+        await logChange(db, req.user.id, 'person', cur.id, 'update',
+          Object.fromEntries(changed.map((k) => [k, cur[k]])), Object.fromEntries(changed.map((k) => [k, next[k]])));
+        saved += 1;
+      }
+      if (!saved) throw new HttpError(409, 'Сохранять нечего: у отмеченных уже есть второе написание или их удалили');
+      return { saved };
     });
   });
 

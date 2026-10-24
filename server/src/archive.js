@@ -12,7 +12,12 @@ import { sourceData } from './routes/sources.js';
 import { eventData } from './routes/timeline.js';
 import { listPlaces } from './routes/places.js';
 import { toGedcom } from './routes/export.js';
-import { buildIndex, childrenOf, dateText, fullName, parentsOf, parseDate, spousesOf } from '../../shared/names.js';
+import { buildIndex, childrenOf, dateText, fullName, parentsOf, parseDate, spousesOf, altName, altLabel, foldName } from '../../shared/names.js';
+
+// Второе написание: «В документах: Галиев Рашит Хасанович».
+const altLine = (p) => (altName(p) ? `${altLabel(p)}: ${altName(p)}` : '');
+// Для поиска на странице: оба написания и без татарских букв — «рашит» находит «Рәшит».
+const searchName = (p) => { const s = `${fullName(p)} ${altName(p)}`.toLowerCase(); return `${s} ${foldName(s)}`; };
 import { STATUSES, RESULTS } from '../../shared/research.js';
 
 const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf', 'audio/mpeg': 'mp3' };
@@ -208,7 +213,7 @@ const noteFacts = (n) => [['Где искали', n.place], ['Ссылка', n.u
 
 function researchText({ person, questions }) {
   const life = years(person);
-  const parts = [`Журнал поиска: ${fullName(person)}${life ? ` (${life})` : ''}`];
+  const parts = [`Журнал поиска: ${fullName(person)}${life ? ` (${life})` : ''}`, altLine(person)].filter(Boolean);
   for (const x of questions) {
     const head = [
       `Вопрос: ${x.title}`,
@@ -307,9 +312,9 @@ function indexHtml({ title, stamp, counts, persons, idx, objects, fileOf, photoO
     const docs = own.filter((o) => o.kind === 'doc');
     const tales = storiesOf.get(p.id) || [];
     const search = researchOf.get(p.id);
-    return `<section class="person" id="p${n}" data-name="${esc(fullName(p).toLowerCase())}">
+    return `<section class="person" id="p${n}" data-name="${esc(searchName(p))}">
 <div class="head">${main ? `<img class="main" src="${href(main.path)}" alt="" loading="lazy">` : `<div class="main none">${esc((p.surname || p.given || '?')[0])}</div>`}
-<div><h2>${esc(fullName(p))}</h2>${life ? `<div class="muted">${esc(life)}</div>` : ''}</div></div>
+<div><h2>${esc(fullName(p))}</h2>${altLine(p) ? `<div class="muted">${esc(altLine(p))}</div>` : ''}${life ? `<div class="muted">${esc(life)}</div>` : ''}</div></div>
 ${facts.length || rel.length ? `<dl>${[...facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`), ...rel.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)].join('')}</dl>` : ''}
 ${p.notes ? `<p class="notes">${esc(p.notes)}</p>` : ''}
 ${photos.length ? `<h3>Фото</h3><div class="photos">${photos.map((o) => `<a href="${href(o.file)}"><img src="${href(o.file)}" alt="${esc(o.title)}" title="${esc(o.title)}" loading="lazy"></a>`).join('')}</div>` : ''}
@@ -324,7 +329,7 @@ ${x.notes.map((n) => `<div class="note"><div class="small muted">${esc(noteHead(
 <p class="small"><a href="#top">↑ К списку</a></p>
 </section>`;
   });
-  const list = persons.map((p) => `<li data-name="${esc(fullName(p).toLowerCase())}"><a href="#p${num.get(p.id)}">${esc(fullName(p))}</a>${years(p) ? ` <span class="muted">${esc(years(p))}</span>` : ''}</li>`);
+  const list = persons.map((p) => `<li data-name="${esc(searchName(p))}"><a href="#p${num.get(p.id)}">${esc(fullName(p))}</a>${altName(p) ? ` <span class="muted">(${esc(altName(p))})</span>` : ''}${years(p) ? ` <span class="muted">${esc(years(p))}</span>` : ''}</li>`);
   return `<!doctype html>
 <html lang="ru">
 <head>
