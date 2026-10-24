@@ -44,7 +44,8 @@ function personLine(e, name) {
   if (e.action === 'delete') return `${bySex(sex, 'удалён', 'удалена')} из дерева: ${n}`;
   if (e.action === 'restore') return `${bySex(sex, 'возвращён', 'возвращена')} в дерево: ${n}`;
   if (e.action === 'photo') return `${e.after?.photo_id ? 'другое фото на карточке' : 'убрано фото с карточки'}${at([e.entity_id], name)}`;
-  if (e.action === 'update') return `исправлено${at([e.entity_id], name)}: ${Object.keys(e.after || {}).map((k) => (LABEL[k] || k).toLowerCase()).join(', ')}`;
+  // Три поля второго написания — одной подписью.
+  if (e.action === 'update') return `исправлено${at([e.entity_id], name)}: ${[...new Set(Object.keys(e.after || {}).map((k) => (k.startsWith('alt_') ? 'второе написание имени' : (LABEL[k] || k).toLowerCase())))].join(', ')}`;
   // Объединение дублей: вторая карточка — в снимке её удаления в том же действии.
   if (e.action === 'merge') return `объединены две карточки одного человека: ${n} и ${name(e.after?.from)}`;
   if (e.action === 'unmerge') return `отменено объединение карточек: ${n} и ${name(e.before?.from)}`;
@@ -334,7 +335,8 @@ export function opWas(op) {
   return op.entries
     .filter((e) => (!withPlace || e.entity === 'place') && e.entity !== 'family' && e.action === 'update')
     .map((e) => Object.entries(e.before || {}).filter(([k]) => !WAS[e.entity] || WAS[e.entity].includes(k)).map(([, v]) => v).filter((v) => v !== null && v !== undefined)) // гостю старые значения не приходят
-    .filter((vals) => vals.length)
+    // Было пусто везде («было: —, —, —») — не пишем: поля просто заполнили.
+    .filter((vals) => vals.some((v) => v !== ''))
     .map((vals) => 'было: ' + vals.map((v) => (v === '' ? '—' : String(v))).join(', '));
 }
 
