@@ -58,8 +58,9 @@ export async function listOps({ person = null, limit = 50, standing = false, op 
 }
 
 // Сколько действий и комментариев других людей появилось после того, как человек открывал ленту.
-// hidden — люди, чьи обсуждения ему не видны (см. privateIds); surveys — считать и отправленные анкеты (владельцу и участникам).
-export async function countNew(userId, hidden = [], surveys = false) {
+// hidden — люди, чьи обсуждения ему не видны (см. privateIds); surveys — считать и отправленные анкеты (владельцу и участникам);
+// asks — вопросы ему и ответы на его вопросы (всем, кроме гостей).
+export async function countNew(userId, hidden = [], surveys = false, asks = false) {
   const rows = await q(
     `with seen as (select feed_seen_at as at from users where id = $1)
      select (select count(*) from (
@@ -69,8 +70,13 @@ export async function countNew(userId, hidden = [], surveys = false) {
      ) s) + (select count(*) from comments c join persons p on p.id = c.person_id
        where c.created_at > (select at from seen) and c.user_id <> $1
          and c.deleted_at is null and p.deleted_at is null and not (c.person_id = any($2::uuid[]))
-     ) + (select count(*) from surveys s where $3 and s.submitted_at > (select at from seen) and s.revoked_at is null) as n`,
-    [userId, hidden, surveys, RESEARCH],
+     ) + (select count(*) from surveys s where $3 and s.submitted_at > (select at from seen) and s.revoked_at is null
+     ) + (select count(*) from asks a join persons p on p.id = a.person_id
+       where $5 and a.deleted_at is null and p.deleted_at is null and (
+         (a.created_by = $1 and a.answered_at > (select at from seen))
+         or (a.to_user = $1 and a.created_at > (select at from seen) and a.answered_at is null and a.revoked_at is null))
+     ) as n`,
+    [userId, hidden, surveys, RESEARCH, asks],
   );
   return Number(rows[0].n);
 }

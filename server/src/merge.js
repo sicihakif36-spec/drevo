@@ -1,7 +1,8 @@
 // Объединение двух карточек одного человека: всё со второй карточки (remove) переносится на первую (keep), вторая удаляется.
 // Одно действие в журнале, отменяется целиком. Порядок записей важен — откат идёт с конца:
 // 1. person 'merge' — перенос привязок, у которых нет своих записей журнала: отметки на фото и в документах, истории,
-//    события ленты жизни, источники и достоверность, обсуждение, вопросы исследования, «это я» у пользователей, приглашения, анкеты.
+//    события ленты жизни, источники и достоверность, обсуждение, вопросы исследования, «это я» у пользователей, приглашения, анкеты,
+//    вопросы родным.
 //    Снимок — какие строки перенесены и какие убраны как повтор: откат ('unmerge') возвращает в точности их.
 // 2. Связи — обычными записями семьи (set_partner, add_child, drop…), их откат уже есть.
 // 3. Поля карточки — person 'update', главное фото — person 'photo'.
@@ -17,7 +18,7 @@ import { fullName } from '../../shared/names.js';
 // Таблицы «файл/история/событие — человек»: ключ строки — первый столбец.
 const LINKS = [['media_persons', 'media_id'], ['story_persons', 'story_id'], ['event_persons', 'event_id']];
 // Просто ссылки на человека: строка переносится целиком. Приглашение — по md5 хеша токена: сам хеш в журнал не пишем.
-const REFS = [['comments', 'id'], ['research_questions', 'id'], ['users', 'id'], ['surveys', 'id'], ['invites', 'md5(token_hash)']];
+const REFS = [['comments', 'id'], ['research_questions', 'id'], ['users', 'id'], ['surveys', 'id'], ['invites', 'md5(token_hash)'], ['asks', 'id']];
 
 const LATER = 'После объединения были другие правки. Сначала отмените их.';
 
@@ -78,7 +79,8 @@ async function applyMoves(db, plan, forward) {
   }
   for (const [table, key] of REFS) {
     // Ссылки не обязаны остаться: пользователь мог сам указать себя другим человеком. Переносим те, что на месте.
-    for (const k of plan.refs[table]) await db.q(`update ${table} set person_id = $3 where ${key} = $1 and person_id = $2`, [k, a, b]);
+    // В записях до появления вопросов родным их нет.
+    for (const k of plan.refs[table] || []) await db.q(`update ${table} set person_id = $3 where ${key} = $1 and person_id = $2`, [k, a, b]);
   }
   for (const [id, x, y] of plan.citations.moved) {
     const [from, to] = forward ? [x, y] : [y, x];

@@ -34,15 +34,18 @@ export default async function personRoutes(app) {
   app.get('/api/tree', { preHandler: need('viewer') }, async (req) => {
     const guest = isGuest(req.user);
     const editor = ['owner', 'editor'].includes(req.user.role);
-    const [persons, families, children, settings, feedNew, places, owner, marks] = await Promise.all([
+    const [persons, families, children, settings, feedNew, places, owner, marks, asked] = await Promise.all([
       q('select * from persons where deleted_at is null order by surname, given'),
       q('select * from families order by created_at'),
       q('select * from family_children'),
       q('select key, value from settings'),
-      countNew(req.user.id, guest ? await privateIds() : [], editor),
+      countNew(req.user.id, guest ? await privateIds() : [], editor, !guest),
       listPlaces(),
       ownerPerson({ q }),
       editor ? listMarks() : null,
+      // Сколько вопросов ждут ответа от этого человека («Вас спросили»). Гостей не спрашивают.
+      guest ? null : q(`select count(*)::int as n from asks a join persons p on p.id = a.person_id where a.to_user = $1
+        and a.answered_at is null and a.revoked_at is null and a.closed_at is null and a.deleted_at is null and p.deleted_at is null`, [req.user.id]),
     ]);
     const data = { persons, families, children };
     return {
@@ -56,6 +59,7 @@ export default async function personRoutes(app) {
       feed_new: feedNew,
       // Отметки проверки дерева — только владельцу и участникам: в них даты живых.
       ...(editor ? { check_marks: marks } : {}),
+      ...(guest ? {} : { asks_waiting: asked[0].n }),
     };
   });
 

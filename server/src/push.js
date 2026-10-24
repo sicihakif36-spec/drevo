@@ -1,5 +1,5 @@
 // Уведомления на телефон через Web Push (VAPID): приходят и при закрытом приложении.
-// Три вида, у каждого свой переключатель: новый комментарий — сразу; правки в дереве — одной сводкой по автору,
+// Три вида, у каждого свой переключатель: новый комментарий (и вопрос родным — адресату, ответ — спросившему) — сразу; правки в дереве — одной сводкой по автору,
 // когда он 10 минут ничего не правил; дни рождения и памятные даты — в 9:00 по Москве.
 // Расписание — раз в минуту внутри процесса. Что уже отправлено, отмечается в базе до отправки (migrations/006_push.sql):
 // одно и то же не уйдёт дважды и после перезапуска. Содержимое шифруется для телефона, сервис браузера его не видит.
@@ -12,6 +12,7 @@ import { STANDS, RESEARCH } from './changes.js';
 import { isGuest, hideLiving } from './privacy.js';
 import { fullName, isPrivate, upcomingDates, yearsText } from '../../shared/names.js';
 import { deviceName } from '../../shared/device.js';
+import { about } from '../../shared/asks.js';
 
 const TICK = 60000;
 const QUIET = 10; // минут тишины после последней правки автора
@@ -251,6 +252,46 @@ export function pushPlugin(app, opts = {}) {
     });
   }
 
+  // Вопрос родному в приложении — только ему, если у него включены уведомления об обсуждении. key — повторное «Напомнить».
+  async function ask(id, key = id) {
+    const a = (await q(
+      `select a.id, a.question, a.to_user, u.name as from_name, p.surname, p.given, p.patronymic, p.sex
+       from asks a join persons p on p.id = a.person_id left join users u on u.id = a.created_by
+       where a.id = $1 and a.to_user is not null and a.answered_at is null and a.revoked_at is null and a.deleted_at is null`, [id],
+    ))[0];
+    if (!a || !(await claim('ask', key))) return;
+    const subs = await q(
+      `select s.endpoint, s.p256dh, s.auth from push_subs s join users u on u.id = s.user_id
+       where u.id = $1 and not u.disabled and u.role <> 'viewer' and u.notify_comments`, [a.to_user],
+    );
+    await deliver(subs, {
+      title: `${a.from_name || 'Кто-то'} спрашивает вас ${about(a)}`,
+      body: short(a.question),
+      url: `/#/asks/${a.id}`,
+      tag: `ask-${a.id}`,
+    });
+  }
+
+  // Ответили — тому, кто спрашивал, и больше никому.
+  async function answer(id) {
+    const a = (await q(
+      `select a.id, a.answer, a.created_by, coalesce(u.name, a.to_name) as who, w.sex as who_sex, p.surname, p.given, p.patronymic, p.sex
+       from asks a join persons p on p.id = a.person_id left join users u on u.id = a.to_user left join persons w on w.id = u.person_id
+       where a.id = $1 and a.answered_at is not null and a.deleted_at is null`, [id],
+    ))[0];
+    if (!a || !(await claim('answer', a.id))) return;
+    const subs = await q(
+      `select s.endpoint, s.p256dh, s.auth from push_subs s join users u on u.id = s.user_id
+       where u.id = $1 and not u.disabled and u.role <> 'viewer' and u.notify_comments`, [a.created_by],
+    );
+    await deliver(subs, {
+      title: `${a.who || 'Родственник'} ${verb('ответил', a.who_sex)} на ваш вопрос ${about(a)}`,
+      body: short(a.answer || 'Прислали фото или запись голоса'),
+      url: `/#/asks/${a.id}`,
+      tag: `ask-${a.id}`,
+    });
+  }
+
   // Новый вход или пять неверных паролей — всем владельцам, на все их телефоны; без переключателя: это защита.
   async function login(id) {
     const [l] = await q(
@@ -375,6 +416,8 @@ export function pushPlugin(app, opts = {}) {
     comment: (id) => later(() => comment(id)),
     survey: (id) => later(() => survey(id)),
     login: (id) => later(() => login(id)),
+    ask: (id, key) => later(() => ask(id, key)),
+    answer: (id) => later(() => answer(id)),
     tick,
     settled: () => Promise.all([...pending, busy]),
   });

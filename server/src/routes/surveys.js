@@ -12,34 +12,22 @@ import { need, hash, newToken } from '../auth.js';
 import { config } from '../config.js';
 import { listOps } from '../changes.js';
 import { HttpError, alive } from '../tree.js';
+import { checkRate, badLink } from '../limit.js';
 import { MAX_FILE, mediaPath } from './media.js';
 import { SURVEY_DAYS, surveyPath, surveyStatus, UNDONE, loadSurvey } from '../surveys.js';
 import { cleanAnswers, MAX_PHOTOS } from '../../../shared/survey.js';
 
 const IMAGES = ['image/jpeg', 'image/png', 'image/webp'];
-const WINDOW = 10 * 60 * 1000;
 const MAX_ANSWERS = 200 * 1024; // ответы целиком, в байтах JSON
 const text = (v, n) => String(v ?? '').trim().slice(0, n);
 
-// Частота с одного адреса: всего запросов и неверных ссылок (перебор токенов).
-const hits = new Map();
-function tooMany(key, limit) {
-  const now = Date.now();
-  const a = (hits.get(key) || []).filter((t) => now - t < WINDOW);
-  a.push(now);
-  hits.set(key, a);
-  if (hits.size > 10000) for (const [k, v] of hits) if (now - v.at(-1) > WINDOW) hits.delete(k);
-  return a.length > limit;
-}
-const failed = (ip) => (hits.get(`bad:${ip}`) || []).filter((t) => Date.now() - t < WINDOW).length;
-
 // Анкета по токену из заголовка. write — для правки: после отправки только чтение.
 async function bySurveyToken(req, { write = false } = {}) {
-  if (failed(req.ip) >= 20 || tooMany(`all:${req.ip}`, 600)) throw new HttpError(429, 'Слишком много попыток, подождите 10 минут');
+  checkRate('survey', req.ip);
   const token = String(req.headers['x-survey'] || '');
   const s = token.length >= 20 && token.length <= 100 ? (await q('select * from surveys where token_hash = $1', [hash(token)]))[0] : null;
   if (!s) {
-    tooMany(`bad:${req.ip}`, Infinity);
+    badLink('survey', req.ip);
     throw new HttpError(404, 'Ссылка на анкету недействительна. Попросите новую у того, кто её прислал.');
   }
   if (s.revoked_at) throw new HttpError(410, 'Эту анкету отозвали. Если нужно, попросите новую ссылку.');
