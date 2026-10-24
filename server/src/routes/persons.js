@@ -1,5 +1,5 @@
 import { q, tx } from '../db.js';
-import { need } from '../auth.js';
+import { need, meOf } from '../auth.js';
 import { logChange, listOps, countNew, canResearch } from '../changes.js';
 import { revertOp } from '../revert.js';
 import { HttpError, ownerPerson, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
@@ -50,7 +50,7 @@ export default async function personRoutes(app) {
       settings: Object.fromEntries(settings.map((s) => [s.key, s.value])),
       // Справочник мест: в нём нет данных людей, гостю тоже.
       places,
-      me: req.user,
+      me: meOf(req.user),
       // С кого начинать дерево тем, кто себя не отметил. Гостю тоже: это лишь id человека, которого он и так видит.
       owner_person_id: owner,
       feed_new: feedNew,

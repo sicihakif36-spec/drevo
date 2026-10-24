@@ -11,6 +11,7 @@ import { HttpError } from './tree.js';
 import { STANDS, RESEARCH } from './changes.js';
 import { isGuest, hideLiving } from './privacy.js';
 import { fullName, isPrivate, upcomingDates, yearsText } from '../../shared/names.js';
+import { deviceName } from '../../shared/device.js';
 
 const TICK = 60000;
 const QUIET = 10; // минут тишины после последней правки автора
@@ -123,6 +124,26 @@ export function digestText(name, sex, entries, ops) {
   return `${name || 'Кто-то'} ${what || `${verb('сделал', sex)} ${plural(ops.length, 'правку', 'правки', 'правок')}`}`;
 }
 
+const ROLE = { owner: 'владелец', editor: 'участник', relative: 'родственник', viewer: 'гость' };
+// «24 октября, 14:05» по Москве.
+const when = (at) => {
+  const t = (o) => new Date(at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', ...o });
+  return `${t({ day: 'numeric', month: 'long' })}, ${t({ hour: '2-digit', minute: '2-digit' })}`;
+};
+
+// Вход для владельца: «Вошла Ольга (участник)», «Android, Chrome · 24 октября, 14:05».
+export function loginText(l) {
+  const by = { F: ['Вошла', 'она'], M: ['Вошёл', 'он'] }[l.sex] || ['Вошёл(а)', 'он(а)'];
+  const line = `${deviceName(l.user_agent)} · ${when(l.at)}`;
+  if (l.kind === 'fails') {
+    return { title: `${l.name}: пять раз неверный пароль`, body: `${line}. Кто-то пробует войти. Вход закрыт на 15 минут.` };
+  }
+  return {
+    title: l.pending ? `${l.name} (${ROLE[l.role]}) открыл${l.sex === 'F' ? 'а' : l.sex === 'M' ? '' : '(а)'} ссылку для входа` : `${by[0]} ${l.name} (${ROLE[l.role]})`,
+    body: `${line}.${l.pending ? ' Войдёт после пароля.' : ''} Если это не ${by[1]} — отключите в «Ещё → Родственники и приглашения».`,
+  };
+}
+
 function dateLine(d) {
   const name = [d.person.given, d.person.surname].filter(Boolean).join(' ') || fullName(d.person);
   if (d.kind === 'birthday') return `Сегодня день рождения: ${name}, ${yearsText(d.years)}`;
@@ -228,6 +249,22 @@ export function pushPlugin(app, opts = {}) {
       url: `/#/surveys/${s.id}`,
       tag: `survey-${s.id}`,
     });
+  }
+
+  // Новый вход или пять неверных паролей — всем владельцам, на все их телефоны; без переключателя: это защита.
+  async function login(id) {
+    const [l] = await q(
+      `select l.at, l.kind, l.role, l.user_agent, u.name, p.sex, coalesce(s.pending, false) as pending
+       from logins l join users u on u.id = l.user_id left join persons p on p.id = u.person_id
+       left join sessions s on s.token_hash = l.session_hash where l.id = $1`,
+      [id],
+    );
+    if (!l || !(await claim('login', id))) return;
+    const subs = await q(
+      `select s.endpoint, s.p256dh, s.auth from push_subs s join users u on u.id = s.user_id join sessions x on x.token_hash = s.session_hash
+       where not u.disabled and u.role = 'owner' and u.password_hash is not null and not x.pending`,
+    );
+    await deliver(subs, { ...loginText(l), url: '/#/family', tag: `login-${id}` });
   }
 
   // Комментарии, о которых не успели сообщить сразу.
@@ -337,6 +374,7 @@ export function pushPlugin(app, opts = {}) {
   app.decorate('push', {
     comment: (id) => later(() => comment(id)),
     survey: (id) => later(() => survey(id)),
+    login: (id) => later(() => login(id)),
     tick,
     settled: () => Promise.all([...pending, busy]),
   });

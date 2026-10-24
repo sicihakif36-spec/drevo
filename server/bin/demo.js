@@ -1,8 +1,10 @@
 // Вымышленная семья для проверки интерфейса и печати. Только для разработки:
 //   node bin/demo.js   (очищает базу!)
+// Печатает ссылку входа владельца Сергея и пароль демо: он же у участницы Елены.
 import { pool, tx } from '../src/db.js';
 import { migrate } from '../src/migrate.js';
 import { createInvite } from '../src/auth.js';
+import { hashPassword } from '../src/password.js';
 import { logChange } from '../src/changes.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -191,6 +193,10 @@ const say = (person, user, body, ago) => pool.query(
 await say(agr, u.id, 'Кто помнит, где стоял её дом в Горках?', '3 days');
 await say(agr, ed.id, 'Дом стоял у колодца, напротив церкви.\nБабушка рассказывала, что окна были синие.', '2 hours');
 await say(petr, ed.id, 'Дедушка Петя всю жизнь хранил письма с фронта от брата Василия. Они у мамы в шкатулке.', '1 hour');
+// Пароль владельца и участницы — как у настоящих: при входе по ссылке его спросят.
+const DEMO_PASSWORD = 'drevo-demo';
+await pool.query('update users set password_hash = $1 where id = any($2)', [await hashPassword(DEMO_PASSWORD), [u.id, ed.id]]);
 const { url } = await createInvite({ role: 'owner', label: 'Сергей', forUser: u.id });
 console.log(url);
+console.log(`Пароль: ${DEMO_PASSWORD}`);
 await pool.end();

@@ -3,6 +3,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildApp } from '../src/app.js';
+import { signIn } from './helpers.js';
 import { migrate } from '../src/migrate.js';
 import { pool, q } from '../src/db.js';
 import { createInvite } from '../src/auth.js';
@@ -257,10 +258,7 @@ let relative;
 let guest;
 
 async function login(role, name) {
-  const { token } = await createInvite({ role });
-  const r = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token, name } });
-  assert.equal(r.statusCode, 200, r.body);
-  return r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  return signIn(app, role, { name });
 }
 const call = (cookie, method, url, payload) => app.inject({ method, url, payload, headers: { ...H, cookie } });
 const json = async (...args) => {

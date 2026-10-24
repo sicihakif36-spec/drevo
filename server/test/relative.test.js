@@ -6,9 +6,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from '../src/app.js';
+import { signIn } from './helpers.js';
 import { migrate } from '../src/migrate.js';
 import { pool } from '../src/db.js';
-import { createInvite } from '../src/auth.js';
 
 let app;
 const H = { 'x-drevo': '1' };
@@ -18,10 +18,7 @@ let guest;
 const src = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
 async function login(role) {
-  const { token } = await createInvite({ role, label: role });
-  const r = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token } });
-  assert.equal(r.statusCode, 200, r.body);
-  return r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  return signIn(app, role, { label: role });
 }
 const call = (cookie, method, url, payload) => app.inject({ method, url, payload, headers: { ...H, cookie } });
 const json = async (...args) => {
@@ -98,6 +95,7 @@ test('родственник ничего не правит: каждый мар
   const survey = ['DELETE /api/survey/photos/:id', 'PATCH /api/survey/photos/:id', 'POST /api/survey/photos', 'POST /api/survey/submit', 'PUT /api/survey'];
   assert.deepEqual(open, [
     'DELETE /api/comments/:id', 'DELETE /api/push/subscription', 'PATCH /api/comments/:id', 'PATCH /api/me', 'PATCH /api/push/settings',
+    'DELETE /api/me/sessions/:id', 'POST /api/me/sessions/others', 'POST /api/me/password', 'POST /api/login/password',
     'POST /api/feed/seen', 'POST /api/invites/redeem', 'POST /api/logout', 'POST /api/persons/:id/comments', 'POST /api/push/test',
     'PUT /api/push/subscription', ...survey,
   ].sort());

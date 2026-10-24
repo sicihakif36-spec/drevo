@@ -7,7 +7,7 @@ import { PassThrough } from 'node:stream';
 import { buildApp } from '../src/app.js';
 import { migrate } from '../src/migrate.js';
 import { pool } from '../src/db.js';
-import { createInvite } from '../src/auth.js';
+import { signIn } from './helpers.js';
 import { renderRospis } from '../src/rospis.js';
 import { buildIndex, surnameGenitive, shortGenitive } from '../../shared/names.js';
 import { buildRospis, parseRospisOptions, rospisText, roman } from '../../shared/rospis.js';
@@ -233,12 +233,7 @@ let app;
 const H = { 'x-drevo': '1' };
 let owner;
 let guest;
-const login = async (role) => {
-  const { token } = await createInvite({ role, label: role });
-  const r = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token } });
-  assert.equal(r.statusCode, 200, r.body);
-  return r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
-};
+const login = (role) => signIn(app, role, { label: role });
 const call = (cookie, url) => app.inject({ method: 'GET', url, headers: { ...H, cookie } });
 const add = async (person, relation) => {
   const r = await app.inject({ method: 'POST', url: '/api/persons', payload: { person, relation }, headers: { ...H, cookie: owner } });

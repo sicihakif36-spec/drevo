@@ -51,13 +51,24 @@ before(async () => {
 });
 after(async () => { await app.close(); await pool.end(); });
 
-test('вошедшие остаются вошедшими, роли на месте', async () => {
+test('вошедшие остаются вошедшими, роли на месте; кто правит — придумывает пароль', async () => {
   assert.equal((await call(cookies.owner, 'GET', '/api/me')).user.role, 'owner');
   assert.equal((await call(cookies.ownerTablet, 'GET', '/api/me')).user.role, 'owner');
   const e = (await call(cookies.editor, 'GET', '/api/me')).user;
   assert.equal(e.name, 'Елена');
   assert.equal(e.role, 'editor');
-  assert.equal((await call(cookies.guest, 'GET', '/api/me')).user.role, 'viewer');
+  assert.equal(e.needs_password, true);
+  const g = (await call(cookies.guest, 'GET', '/api/me')).user;
+  assert.equal(g.role, 'viewer');
+  assert.ok(!g.needs_password);
+  // Без пароля дерево видно, но правка закрыта; придумали пароль — правят, как раньше, и на других устройствах тоже.
+  assert.ok((await call(cookies.editor, 'GET', '/api/tree')).persons.length);
+  const r = await raw(cookies.editor, 'PATCH', `/api/persons/${ids.dad}`, { occupation: 'кузнец' });
+  assert.equal(r.statusCode, 403);
+  assert.equal(r.json().password, true);
+  await call(cookies.editor, 'POST', '/api/me/password', { password: 'пароль-елены' });
+  await call(cookies.owner, 'POST', '/api/me/password', { password: 'пароль-владельца' });
+  assert.equal((await call(cookies.ownerTablet, 'GET', '/api/me')).user.needs_password, undefined);
   // С новым кодом вошедший может подписаться на уведомления: подписка держится за его вход.
   await call(cookies.editor, 'PUT', '/api/push/subscription', { endpoint: 'https://fcm.googleapis.com/fcm/send/elena', keys: { p256dh: 'BKey', auth: 'auth' } });
   await call(cookies.owner, 'PUT', '/api/push/subscription', { endpoint: 'https://fcm.googleapis.com/fcm/send/owner', keys: { p256dh: 'BKey', auth: 'auth' } });
@@ -163,8 +174,12 @@ test('неиспользованные приглашения работают, 
   assert.equal((await call(c, 'GET', '/api/me')).user.role, 'editor');
   assert.equal((await redeem(invites.unusedViewer, 'Соседка')).statusCode, 200);
   assert.equal((await redeem(invites.usedTwice)).statusCode, 400);
-  // Ссылка для входа Елены с нового телефона — в её же учётную запись.
+  // Ссылка для входа Елены с нового телефона — в её же учётную запись; пароль она уже придумала — спросят его.
   const r = await redeem(invites.relink);
   assert.equal(r.statusCode, 200);
-  assert.equal((await call(r.cookies.map((x) => `${x.name}=${x.value}`).join('; '), 'GET', '/api/me')).user.id, ids.elena);
+  assert.equal(r.json().password, true);
+  const elena = r.cookies.map((x) => `${x.name}=${x.value}`).join('; ');
+  assert.equal((await call(elena, 'GET', '/api/me')).pending.name, 'Елена');
+  await call(elena, 'POST', '/api/login/password', { password: 'пароль-елены' });
+  assert.equal((await call(elena, 'GET', '/api/me')).user.id, ids.elena);
 });

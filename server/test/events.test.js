@@ -4,19 +4,16 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { buildApp } from '../src/app.js';
+import { signIn } from './helpers.js';
 import { migrate } from '../src/migrate.js';
 import { pool, q } from '../src/db.js';
-import { createInvite } from '../src/auth.js';
 
 let app;
 let base;
 const H = { 'x-drevo': '1' };
 
 async function login(role) {
-  const { token } = await createInvite({ role, label: role });
-  const r = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token } });
-  assert.equal(r.statusCode, 200, r.body);
-  return r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  return signIn(app, role, { label: role });
 }
 
 async function call(cookie, method, url, payload) {

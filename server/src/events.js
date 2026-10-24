@@ -5,7 +5,7 @@
 import pg from 'pg';
 import { config } from './config.js';
 import { q } from './db.js';
-import { need } from './auth.js';
+import { need, sessionUser, ALIVE } from './auth.js';
 import { isGuest, privateIds } from './privacy.js';
 
 const GLUE = 300; // одно действие — несколько записей журнала: склеиваем в одно событие
@@ -72,11 +72,12 @@ export function eventsPlugin(app, { ping = PING } = {}) {
     const list = [...streams];
     if (!list.length) return;
     const rows = await q(
-      `select s.token_hash, u.id, u.name, u.role, u.person_id from sessions s join users u on u.id = s.user_id
-       where s.token_hash = any($1) and not u.disabled`,
+      `select s.token_hash, u.id, u.name, u.role, u.person_id, u.password_hash is not null as has_password
+       from sessions s join users u on u.id = s.user_id
+       where s.token_hash = any($1) and not u.disabled and not s.pending and ${ALIVE}`,
       [list.map((s) => s.session)],
     );
-    const users = new Map(rows.map(({ token_hash: t, ...u }) => [t, u]));
+    const users = new Map(rows.map((r) => [r.token_hash, sessionUser(r)]));
     for (const s of list) {
       if (users.has(s.session)) s.user = users.get(s.session);
       else {

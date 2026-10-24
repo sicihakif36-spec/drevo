@@ -5,9 +5,9 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { buildApp } from '../src/app.js';
+import { signIn } from './helpers.js';
 import { migrate } from '../src/migrate.js';
 import { pool, q } from '../src/db.js';
-import { createInvite } from '../src/auth.js';
 import { cardData, renderCard, parseCardOptions, MAX_PHOTOS } from '../src/card.js';
 import { renderBlank, paperFields, placesFor } from '../src/blank.js';
 import { STEPS, ROLES } from '../../shared/survey.js';
@@ -19,10 +19,7 @@ let guest;
 let editor;
 
 async function login(role) {
-  const { token } = await createInvite({ role, label: role });
-  const r = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token } });
-  assert.equal(r.statusCode, 200, r.body);
-  return r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  return signIn(app, role, { label: role });
 }
 const call = (cookie, method, url, payload) => app.inject({ method, url, payload, headers: { ...H, cookie } });
 const json = async (...args) => {
