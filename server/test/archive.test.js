@@ -1,6 +1,6 @@
 // Полный архив «Скачать всё»: только владельцу; дерево.ged, index.html, прочтите.txt и файлы по папкам;
 // GEDCOM ссылается ровно на файлы архива; безопасные и неповторяющиеся имена; удалённого нет;
-// большое дерево идёт потоком без роста памяти, а прерванное скачивание не ломает сервер.
+// журнал поиска по людям без удалённого; большое дерево идёт потоком без роста памяти, а прерванное скачивание не ломает сервер.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -204,6 +204,55 @@ test('в архиве: дерево.ged с файлами, index.html, проч�
   assert.match(readme, /5 человек, 7 фото, 1 документ, 1 запись голоса, 1 история/);
   assert.match(readme, /1 файл не нашёлся/);
   assert.match(readme, /index\.html/);
+});
+
+test('журнал поиска в архиве: вопросы и записи по людям, кто и когда, ссылки и шифры; удалённого нет', async () => {
+  const editor = await login('editor');
+  const as = (cookie, method, url, payload) => json(cookie, method, url, payload);
+  const ahmet = await add({ given: 'Ахмет', surname: 'Галиев', sex: 'M', living: false, birth_date: '1901' });
+  const quiet = await add({ given: 'Тихон', surname: 'Безвопросов', sex: 'M', living: false });
+  const gone = await add({ given: 'Ушедший', surname: 'Изархива', sex: 'M', living: false });
+
+  const x = await as(editor, 'POST', `/api/persons/${ahmet.id}/research`, { title: 'Где погиб в 1943' });
+  await as(editor, 'POST', `/api/research/${x.id}/notes`, { result: 'notfound', place: 'Память народа', url: 'https://pamyat-naroda.ru/', body: 'По фамилии не нашли.\nПопробовать Галеев.' });
+  await as(owner, 'POST', `/api/research/${x.id}/notes`, { result: 'found', place: 'ЦАМО', ref: 'ф. 58, оп. 18001, д. 1', body: 'Донесение о потерях.' });
+  const wrong = await as(owner, 'POST', `/api/research/${x.id}/notes`, { body: 'Ошибочная запись' });
+  await as(owner, 'DELETE', `/api/research/notes/${wrong.id}`);
+  await as(owner, 'PATCH', `/api/research/${x.id}`, { status: 'found' });
+  await as(owner, 'POST', `/api/persons/${ahmet.id}/research`, { title: 'Родители Ахмета' });
+  const removed = await as(owner, 'POST', `/api/persons/${ahmet.id}/research`, { title: 'Удалённый вопрос' });
+  await as(owner, 'POST', `/api/research/${removed.id}/notes`, { body: 'Запись удалённого вопроса' });
+  await as(owner, 'DELETE', `/api/research/${removed.id}`);
+  await as(owner, 'POST', `/api/persons/${gone.id}/research`, { title: 'Вопрос об удалённом человеке' });
+  await as(owner, 'DELETE', `/api/persons/${gone.id}`);
+
+  const info = await json(owner, 'GET', '/api/archive');
+  assert.equal(info.research, 2);
+  assert.match(info.summary, /2 вопроса поиска/);
+  const files = await unzip((await call(owner, 'GET', '/api/archive.zip')).rawPayload);
+  const paths = [...files.keys()];
+  const log = paths.filter((p) => p.startsWith('Журнал поиска/'));
+  assert.deepEqual(log, ['Журнал поиска/Галиев Ахмет (1901–…).txt'], 'файл только у человека с вопросами');
+  const t = files.get(log[0]).toString();
+  assert.match(t, /^\ufeffЖурнал поиска: Галиев Ахмет \(1901–…\)\r\n/);
+  assert.match(t, /Вопрос: Где погиб в 1943\r\nСостояние: Нашли\r\nЗаписал\(а\): editor, \d\d\.\d\d\.\d{4}/);
+  assert.match(t, /editor — Не нашли\r\n  Где искали: Память народа\r\n  Ссылка: https:\/\/pamyat-naroda\.ru\/\r\n  По фамилии не нашли\.\r\n  Попробовать Галеев\./);
+  assert.match(t, /owner — Нашли\r\n  Где искали: ЦАМО\r\n  Шифр: ф\. 58, оп\. 18001, д\. 1\r\n  Донесение о потерях\./);
+  assert.match(t, /Вопрос: Родители Ахмета\r\nСостояние: Ищем[^]*Записей пока нет\./);
+  assert.ok(t.indexOf('Где погиб') < t.indexOf('Родители'), 'по порядку');
+  for (const no of ['Ошибочная', 'Удалённый вопрос', 'Запись удалённого', 'удалённом человеке']) assert.ok(!t.includes(no), no);
+
+  const html = files.get('index.html').toString();
+  const card = (name) => html.split('<section').find((c) => c.includes(`<h2>${name}</h2>`));
+  const a = card('Галиев Ахмет');
+  assert.match(a, /<h3>Журнал поиска<\/h3>/);
+  assert.ok(a.includes('Где погиб в 1943') && a.includes('ф. 58, оп. 18001, д. 1') && a.includes('Донесение о потерях.'));
+  assert.ok(a.includes(`href="${encodeURIComponent('Журнал поиска')}/`));
+  assert.ok(!a.includes('Ошибочная') && !a.includes('Удалённый вопрос'));
+  assert.doesNotMatch(html, /(src|href)="(https?:)?\/\//, 'ссылки поиска — текстом, страница без интернета');
+  assert.doesNotMatch(card('Безвопросов Тихон'), /Журнал поиска/);
+  assert.ok(!html.includes('удалённом человеке'));
+  assert.match(files.get('прочтите.txt').toString(), /2 вопроса поиска[^]*Журнал поиска {3}— /);
 });
 
 // Тысячи файлов по 128 КБ — жёсткие ссылки на один файл, чтобы не занимать диск. Архив — около 380 МБ;

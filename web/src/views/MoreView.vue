@@ -105,7 +105,7 @@ async function logout() {
       <div class="sheet-backdrop" @click="archive = null" />
       <div class="sheet" role="dialog" aria-modal="true">
         <h2 style="margin-top:0">Скачать всё</h2>
-        <p class="small">Один архив со всем деревом: люди, фото, документы, истории и записи голоса.
+        <p class="small">Один архив со всем деревом: люди, фото, документы, истории, записи голоса и журнал поиска.
           Это копия на случай, если с сервером что-то случится, и способ перенести дерево в другую программу.</p>
         <p v-if="archive.loading" class="muted">Считаю, сколько весит архив…</p>
         <template v-else>
