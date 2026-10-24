@@ -68,7 +68,7 @@ export const isOwner = () => store.me?.role === 'owner' && !needsPassword();
 
 // Обновления у всех сразу: сервер сообщает о правках (GET /api/events), телефон перечитывает нужное.
 // События: { kind: 'tree' } — дерево изменилось, { kind: 'comments', person_id } — новое в обсуждении
-// (без person_id — неизвестно где, перечитать открытое), { kind: 'asks' } — в вопросах родным.
+// (без person_id — неизвестно где, перечитать открытое), { kind: 'asks' } — в вопросах родным, { kind: 'interviews' } — в интервью.
 const watchers = new Set();
 // Открытый экран подписывается: fn(events) перечитывает своё. Возвращает отписку.
 export function onLive(fn) {
@@ -106,6 +106,7 @@ function listen() {
   source.addEventListener('tree', () => soon({ kind: 'tree' }));
   source.addEventListener('comments', (e) => soon({ kind: 'comments', ...JSON.parse(e.data) }));
   source.addEventListener('asks', () => soon({ kind: 'asks' }));
+  source.addEventListener('interviews', () => soon({ kind: 'interviews' }));
   source.onerror = () => {
     missed = true;
     // Обрыв связи браузер переподключает сам, а после ответа с ошибкой (сервер перезапускается) — бросает.

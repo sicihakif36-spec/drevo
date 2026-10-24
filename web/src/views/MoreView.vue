@@ -90,6 +90,7 @@ async function logout() {
       <router-link v-if="canEdit()" to="/checks"><span class="grow">Проверка дерева<br /><span class="muted small">{{ findings.length ? `вопросов к данным: ${findings.length}` : 'ошибки в датах, дубли, люди без связей' }}</span></span></router-link>
       <router-link v-if="canEdit()" to="/research"><span>Исследование<br /><span class="muted small">поиск предков в архивах, запрос ИИ-помощнику</span></span></router-link>
       <router-link v-if="canEdit()" to="/asks"><span class="grow">Вопросы родным<br /><span class="muted small">кого о чём спросили, ответы — в дерево</span></span><span v-if="store.tree?.asks_waiting" class="count">{{ store.tree.asks_waiting }}</span></router-link>
+      <router-link v-if="canTalk()" to="/interviews"><span class="grow">Интервью<br /><span class="muted small">воспоминания старших голосом, по вопросам</span></span></router-link>
       <router-link v-if="canEdit()" to="/surveys">Анкеты для родственников</router-link>
       <a v-if="isOwner()" href="#" @click.prevent="openArchive">Скачать всё: дерево, фото, документы</a>
       <a href="/api/export.ged" download><span>Скачать дерево для другой программы<br /><span class="muted small">файл GEDCOM</span></span></a>

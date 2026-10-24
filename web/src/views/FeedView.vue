@@ -1,15 +1,34 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { store, canEdit, onLive } from '../store.js';
+import { store, canEdit, canTalk, onLive, toast } from '../store.js';
 import { api, thumbUrl } from '../api.js';
 import { namer, opLines, moreText } from '../history.js';
 import { fullName, missingFields, upcomingDates, yearsText } from '@shared/names.js';
 import { findings } from '../checks.js';
 import Finding from '../components/Finding.vue';
 import { when as day } from '../asks.js';
+import { ask } from '../components/ask.js';
 
 const items = ref([]);
 const asked = ref([]); // «Вас спросили»: вопросы мне без ответа
+// Свои интервью, брошенные больше суток назад: сами не удаляются — спрашиваем.
+const left = ref([]);
+const DAY = 24 * 3600 * 1000;
+async function loadLeft() {
+  if (!canTalk()) return;
+  const list = await api('GET', '/api/interviews').catch(() => []);
+  left.value = list.filter((x) => !x.saved && x.created_by === store.me?.id && Date.now() - new Date(x.updated_at) > DAY);
+}
+loadLeft();
+const leftName = (x) => {
+  const p = store.idx?.persons.get(x.person_id);
+  return p ? [p.given, p.patronymic].filter(Boolean).join(' ') || fullName(p) : x.about;
+};
+async function dropLeft(x) {
+  if (!await ask({ text: 'Удалить незаконченное интервью?', note: `${leftName(x)}: ${x.answered} из ${x.total} ответов. Записанные ответы пропадут.`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
+  await api('DELETE', `/api/interviews/${x.id}`).then(() => toast('Интервью удалено'), (e) => toast(e.message));
+  await loadLeft();
+}
 const open = ref(new Set()); // раскрытые «Ещё N изменений»
 const loaded = ref(false);
 const error = ref('');
@@ -64,6 +83,14 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 <template>
   <div class="page">
     <h1>Лента</h1>
+
+    <div v-for="x in left" :key="x.id" class="banner leftiv">
+      <div>У вас есть незаконченное интервью — <b>{{ leftName(x) }}</b>, {{ x.answered }} из {{ x.total }} ответов.</div>
+      <div class="row">
+        <router-link class="btn primary grow" :to="`/interview/${x.id}`">Продолжить</router-link>
+        <button class="ghost danger" @click="dropLeft(x)">Удалить</button>
+      </div>
+    </div>
 
     <template v-if="asked.length">
       <h2>Вас спросили</h2>
@@ -164,6 +191,7 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 </template>
 
 <style scoped>
+.leftiv { display: grid; gap: 0.444rem; font-size: 1rem; }
 .date { color: var(--muted); }
 .date.today { color: var(--accent-text); font-weight: 700; }
 .name { overflow-wrap: anywhere; }

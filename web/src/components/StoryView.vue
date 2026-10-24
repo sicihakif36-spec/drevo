@@ -3,13 +3,16 @@ import { computed, reactive, ref } from 'vue';
 import { store, canEdit, toast } from '../store.js';
 import { api, upload, photoUrl } from '../api.js';
 import { fullName, lifespan, namePrepositional, nameGenitive, personHas } from '@shared/names.js';
+import { ivTitle } from '@shared/interview.js';
 import { ask } from './ask.js';
 import AudioPlayer from './AudioPlayer.vue';
 import VoiceRecorder from './VoiceRecorder.vue';
 
 // Открытая история поверх карточки: чтение, правка, «О ком» и удаление. story — null для новой истории.
-const props = defineProps({ story: Object, person: Object });
-const emit = defineEmits(['close', 'saved', 'removed']);
+// chain — истории того же интервью по порядку: «Предыдущий ответ», «Следующий ответ».
+const props = defineProps({ story: Object, person: Object, chain: { type: Array, default: () => [] } });
+const emit = defineEmits(['close', 'saved', 'removed', 'go']);
+const place = computed(() => props.chain.indexOf(props.story?.id));
 
 const mode = ref(props.story ? 'view' : 'edit'); // view, edit, link
 const form = reactive({ title: props.story?.title || '', date: props.story?.date || '', body: props.story?.body || '' });
@@ -140,10 +143,15 @@ async function remove() {
       </form>
 
       <template v-else>
+        <div v-if="s.interview_id" class="ivhead small">{{ ivTitle(s.interview_at) }} · ответ {{ s.interview_no }}{{ chain.length ? ` из ${chain.length}` : '' }}</div>
         <h1>{{ s.title }}</h1>
         <div class="muted">{{ [s.date, `записано ${when(s.created_at)}`, s.user_name].filter(Boolean).join(' · ') }}</div>
         <div v-if="s.audio_id" class="card voice"><AudioPlayer :src="photoUrl(s.audio_id)" :duration="s.audio_duration" /></div>
         <div v-if="s.body" class="body">{{ s.body }}</div>
+        <div v-if="chain.length > 1 && place >= 0" class="row chain">
+          <button class="grow" :disabled="place === 0" @click="emit('go', chain[place - 1])">‹ Предыдущий</button>
+          <button class="primary grow" :disabled="place === chain.length - 1" @click="emit('go', chain[place + 1])">Следующий ответ ›</button>
+        </div>
 
         <h2>О ком</h2>
         <div class="list">
@@ -187,6 +195,8 @@ async function remove() {
 h1 { overflow-wrap: anywhere; }
 .or { text-align: center; color: var(--muted); font-weight: 400; margin: 1.111rem 0 0.25rem; }
 .voice { margin-top: 0.778rem; }
+.ivhead { font-weight: 700; color: var(--accent-text); margin-bottom: 0.222rem; }
+.chain { margin-top: 1rem; }
 .body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; margin-top: 0.889rem; }
 .who { display: flex; align-items: center; gap: 0.667rem; color: inherit; text-decoration: none; }
 .found { margin-top: 0.444rem; }

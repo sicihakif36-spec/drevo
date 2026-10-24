@@ -259,6 +259,15 @@ function researchLine(e, name) {
   return null;
 }
 
+// Интервью, сохранённое в истории, — одной строкой: «сохранено интервью у Клавдии Николаевны — 12 историй, 2 фото».
+// Сами истории и фото — в том же действии, по отдельности их не показываем. Гостю дата не приходит.
+function interviewLine(e, name) {
+  const x = e.after || e.before || {};
+  const what = [x.stories && count(x.stories, 'история', 'истории', 'историй'), x.photos && `фото: ${x.photos}`].filter(Boolean).join(', ');
+  const title = x.title ? ` («${x.title}»)` : '';
+  return `${e.action === 'save' ? 'интервью сохранено в истории' : 'отменено сохранение интервью'}${at(e.persons, name)}${title}${what ? ` — ${what}` : ''}`;
+}
+
 // Загрузка из файла — одной строкой-сводкой: «загрузка из файла «семья.ged» — 186 человек, 52 семьи, 40 событий».
 // Подробности — только у небольших загрузок: тысячи строк никто читать не будет.
 export function importSummary(x, undo = false) {
@@ -277,6 +286,8 @@ const SMALL_IMPORT = 40;
 
 // Строки действия, главная — первой. Служебные записи (пустая семья создана или убрана) не показываем.
 export function opLines(op, name) {
+  const iv = op.entries.find((e) => e.entity === 'interview');
+  if (iv) return [interviewLine(iv, name)];
   const imp = op.entries.find((e) => e.entity === 'import');
   if (imp) {
     const head = importSummary(imp.after || imp.before, imp.action === 'revert');
@@ -315,7 +326,7 @@ const WAS = {
 };
 export function opWas(op) {
   // Загрузка из файла показывается сводкой — без «было».
-  if (op.entries.some((e) => e.entity === 'import')) return [];
+  if (op.entries.some((e) => e.entity === 'import' || e.entity === 'interview')) return [];
   // У правки места — только само место: в карточках было его прежнее название.
   const withPlace = op.entries.some((e) => e.entity === 'place');
   return op.entries

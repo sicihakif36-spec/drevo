@@ -28,6 +28,9 @@ import PasswordView from './views/PasswordView.vue';
 import AsksView from './views/AsksView.vue';
 import AskView from './views/AskView.vue';
 import AskFillView from './views/AskFillView.vue';
+import InterviewView from './views/InterviewView.vue';
+import InterviewsView from './views/InterviewsView.vue';
+import InterviewFillView from './views/InterviewFillView.vue';
 import { store } from './store.js';
 
 const router = createRouter({
@@ -54,12 +57,16 @@ const router = createRouter({
     { path: '/devices', component: DevicesView },
     { path: '/asks', component: AsksView },
     { path: '/asks/:id', component: AskView, props: true },
+    { path: '/interviews', component: InterviewsView },
+    { path: '/interview/:id', component: InterviewView, props: (r) => ({ id: r.params.id, person: r.query.person }) },
     { path: '/password', component: PasswordView, props: () => ({ mode: store.me?.has_password ? 'change' : 'create' }) },
     { path: '/invite/:token', component: InviteView, props: true, meta: { public: true } },
     // Анкета для родственника: без входа и без дерева.
     { path: '/survey/:token', component: SurveyFillView, props: true, meta: { public: true } },
     // Вопрос родным по ссылке: тоже без входа и без дерева.
     { path: '/ask/:token', component: AskFillView, props: true, meta: { public: true } },
+    // Интервью по ссылке: только вопросы, без входа и без дерева.
+    { path: '/iv/:token', component: InterviewFillView, props: true, meta: { public: true } },
   ],
   scrollBehavior: (to, from) => (to.path === from.path ? false : { top: 0 }),
 });
