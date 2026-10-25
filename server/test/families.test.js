@@ -310,6 +310,51 @@ test('«Скачать всё» отмечается в своей семье', 
   assert.equal((await core('select count(*)::int as n from public.archive_downloads'))[0].n, 0);
 });
 
+test('владелец новой семьи зовёт своих; «Семьи на сервере» — только владельцам главной; о госте знает только владелец', async () => {
+  const sub = (phone, name) => phone.call('PUT', '/api/push/subscription', { endpoint: `https://fcm.googleapis.com/fcm/send/${name}`, keys: { p256dh: 'BKey', auth: 'auth' } });
+  // Ольга — владелец своей семьи: сама зовёт участника.
+  const ildar = new Phone();
+  const inv = await olga.call('POST', '/api/invites', { role: 'editor', label: 'Ильдар' });
+  await ildar.call('POST', '/api/invites/redeem', { token: inv.url.split('/').pop(), name: 'Ильдар' });
+  await ildar.call('POST', '/api/me/password', { password: PASSWORD });
+  assert.equal((await ildar.call('GET', '/api/me')).tenant.id, fam.id);
+  await sub(ildar, 'ildar');
+
+  // «Семьи на сервере» — ни участнику, ни родственнику, ни гостю главной семьи, ни владельцу или участнику другой.
+  const others = [await join(new Phone(), main, 'editor', 'Участник'), await join(new Phone(), main, 'relative', 'Родственник'),
+    await join(new Phone(), main, 'viewer', 'Гость главной'), olga, ildar];
+  for (const p of others) {
+    for (const [method, url] of [['GET', '/api/tenants'], ['GET', '/api/tenant-links'], ['POST', '/api/tenant-links'], ['PATCH', `/api/tenants/${fam.id}`]]) {
+      assert.equal((await p.raw(method, url, {})).statusCode, 403, `${method} ${url}`);
+    }
+  }
+
+  // Гостя зовёт только владелец; о входе гостя узнаёт только владелец.
+  assert.equal((await ildar.raw('POST', '/api/invites', { role: 'viewer', label: 'Сосед' })).statusCode, 403);
+  await settle();
+  sent = [];
+  const g = await olga.call('POST', '/api/invites', { role: 'viewer', label: 'Сосед' });
+  const guest = new Phone();
+  await guest.call('POST', '/api/invites/redeem', { token: g.url.split('/').pop(), name: 'Сосед' });
+  await settle();
+  assert.deepEqual(sent.filter((s) => s.msg.tag.startsWith('login-')).map((s) => [s.to, s.msg.title]), [['olga', 'Вошёл(а) Сосед (гость)']]);
+  assert.ok((await olga.call('GET', '/api/logins')).some((l) => l.name === 'Сосед' && l.role === 'viewer'));
+  for (const url of ['/api/logins', '/api/users']) assert.equal((await ildar.raw('GET', url)).statusCode, 403);
+  // Остальным гость не виден нигде: ни в ленте, ни среди тех, кого можно спросить.
+  assert.ok(!(await ildar.raw('GET', '/api/feed')).body.includes('Сосед'));
+  assert.ok(!(await ildar.call('GET', '/api/asks/people')).some((u) => u.name === 'Сосед'));
+  assert.equal((await guest.raw('POST', `/api/persons/${olgaPerson}/comments`, { body: 'Привет' })).statusCode, 403);
+
+  // Хозяину сервера в «Семьях на сервере» визиты гостя не видны: ни в «пользуются», ни в «заходили».
+  await core(`update ${fam.schema}.sessions s set last_seen_at = '2026-01-01T12:00:00Z' from ${fam.schema}.users u where u.id = s.user_id and u.role <> 'viewer'`);
+  await core(`update ${fam.schema}.sessions s set last_seen_at = now() from ${fam.schema}.users u where u.id = s.user_id and u.role = 'viewer'`);
+  const [n] = await core(`select count(*) filter (where role <> 'viewer')::int as users, count(*)::int as everyone from ${fam.schema}.users where not disabled`);
+  const f = (await sergey.call('GET', '/api/tenants')).list.find((x) => x.id === fam.id);
+  assert.ok(n.users < n.everyone);
+  assert.equal(f.users, n.users);
+  assert.equal(new Date(f.last_seen_at).toISOString(), '2026-01-01T12:00:00.000Z');
+});
+
 test('«Семьи на сервере»: список без содержимого деревьев, предел места, закрыть вход', async () => {
   assert.equal((await olga.raw('GET', '/api/tenants')).statusCode, 403);
   const { list, max, count } = await sergey.call('GET', '/api/tenants');

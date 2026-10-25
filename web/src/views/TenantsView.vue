@@ -80,7 +80,8 @@ const day = (d) => new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', mon
   <div class="page">
     <h1>Семьи на сервере</h1>
     <p class="muted small">Каждая семья ведёт здесь своё дерево и зовёт туда своих родных. Вы видите только название,
-      владельцев и сколько занято места — сами деревья видны только их семьям.</p>
+      владельцев и сколько занято места — сами деревья видны только их семьям. Гостей других семей здесь не видно:
+      что гость заходил, знает только владелец его семьи.</p>
 
     <div class="card">
       <b>Завести дерево другой семье</b>
@@ -121,7 +122,7 @@ const day = (d) => new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', mon
       <div v-for="t in data.list" :key="t.id" class="card fam" :class="{ closed: t.closed_at }">
         <div><b>«{{ t.title }}»</b><span v-if="t.main" class="muted small"> · ваша, главная</span></div>
         <div class="small">{{ owners(t) }}</div>
-        <div class="muted small">людей в дереве: {{ t.persons }} · входят: {{ t.users }} · заходили: {{ t.last_seen_at ? whenText(t.last_seen_at) : 'ещё нет' }}</div>
+        <div class="muted small">людей в дереве: {{ t.persons }} · пользуются: {{ t.users }} · заходили: {{ t.last_seen_at ? whenText(t.last_seen_at) : 'ещё нет' }}</div>
         <template v-if="!t.main">
           <div class="small">место: {{ sizeText(t.used) }}{{ t.quota ? ` из ${sizeText(t.quota)}` : '' }}</div>
           <div v-if="t.quota" class="bar" :class="{ over: t.used >= t.quota * 0.9 }"><i :style="{ width: share100(t) + '%' }" /></div>
