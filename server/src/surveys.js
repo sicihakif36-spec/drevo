@@ -4,7 +4,7 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { config } from './config.js';
+import { dataDir } from './tenants.js';
 import { logChange } from './changes.js';
 import { HttpError, PERSON_FIELDS, alive, link, addChild } from './tree.js';
 import { createStory } from './stories.js';
@@ -14,7 +14,7 @@ import { cleanAnswers, surveyPeople, TEXT_FIELDS, ROLES } from '../../shared/sur
 import { fullName } from '../../shared/names.js';
 
 export const SURVEY_DAYS = 30;
-export const surveyPath = (id, thumb = false) => path.join(config.dataDir, 'survey', thumb ? `${id}.thumb` : id);
+export const surveyPath = (id, thumb = false) => path.join(dataDir(), 'survey', thumb ? `${id}.thumb` : id);
 
 // Состояние анкеты для списка: отправлена, заполняется, заполнена, загружена, отозвана, истекла.
 // undone — загрузку отменили (и отмену не вернули): анкету можно загрузить снова.

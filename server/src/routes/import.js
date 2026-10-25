@@ -9,7 +9,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { q, tx } from '../db.js';
 import { need } from '../auth.js';
-import { config } from '../config.js';
+import { dataDir } from '../tenants.js';
 import { HttpError } from '../tree.js';
 import { parseGedcom, MAX_BYTES } from '../gedcom.js';
 import { previewGedcom, loadGedcom } from '../gedimport.js';
@@ -17,7 +17,7 @@ import { createNote } from '../research.js';
 
 const DAY = 86400000;
 const loading = new Set();
-const dir = () => path.join(config.dataDir, 'import');
+const dir = () => path.join(dataDir(), 'import');
 const file = (id) => path.join(dir(), `${id}.ged`);
 const meta = (id) => path.join(dir(), `${id}.json`);
 
@@ -58,8 +58,6 @@ const count = (n, one, few, many) => {
 };
 
 export default async function importRoutes(app) {
-  await fsp.mkdir(dir(), { recursive: true });
-
   app.post('/api/import', { preHandler: need('editor') }, async (req) => {
     const part = await req.file({ limits: { fileSize: MAX_BYTES } });
     if (!part) throw new HttpError(400, 'Выберите файл');

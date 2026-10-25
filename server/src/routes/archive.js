@@ -2,6 +2,7 @@
 // потом скачивает. В журнал правок не пишется (это не правка дерева), в журнал сервера — кто и когда скачал.
 // Скачивание, дошедшее до конца, отмечается в archive_downloads: от него считается напоминание раз в месяц (src/push.js).
 import { PassThrough } from 'node:stream';
+import { AsyncResource } from 'node:async_hooks';
 import { q } from '../db.js';
 import { need } from '../auth.js';
 import { archivePlan, countsText, planSize, writeArchive, lastDownload } from '../archive.js';
@@ -34,12 +35,13 @@ export default async function archiveRoutes(app) {
     });
     const seconds = () => Math.round((Date.now() - started) / 1000);
     let done = false;
-    reply.raw.once('finish', () => {
+    // Ответ дошёл — отметка в той же семье: обработчики событий потока зовутся вне запроса, семью передаём явно.
+    reply.raw.once('finish', AsyncResource.bind(() => {
       done = true;
       req.log.info({ ...who, bytes: size, seconds: seconds() }, 'полный архив скачан');
       q('insert into archive_downloads (user_id, bytes) values ($1, $2)', [req.user.id, size])
         .catch((err) => req.log.error({ err, ...who }, 'полный архив: не удалось отметить скачивание'));
-    });
+    }));
     reply.raw.once('close', () => {
       if (done) return;
       abort();

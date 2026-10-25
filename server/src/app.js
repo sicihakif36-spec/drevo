@@ -5,6 +5,7 @@ import multipart from '@fastify/multipart';
 import staticFiles from '@fastify/static';
 import { config } from './config.js';
 import { authPlugin } from './auth.js';
+import { tenantPlugin } from './tenants.js';
 import { pool } from './db.js';
 import personRoutes from './routes/persons.js';
 import userRoutes from './routes/users.js';
@@ -26,6 +27,7 @@ import researchRoutes from './routes/research.js';
 import checkRoutes from './routes/checks.js';
 import askRoutes from './routes/asks.js';
 import interviewRoutes from './routes/interviews.js';
+import tenantRoutes from './routes/tenants.js';
 import { closePool } from './pdfpool.js';
 import { eventsPlugin } from './events.js';
 import { pushPlugin } from './push.js';
@@ -41,6 +43,8 @@ export async function buildApp(opts = {}) {
   });
   await app.register(cookie);
   await app.register(multipart, { limits: { fileSize: MAX_FILE, files: 2 } });
+  // Сначала — какая семья у запроса (src/tenants.js), потом — кто вошёл в эту семью.
+  tenantPlugin(app);
   authPlugin(app);
   // До маршрутов: обсуждение сообщает о новых комментариях через app.push.
   pushPlugin(app, opts.push);
@@ -64,6 +68,7 @@ export async function buildApp(opts = {}) {
   await app.register(checkRoutes);
   await app.register(askRoutes);
   await app.register(interviewRoutes);
+  await app.register(tenantRoutes);
   app.addHook('onClose', closePool);
   eventsPlugin(app, { ping: opts.eventsPing });
 

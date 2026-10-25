@@ -61,7 +61,7 @@ test('ключ, подписка и настройки', async () => {
   assert.match(key, /^[A-Za-z0-9_-]{80,}$/);
   assert.equal((await call(owner, 'GET', '/api/push/key')).key, key, 'ключ один и тот же');
   // Закрытый ключ не уходит вместе с настройками дерева.
-  const [{ private_key: secret }] = await q('select private_key from push_keys');
+  const [{ private_key: secret }] = await q('select private_key from core.push_keys');
   assert.ok(!(await raw(owner, 'GET', '/api/tree')).body.includes(secret));
   assert.ok(!(await raw(owner, 'GET', '/api/push/key')).body.includes(secret));
 

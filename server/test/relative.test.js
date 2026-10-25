@@ -108,6 +108,8 @@ test('родственник ничего не правит: каждый мар
     'DELETE /api/me/sessions/:id', 'POST /api/me/sessions/others', 'POST /api/me/password', 'POST /api/login/password',
     'POST /api/feed/seen', 'POST /api/invites/redeem', 'POST /api/logout', 'POST /api/persons/:id/comments', 'POST /api/push/test',
     'PUT /api/push/subscription', ...survey,
+    // Семьи на сервере: перейти в свою другую семью и завести дерево по ссылке — не правка этого дерева (test/families.test.js).
+    'POST /api/tenants/switch', 'POST /api/tenant-links/check', 'POST /api/tenant-links/redeem',
   ].sort());
   // Без токена анкеты (вопроса) и не адресату они ничего не делают.
   for (const r of routes.filter((x) => survey.includes(`${x.method} ${x.url}`))) {

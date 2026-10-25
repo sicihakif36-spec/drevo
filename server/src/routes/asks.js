@@ -8,12 +8,12 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { q, tx } from '../db.js';
 import { need, hash, newToken } from '../auth.js';
 import { config } from '../config.js';
 import { HttpError } from '../tree.js';
+import { checkSpace } from '../tenants.js';
 import { checkRate, badLink } from '../limit.js';
 import { toMp3 } from '../audio.js';
 import { MAX_FILE, mediaPath, audioMime, parseRange } from './media.js';
@@ -93,6 +93,7 @@ async function mine(req) {
 // Фото (с уменьшенной копией thumb от телефона) или запись голоса — по одному файлу за раз.
 async function receive(req, a) {
   writable(a);
+  await checkSpace();
   const id = crypto.randomUUID();
   const upload = `${askPath(id)}.upload`;
   let file = null;
@@ -204,8 +205,6 @@ async function forEditor(db, id) {
 }
 
 export default async function askRoutes(app) {
-  await fsp.mkdir(path.join(config.dataDir, 'ask'), { recursive: true });
-
   // ---------- По ссылке, без входа ----------
 
   app.get('/api/ask', async (req) => {

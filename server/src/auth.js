@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import { q } from './db.js';
 import { config } from './config.js';
+import { TENANT_COOKIE, currentTenant, sessionCookie, tenants, withTenant } from './tenants.js';
 
-export const COOKIE = 'drevo_s';
 // Родственник видит всё, как участник, но дерево не правит: need('editor') его не пускает.
 const RANK = { viewer: 1, relative: 2, editor: 3, owner: 4 };
 const YEAR = 60 * 60 * 24 * 365;
@@ -25,19 +25,25 @@ export async function createInvite({ role, label = '', createdBy = null, forUser
   return { token, url: `${config.publicUrl}/#/invite/${token}` };
 }
 
-const cookieOptions = () => ({ path: '/', httpOnly: true, sameSite: 'strict', secure: config.secureCookies });
+export const cookieOptions = () => ({ path: '/', httpOnly: true, sameSite: 'strict', secure: config.secureCookies });
 
-// pending — сессия ждёт пароль (вход по ссылке на новом телефоне). Возвращает хеш ключа сессии.
-// db — транзакция, если вход идёт внутри неё.
+// Телефон теперь в семье t: следующие запросы — к ней.
+export const chooseTenant = (reply, t) => reply.setCookie(TENANT_COOKIE, t.id, { ...cookieOptions(), maxAge: YEAR });
+
+// Вход в семью запроса. pending — сессия ждёт пароль (вход по ссылке на новом телефоне). Возвращает хеш ключа сессии.
+// db — транзакция, если вход идёт внутри неё. Телефон переключается на эту семью; входы в другие семьи остаются.
 export async function startSession(reply, userId, { userAgent = '', ip = '', pending = false, db = { q } } = {}) {
   const token = newToken();
   await db.q('insert into sessions (token_hash, user_id, user_agent, ip, pending) values ($1, $2, $3, $4, $5)',
     [hash(token), userId, String(userAgent).slice(0, 300), String(ip).slice(0, 64), pending]);
-  reply.setCookie(COOKIE, token, { ...cookieOptions(), maxAge: YEAR });
+  const t = currentTenant();
+  reply.setCookie(sessionCookie(t), token, { ...cookieOptions(), maxAge: YEAR });
+  chooseTenant(reply, t);
   return hash(token);
 }
 
-export const endSession = (reply) => reply.clearCookie(COOKIE, cookieOptions());
+// Выход из семьи запроса (только на этом телефоне).
+export const endSession = (reply) => reply.clearCookie(sessionCookie(currentTenant()), cookieOptions());
 
 // Кто вошёл, как его видят маршруты. Участник или владелец без пароля пока только смотрит, как родственник:
 // role — то, что ему можно сейчас, real_role — его права после того, как придумает пароль.
@@ -53,11 +59,15 @@ export const meOf = (user) => user && (({ real_role: real, ...u }) => ({ ...u, r
 // Сессией не пользовались год — она больше не действует (и удаляется при уборке).
 export const ALIVE = "s.last_seen_at > now() - interval '1 year'";
 
-// Уборка раз в час: старые сессии, брошенные на вводе пароля, входы старше 90 дней, старые попытки пароля.
+// Уборка раз в час в каждой семье: старые сессии, брошенные на вводе пароля, входы старше 90 дней, старые попытки пароля.
 export async function cleanup() {
-  await q("delete from sessions s where not (s.last_seen_at > now() - interval '1 year') or (s.pending and s.created_at < now() - interval '7 days')");
-  await q("delete from logins where at < now() - interval '90 days'");
-  await q("delete from password_tries where at < now() - interval '1 day'");
+  for (const t of tenants()) {
+    await withTenant(t, async () => {
+      await q("delete from sessions s where not (s.last_seen_at > now() - interval '1 year') or (s.pending and s.created_at < now() - interval '7 days')");
+      await q("delete from logins where at < now() - interval '90 days'");
+      await q("delete from password_tries where at < now() - interval '1 day'");
+    });
+  }
 }
 
 export function authPlugin(app) {
@@ -65,7 +75,8 @@ export function authPlugin(app) {
   app.decorateRequest('sessionHash', null);
   app.decorateRequest('pending', null);
   app.addHook('onRequest', async (req, reply) => {
-    const token = req.cookies[COOKIE];
+    // Вход в семью, которую владелец сервера закрыл, не действует.
+    const token = req.tenant.closed_at ? null : req.cookies[sessionCookie(req.tenant)];
     if (token) {
       const h = hash(token);
       const [row] = await q(
@@ -85,7 +96,12 @@ export function authPlugin(app) {
         req.sessionId = row.session_id;
         req.sessionHash = h;
         // Кто заходит хотя бы раз в год, не выходит сам собой: срок ключа продлевается раз в день.
-        if (row.stale) reply.setCookie(COOKIE, token, { ...cookieOptions(), maxAge: YEAR });
+        if (row.stale) {
+          reply.setCookie(sessionCookie(req.tenant), token, { ...cookieOptions(), maxAge: YEAR });
+          // И выбор семьи на телефоне — тот же, что сейчас.
+          const chosen = req.cookies[TENANT_COOKIE];
+          if (chosen) reply.setCookie(TENANT_COOKIE, chosen, { ...cookieOptions(), maxAge: YEAR });
+        }
       }
     }
     // Защита от подделки запросов: изменения только из нашего приложения.
