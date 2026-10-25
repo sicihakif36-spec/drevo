@@ -1,11 +1,13 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { store, isOwner, canTalk, canEdit, loadTree, toast, forget } from '../store.js';
 import { api } from '../api.js';
 import { fullName } from '@shared/names.js';
 import { disablePush } from '../push.js';
 import { ask, askText } from '../components/ask.js';
 import { findings } from '../checks.js';
+import { lastText, KEEP_HINT } from '@shared/archive.js';
 
 const ROLE = { owner: 'владелец', editor: 'участник', relative: 'родственник: видит всё, не правит', viewer: 'гость (только просмотр)' };
 const title = ref(store.title);
@@ -13,8 +15,11 @@ const installEvent = ref(null);
 const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 
+const route = useRoute();
 onMounted(() => {
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent.value = e; });
+  // Из плашки в ленте и из уведомления: «Ещё → Скачать всё» сразу открыто.
+  if (route.query.archive && isOwner()) openArchive();
 });
 
 async function saveTitle() {
@@ -30,6 +35,29 @@ async function rename() {
 }
 // Полный архив: сначала — сколько весит, потом скачивание обычной ссылкой (браузер сам покажет ход).
 const archive = ref(null);
+// Пока идёт скачивание, раз в 5 секунд спрашиваем, не дошло ли оно до конца: тогда «в последний раз» обновится.
+let watch = null;
+const stopWatch = () => { clearInterval(watch); watch = null; };
+onUnmounted(stopWatch);
+function startDownload() {
+  const a = archive.value;
+  a.started = true;
+  const was = a.last?.at;
+  const until = Date.now() + 30 * 60000;
+  stopWatch();
+  watch = setInterval(async () => {
+    if (!archive.value || Date.now() > until) return stopWatch();
+    const { last } = await api('GET', '/api/archive/last').catch(() => ({}));
+    if (last && last.at !== was && archive.value) {
+      archive.value = { ...archive.value, last, done: true };
+      stopWatch();
+    }
+  }, 5000);
+}
+function closeArchive() {
+  archive.value = null;
+  stopWatch();
+}
 async function openArchive() {
   archive.value = { loading: true };
   try {
@@ -118,10 +146,11 @@ async function logout() {
     <div style="margin-top:0.667rem"><button class="danger block" @click="logout">Выйти на этом устройстве</button></div>
 
     <template v-if="archive">
-      <div class="sheet-backdrop" @click="archive = null" />
+      <div class="sheet-backdrop" @click="closeArchive" />
       <div class="sheet" role="dialog" aria-modal="true">
         <h2 style="margin-top:0">Скачать всё</h2>
-        <p class="small">Один архив со всем деревом: люди, фото, документы, истории, записи голоса и журнал поиска.
+        <p class="small">Один архив со всем деревом: люди, фото, документы, истории, записи голоса, журнал поиска,
+          вопросы родным и черновики интервью.
           Это копия на случай, если с сервером что-то случится, и способ перенести дерево в другую программу.</p>
         <p v-if="archive.loading" class="muted">Считаю, сколько весит архив…</p>
         <template v-else>
@@ -130,10 +159,16 @@ async function logout() {
           <p v-if="archive.bytes > BIG" class="small"><b>Архив большой.</b> Лучше скачивать с компьютера или по Wi-Fi,
             а на телефоне проверьте, хватит ли места.</p>
           <p class="small muted">После скачивания распакуйте архив и откройте файл index.html — дерево откроется в браузере без интернета.</p>
-          <a class="btn primary" style="width:100%;box-sizing:border-box" href="/api/archive.zip" download @click="archive.started = true">Скачать архив</a>
-          <p v-if="archive.started" class="small">Скачивание началось. Ход виден в браузере, в списке загрузок.</p>
+          <p class="last" :class="{ done: archive.done }">
+            <template v-if="archive.done">Архив скачан. Теперь сохраните его у себя.</template>
+            <template v-else-if="archive.last">В последний раз {{ archive.last.name && archive.last.name !== store.me.name ? `архив скачивал(а) ${archive.last.name}` : 'вы скачивали' }} {{ lastText(archive.last.at) }}.</template>
+            <template v-else>Вы ещё ни разу не скачивали архив.</template>
+          </p>
+          <p class="small">{{ KEEP_HINT }}</p>
+          <a class="btn primary" style="width:100%;box-sizing:border-box" href="/api/archive.zip" download @click="startDownload">Скачать архив</a>
+          <p v-if="archive.started && !archive.done" class="small">Скачивание началось. Ход виден в браузере, в списке загрузок.</p>
         </template>
-        <button class="ghost block" style="margin-top:8px" @click="archive = null">Закрыть</button>
+        <button class="ghost block" style="margin-top:8px" @click="closeArchive">Закрыть</button>
       </div>
     </template>
   </div>
@@ -142,5 +177,7 @@ async function logout() {
 <style scoped>
 .nopass { margin-top: 12px; background: var(--warn-bg); color: var(--warn-text); border-color: transparent; }
 .nopass p { margin: 0.333rem 0 0.667rem; }
+.last { margin: 0.667rem 0 0.333rem; }
+.last.done { color: var(--accent-text); font-weight: 700; }
 .count { flex: none; min-width: 1.778rem; padding: 0 0.444rem; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 700; text-align: center; }
 </style>

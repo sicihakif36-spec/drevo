@@ -4,6 +4,7 @@ import { store, canEdit, canTalk, onLive, toast } from '../store.js';
 import { api, thumbUrl } from '../api.js';
 import { namer, opLines, moreText } from '../history.js';
 import { fullName, missingFields, upcomingDates, yearsText } from '@shared/names.js';
+import { lastText } from '@shared/archive.js';
 import { findings } from '../checks.js';
 import Finding from '../components/Finding.vue';
 import { when as day } from '../asks.js';
@@ -11,6 +12,11 @@ import { ask } from '../components/ask.js';
 
 const items = ref([]);
 const asked = ref([]); // «Вас спросили»: вопросы мне без ответа
+// Владельцу: «Пора сохранить семейный архив» — { last } или null.
+const archive = ref(null);
+async function later() {
+  await api('POST', '/api/archive/later').then(() => { archive.value = null; toast('Напомним через неделю'); }, (e) => toast(e.message));
+}
 // Свои интервью, брошенные больше суток назад: сами не удаляются — спрашиваем.
 const left = ref([]);
 const DAY = 24 * 3600 * 1000;
@@ -38,6 +44,7 @@ async function load() {
     const feed = await api('GET', '/api/feed');
     items.value = feed.items;
     asked.value = feed.asked || [];
+    archive.value = feed.archive || null;
     loaded.value = true;
     error.value = '';
     await api('POST', '/api/feed/seen', { at: feed.now });
@@ -83,6 +90,16 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 <template>
   <div class="page">
     <h1>Лента</h1>
+
+    <div v-if="archive" class="banner keep">
+      <div><b>Пора сохранить семейный архив.</b>
+        {{ archive.last ? `В последний раз его скачивали ${lastText(archive.last)}.` : 'Вы его ещё не скачивали.' }}
+        Скачайте и сохраните у себя — на случай, если с сервером что-то случится.</div>
+      <div class="row">
+        <router-link class="btn primary grow" to="/more?archive=1">Скачать всё</router-link>
+        <button class="ghost" @click="later">Напомнить позже</button>
+      </div>
+    </div>
 
     <div v-for="x in left" :key="x.id" class="banner leftiv">
       <div>У вас есть незаконченное интервью — <b>{{ leftName(x) }}</b>, {{ x.answered }} из {{ x.total }} ответов.</div>
@@ -191,7 +208,8 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 </template>
 
 <style scoped>
-.leftiv { display: grid; gap: 0.444rem; font-size: 1rem; }
+.leftiv, .keep { display: grid; gap: 0.444rem; font-size: 1rem; }
+.keep .btn { white-space: nowrap; }
 .date { color: var(--muted); }
 .date.today { color: var(--accent-text); font-weight: 700; }
 .name { overflow-wrap: anywhere; }
