@@ -34,6 +34,7 @@ import InterviewsView from './views/InterviewsView.vue';
 import InterviewFillView from './views/InterviewFillView.vue';
 import TenantsView from './views/TenantsView.vue';
 import NewFamilyView from './views/NewFamilyView.vue';
+import HelpView from './views/HelpView.vue';
 import { store } from './store.js';
 
 const router = createRouter({
@@ -65,6 +66,7 @@ const router = createRouter({
     { path: '/interview/:id', component: InterviewView, props: (r) => ({ id: r.params.id, person: r.query.person }) },
     { path: '/password', component: PasswordView, props: () => ({ mode: store.me?.has_password ? 'change' : 'create' }) },
     { path: '/tenants', component: TenantsView },
+    { path: '/help', component: HelpView },
     { path: '/invite/:token', component: InviteView, props: true, meta: { public: true } },
     // Анкета для родственника: без входа и без дерева.
     { path: '/survey/:token', component: SurveyFillView, props: true, meta: { public: true } },

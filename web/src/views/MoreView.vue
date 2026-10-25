@@ -124,6 +124,7 @@ async function logout() {
     </div>
 
     <div class="list" style="margin-top:12px">
+      <router-link to="/help"><span class="grow"><b>Как пользоваться Древом</b><br /><span class="muted small">для чего приложение, что где, как добавлять родных</span></span></router-link>
       <router-link v-if="canTalk() && !canEdit() && store.tree?.asks_waiting" to="/asks"><span class="grow"><b>Вас спросили</b></span><span class="count">{{ store.tree.asks_waiting }}</span></router-link>
       <router-link to="/notify">Уведомления</router-link>
     </div>

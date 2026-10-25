@@ -161,6 +161,7 @@ function gens(delta) {
       <h1>{{ store.title }}</h1>
       <p>Дерево пока пустое. Начните с себя, потом добавьте родителей, бабушек и дедушек.</p>
       <button class="primary block" v-if="canEdit()" @click="openAdd(null)">Добавить себя</button>
+      <p><router-link to="/help">Как пользоваться Древом</router-link></p>
     </div>
     <TreeCanvas v-else ref="canvas" :layout="layout" :idx="idx" :selected-id="selected" :focus-id="root"
       @select="selected = $event" @placeholder="onPlaceholder" @open="router.push(`/person/${$event}`)" />
