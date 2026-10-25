@@ -101,10 +101,10 @@ async function unlink(p) {
 }
 
 async function remove() {
-  if (!await ask({ text: `Удалить событие «${eventTitle(e.value)}»?`, note: `Оно пропадёт у всех участников. Вернуть можно в «Ещё → Последние правки».`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
+  if (!await ask({ text: `Удалить событие «${eventTitle(e.value)}»?`, note: `Оно пропадёт у всех участников. Вернуть можно в «Главная → Последние правки».`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   try {
     await api('DELETE', `/api/life-events/${e.value.id}`);
-    toast('Событие удалено. Вернуть можно в «Ещё → Последние правки».');
+    toast('Событие удалено. Вернуть можно в «Главная → Последние правки».');
     emit('removed');
   } catch (err) { toast(err.message); }
 }

@@ -139,13 +139,13 @@ const makeMain = () => act(async () => {
 
 async function remove() {
   const what = m.value.kind === 'doc' ? 'этот документ' : 'это фото';
-  if (!await ask({ text: `Удалить ${what}?`, note: 'Вернуть можно в «Ещё → Последние правки».', yes: 'Удалить', no: 'Не удалять', danger: true })) return;
+  if (!await ask({ text: `Удалить ${what}?`, note: 'Вернуть можно в «Главная → Последние правки».', yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   const i = props.index;
   act(async () => {
     await api('DELETE', `/api/media/${m.value.id}`);
     await loadTree();
     emit('removed', i);
-  }, 'Удалено. Отменить можно в «Ещё → Последние правки».');
+  }, 'Удалено. Отменить можно в «Главная → Последние правки».');
 }
 
 // Кто на фото: поиск по дереву, нажатие отмечает или снимает отметку.

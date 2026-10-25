@@ -44,7 +44,7 @@ async function enter() {
       <p class="error" v-if="error">{{ error }}</p>
       <button class="primary block" :disabled="busy" @click="enter">{{ busy ? 'Вхожу…' : 'Войти' }}</button>
       <p class="muted small">Ссылка срабатывает один раз. После входа добавьте приложение на главный экран, чтобы открывать его как обычное.</p>
-      <p v-if="before" class="muted small">Если вы уже пользуетесь Древом в другой семье, она останется — переключаться можно в «Ещё».</p>
+      <p v-if="before" class="muted small">Если вы уже пользуетесь Древом в другой семье, она останется — переключаться можно в «Профиле».</p>
     </div>
   </div>
 </template>

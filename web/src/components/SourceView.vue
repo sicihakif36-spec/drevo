@@ -72,10 +72,10 @@ async function detach(c) {
 }
 
 async function remove() {
-  if (!await ask({ text: `Удалить источник «${sourceTitle(s.value)}»?`, note: `Он пропадёт у всех людей. Вернуть можно в «Ещё → Последние правки».`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
+  if (!await ask({ text: `Удалить источник «${sourceTitle(s.value)}»?`, note: `Он пропадёт у всех людей. Вернуть можно в «Главная → Последние правки».`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   try {
     await api('DELETE', `/api/sources/${s.value.id}`);
-    toast('Источник удалён. Вернуть можно в «Ещё → Последние правки».');
+    toast('Источник удалён. Вернуть можно в «Главная → Последние правки».');
     emit('changed');
     emit('close');
   } catch (e) { toast(e.message); }

@@ -149,7 +149,7 @@ export function loginText(l) {
   }
   return {
     title: l.pending ? `${l.name} (${ROLE[l.role]}) открыл${l.sex === 'F' ? 'а' : l.sex === 'M' ? '' : '(а)'} ссылку для входа` : `${by[0]} ${l.name} (${ROLE[l.role]})`,
-    body: `${line}.${l.pending ? ' Войдёт после пароля.' : ''} Если это не ${by[1]} — отключите в «Ещё → Родственники и приглашения».`,
+    body: `${line}.${l.pending ? ' Войдёт после пароля.' : ''} Если это не ${by[1]} — отключите в «Главная → Родственники».`,
   };
 }
 
@@ -426,7 +426,8 @@ export function pushPlugin(app, opts = {}) {
       const lines = list.map(dateLine);
       await deliver(mine, {
         ...(lines.length === 1 ? { title: lines[0], body: '' } : { title: 'Памятные даты сегодня', body: lines.join('\n') }),
-        url: list.length === 1 ? `/#/person/${list[0].person.id}` : '/#/feed',
+        // Несколько дат — на «Главную»: там «Ближайшие даты».
+        url: list.length === 1 ? `/#/person/${list[0].person.id}` : '/#/',
         tag: `dates-${t.day}`,
       });
     }
@@ -449,8 +450,8 @@ export function pushPlugin(app, opts = {}) {
     const subs = await q('select endpoint, p256dh, auth from push_subs where user_id = any($1::uuid[])', [due.map((u) => u.id)]);
     await deliver(subs, {
       title: 'Пора сохранить семейный архив',
-      body: last ? `Последний раз — ${lastText(last.at, now)}. Откройте «Ещё → Скачать всё».` : 'Вы его ещё не скачивали. Откройте «Ещё → Скачать всё».',
-      url: '/#/more?archive=1',
+      body: last ? `Последний раз — ${lastText(last.at, now)}. Откройте «Главная → Скачать всё».` : 'Вы его ещё не скачивали. Откройте «Главная → Скачать всё».',
+      url: '/#/archive',
       tag: 'archive',
     });
   }

@@ -134,14 +134,14 @@ function headPhoto() {
   else if (canEdit()) album.value.add();
 }
 
-const UNDO = 'Вернуть можно в «Ещё → Последние правки».';
+const UNDO = 'Вернуть можно в «Главная → Последние правки».';
 // Удалить: владелец — любого, участник — только того, кого добавил сам (server/src/tree.js, mayDelete).
 const mayDelete = computed(() => canEdit() && (isOwner() || p.value?.created_by === store.me?.id));
 async function removePerson() {
   if (!await ask({ text: `Удалить ${nameAccusative(p.value)} из дерева?`, note: `${fullName(p.value)}. ${UNDO}`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   await api('DELETE', `/api/persons/${p.value.id}`);
   await loadTree();
-  toast('Удалено. Отменить можно в «Ещё → Последние правки».');
+  toast('Удалено. Отменить можно в «Главная → Последние правки».');
   router.replace('/');
 }
 
@@ -185,7 +185,7 @@ async function setMe() {
 
 function showOnTree() {
   store.treeRoot = p.value.id;
-  router.push('/');
+  router.push('/tree');
 }
 
 async function reloadHistory() {
@@ -218,7 +218,7 @@ onUnmounted(onLive((events) => {
 </script>
 
 <template>
-  <div class="page" v-if="!p"><p class="muted">{{ store.tree ? 'Человек не найден или удалён.' : 'Загрузка…' }}</p><router-link to="/">К дереву</router-link></div>
+  <div class="page" v-if="!p"><p class="muted">{{ store.tree ? 'Человек не найден или удалён.' : 'Загрузка…' }}</p><router-link to="/tree">К дереву</router-link></div>
   <div class="page" v-else>
     <div class="row" style="margin-bottom:0.444rem">
       <button class="ghost" @click="router.back()" aria-label="Назад">‹ Назад</button>

@@ -131,7 +131,7 @@ export function need(role) {
     if (!req.user) return reply.code(401).send({ error: 'Нужно войти по ссылке-приглашению' });
     if (RANK[req.user.role] < RANK[role]) {
       if (req.user.needs_password && RANK[req.user.real_role] >= RANK[role]) {
-        return reply.code(403).send({ error: 'Чтобы править дерево, придумайте пароль: «Ещё → Мои устройства и пароль»', password: true });
+        return reply.code(403).send({ error: 'Чтобы править дерево, придумайте пароль: «Профиль → Мои устройства и пароль»', password: true });
       }
       return reply.code(403).send({ error: 'Недостаточно прав' });
     }

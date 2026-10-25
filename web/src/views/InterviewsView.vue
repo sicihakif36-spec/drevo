@@ -5,7 +5,7 @@ import { store, onLive } from '../store.js';
 import { api } from '../api.js';
 import { ivTitle } from '@shared/interview.js';
 
-// «Ещё → Интервью»: незаконченные и сохранённые интервью, которые мне видны (свои, а владельцу и участникам — все).
+// «Главная → Интервью»: незаконченные и сохранённые интервью, которые мне видны (свои, а владельцу и участникам — все).
 const router = useRouter();
 const items = ref([]);
 const loaded = ref(false);

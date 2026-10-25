@@ -75,7 +75,7 @@ const tooMany = computed(() => kin.value.find((g) => g.k === 'parents')?.people.
 async function merge() {
   const ok = await ask({
     text: 'Объединить карточки?',
-    note: `Останется одна карточка: ${fullName(result.value)}. Отменить можно в «Ещё → Последние правки».`,
+    note: `Останется одна карточка: ${fullName(result.value)}. Отменить можно в «Главная → Последние правки».`,
     yes: 'Объединить',
     no: 'Не сейчас',
   });
@@ -87,7 +87,7 @@ async function merge() {
       versions: { keep: keep.value.version, remove: remove.value.version },
     });
     await loadTree();
-    toast('Объединено. Отменить можно в «Ещё → Последние правки».');
+    toast('Объединено. Отменить можно в «Главная → Последние правки».');
     router.replace(`/person/${res.id}`);
   } catch (e) {
     toast(e.message);
@@ -187,7 +187,7 @@ async function merge() {
       </div>
       <div v-if="tooMany" class="banner">У карточек записаны разные родители — после объединения их будет больше двух. Потом уберите лишнюю связь в карточке.</div>
       <p class="small">Всё со второй карточки — фото, документы, истории, события, источники, обсуждение, вопросы поиска — перейдёт сюда.
-        Вторая карточка исчезнет из дерева. Отменить объединение можно одной кнопкой в «Ещё → Последние правки».</p>
+        Вторая карточка исчезнет из дерева. Отменить объединение можно одной кнопкой в «Главная → Последние правки».</p>
       <button class="primary block" :disabled="busy" @click="merge">{{ busy ? 'Объединяю…' : 'Объединить' }}</button>
       <button class="block back" @click="step = 'choose'">Изменить выбор</button>
     </template>

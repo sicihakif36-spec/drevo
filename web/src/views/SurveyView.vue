@@ -188,7 +188,7 @@ const goPerson = (id) => router.push(`/person/${id}`);
         </div>
         <h2>Что добавлено в дерево</h2>
         <ChangeList v-if="s.load" :ops="[s.load]" @reverted="reverted" />
-        <p class="muted small">Отменить загрузку можно здесь или в «Ещё → Последние правки».</p>
+        <p class="muted small">Отменить загрузку можно здесь или в «Главная → Последние правки».</p>
       </template>
 
       <!-- Заполнена: просмотр и загрузка -->

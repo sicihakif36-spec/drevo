@@ -104,7 +104,7 @@ export default async function personRoutes(app) {
     });
   });
 
-  // «Ещё → Написание имён»: второе написание нескольким людям сразу — одно действие в журнале, отменяется одной кнопкой.
+  // «Главная → Написание имён»: второе написание нескольким людям сразу — одно действие в журнале, отменяется одной кнопкой.
   // items: [{ id, alt_surname, alt_given, alt_patronymic }]. Уже заполненное другим второе написание не трогаем.
   app.post('/api/persons/alt-names', { preHandler: need('editor') }, async (req) => {
     const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 2000) : [];

@@ -72,7 +72,7 @@ function saved(x) {
   load();
 }
 async function remove() {
-  if (!await ask({ text: `Убрать «${p.value.title}» из справочника?`, note: 'У людей место останется записанным текстом. Вернуть можно в «Ещё → Последние правки».', yes: 'Убрать', no: 'Не убирать', danger: true })) return;
+  if (!await ask({ text: `Убрать «${p.value.title}» из справочника?`, note: 'У людей место останется записанным текстом. Вернуть можно в «Главная → Последние правки».', yes: 'Убрать', no: 'Не убирать', danger: true })) return;
   try {
     await api('DELETE', `/api/places/${p.value.id}`);
     await loadTree();

@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router';
 import { store } from '../store.js';
 import { HELP } from '../help.js';
 
-// «Ещё → Как пользоваться Древом»: разделы раскрываются по нажатию; каждому — только то, что ему можно (who в help.js).
+// «Главная → Как пользоваться»: разделы раскрываются по нажатию; каждому — только то, что ему можно (who в help.js).
 // /help?s=<id> — сразу открыть нужный раздел.
 const route = useRoute();
 const ROLE = { owner: 'владелец', editor: 'участник', relative: 'родственник', viewer: 'гость' };

@@ -24,7 +24,7 @@ const IMAGES = ['image/jpeg', 'image/png', 'image/webp'];
 const text = (v, n) => String(v ?? '').trim().slice(0, n);
 const editor = (u) => ['owner', 'editor'].includes(u?.role);
 const linkOf = (token) => `${config.publicUrl}/#/iv/${token}`;
-const SAVED = 'Интервью уже сохранено в истории. Чтобы что-то изменить, отмените сохранение в «Ещё → Последние правки».';
+const SAVED = 'Интервью уже сохранено в истории. Чтобы что-то изменить, отмените сохранение в «Главная → Последние правки».';
 
 const ROW = `select i.*, u.name as by_name, i.saved_op is not null and not ${SAVED_UNDONE} as saved,
     (select min(c.id) from changes c where c.op = i.saved_op) as saved_change,

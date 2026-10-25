@@ -29,7 +29,7 @@ async function undo({ op, lines, restore }) {
     await api('POST', `/api/changes/${op.id}/revert`);
     await loadTree();
     emit('reverted');
-    toast(restore ? 'Возвращено' : 'Отменено. Вернуть можно в «Ещё → Последние правки».');
+    toast(restore ? 'Возвращено' : 'Отменено. Вернуть можно в «Главная → Последние правки».');
   } catch (e) {
     toast(e.message);
   }

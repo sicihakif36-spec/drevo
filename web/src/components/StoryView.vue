@@ -100,10 +100,10 @@ async function unlink(p) {
 }
 
 async function remove() {
-  if (!await ask({ text: `Удалить историю «${s.value.title}»?`, note: 'Она пропадёт у всех, о ком рассказана. Вернуть можно в «Ещё → Последние правки».', yes: 'Удалить', no: 'Не удалять', danger: true })) return;
+  if (!await ask({ text: `Удалить историю «${s.value.title}»?`, note: 'Она пропадёт у всех, о ком рассказана. Вернуть можно в «Главная → Последние правки».', yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   try {
     await api('DELETE', `/api/stories/${s.value.id}`);
-    toast('История удалена. Вернуть можно в «Ещё → Последние правки».');
+    toast('История удалена. Вернуть можно в «Главная → Последние правки».');
     emit('removed');
   } catch (e) { toast(e.message); }
 }

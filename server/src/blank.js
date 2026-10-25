@@ -43,7 +43,7 @@ export function paperRows(fields) {
 const rowHeight = (row) => (row.length === 1 && row[0].paperLines ? LABEL + 4 + WRITE * row[0].paperLines : CELL);
 const blockHeight = (role) => 24 + paperRows(paperFields(role)).reduce((a, row) => a + rowHeight(row) + 5, 0);
 
-export const HOW = '1. В приложении «Ещё → Анкеты для родственников» создайте анкету для этого человека.\n'
+export const HOW = '1. В приложении «Главная → Анкеты» создайте анкету для этого человека.\n'
   + '2. Откройте ссылку анкеты сами, заполните её по этому бланку и нажмите «Отправить».\n'
   + '3. Откройте анкету в списке «Отправленные», проверьте и нажмите «Загрузить в дерево».';
 
