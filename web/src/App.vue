@@ -8,6 +8,8 @@ import AskSheet from './components/AskSheet.vue';
 import { askSheet } from './asks.js';
 import PasswordView from './views/PasswordView.vue';
 import Icon from './components/Icon.vue';
+import SideNav from './components/SideNav.vue';
+import { wide } from './wide.js';
 import { addState, openAdd } from './components/addState.js';
 import { syncPush } from './push.js';
 
@@ -47,6 +49,15 @@ navigator.serviceWorker?.addEventListener('message', (e) => {
 const others = computed(() => store.tenants.filter((t) => !t.current && !t.closed));
 watch(() => store.me?.id, (id, old) => { if (id && id !== old && !store.tree) loadTree(); });
 
+// Esc закрывает верхнее окно, как щелчок по затемнению. Не из поля ввода (там Esc закрывает подсказки),
+// и не поверх вопроса или просмотра фото — они закрываются сами.
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented || e.target.closest?.('input, textarea, select')) return;
+  if (document.querySelector('.ask-backdrop, .viewer')) return;
+  const backs = document.querySelectorAll('.sheet-backdrop');
+  backs[backs.length - 1]?.click();
+});
+
 function plus() {
   const to = route.params.id || store.selectedId || store.me?.person_id;
   openAdd(to ? { to, type: null } : null);
@@ -62,42 +73,50 @@ function added(id) {
   <PasswordView v-else-if="!store.me && store.pending" mode="enter" />
   <PasswordView v-else-if="askPassword" mode="create" later @later="putOff" />
   <template v-else-if="!store.me">
-    <!-- Ещё не вошли: что это за приложение и как войти. -->
+    <!-- Ещё не вошли: что это за приложение и как войти. На компьютере — две колонки. -->
     <div class="page welcome">
-      <img src="/icon.svg" class="logo" alt="" />
-      <h1>Древо</h1>
-      <p class="lead">Закрытое семейное дерево. Вся семья вместе записывает родных, фотографии и воспоминания — чтобы память о семье не потерялась.</p>
-      <div class="card" v-if="store.offline">Нет связи с сервером. Если вы уже входили, откройте приложение, когда появится интернет.</div>
-      <div class="card" v-else-if="store.tenant?.closed">
-        <p>Вход в дерево «{{ store.tenant.title }}» сейчас закрыт.</p>
-        <p class="muted small">Его закрыл тот, кто держит сервер. Узнайте у владельца дерева, что случилось. Само дерево никуда не делось.</p>
-      </div>
-      <template v-else>
-        <ul class="points">
+      <div class="intro">
+        <img src="/icon.svg" class="logo" alt="" />
+        <h1>Древо</h1>
+        <p class="lead">Закрытое семейное дерево. Вся семья вместе записывает родных, фотографии и воспоминания — чтобы память о семье не потерялась.</p>
+        <ul class="points" v-if="!store.offline && !store.tenant?.closed">
           <li><span class="ico"><Icon name="tree" /></span><span><b>Дерево всей семьи</b> — от прадедов до внуков, с братьями, сёстрами и двоюродными.</span></li>
           <li><span class="ico"><Icon name="mic" /></span><span><b>Фото, документы и голоса родных</b> — в одном месте, на телефоне у каждого.</span></li>
           <li><span class="ico"><Icon name="print" /></span><span><b>На память</b> — плакат с деревом, родословная роспись и семейный архив.</span></li>
         </ul>
-        <div class="card">
+      </div>
+      <div class="enter">
+        <div class="card" v-if="store.offline">Нет связи с сервером. Если вы уже входили, откройте приложение, когда появится интернет.</div>
+        <div class="card" v-else-if="store.tenant?.closed">
+          <p>Вход в дерево «{{ store.tenant.title }}» сейчас закрыт.</p>
+          <p class="muted small">Его закрыл тот, кто держит сервер. Узнайте у владельца дерева, что случилось. Само дерево никуда не делось.</p>
+        </div>
+        <div class="card" v-else>
           <b>Как войти</b>
-          <p>Войти можно только по личной ссылке-приглашению. Попросите её у того, кто ведёт ваше семейное дерево, и откройте на этом телефоне.</p>
-          <p class="muted small">Ссылка срабатывает один раз. Если её уже открыли на другом телефоне, попросите новую. Дерево видят только приглашённые.</p>
+          <p>Войти можно только по личной ссылке-приглашению. Попросите её у того, кто ведёт ваше семейное дерево, и откройте на этом телефоне или компьютере.</p>
+          <p class="muted small">Ссылка срабатывает один раз. Если её уже открыли на другом устройстве, попросите новую. Дерево видят только приглашённые.</p>
         </div>
-      </template>
-      <template v-if="others.length">
-        <h2>Другие ваши семьи</h2>
-        <div class="list">
-          <a v-for="t in others" :key="t.id" href="#" @click.prevent="switchTenant(t.id)">«{{ t.title }}»</a>
-        </div>
-      </template>
+        <template v-if="others.length">
+          <h2>Другие ваши семьи</h2>
+          <div class="list">
+            <a v-for="t in others" :key="t.id" href="#" @click.prevent="switchTenant(t.id)">«{{ t.title }}»</a>
+          </div>
+        </template>
+      </div>
     </div>
   </template>
   <template v-else>
-    <router-view v-slot="{ Component }">
-      <keep-alive include="TreeView"><component :is="Component" /></keep-alive>
-    </router-view>
+    <!-- На компьютере разделы — в боковом меню слева, на телефоне — в нижней панели. -->
+    <div class="shell">
+      <SideNav v-if="wide" @add="plus" />
+      <main class="main">
+        <router-view v-slot="{ Component }">
+          <keep-alive include="TreeView"><component :is="Component" /></keep-alive>
+        </router-view>
+      </main>
+    </div>
     <!-- Нижняя панель: «Главная» (все разделы, что нового), дерево, добавить, люди, профиль. -->
-    <nav class="nav">
+    <nav class="nav" v-if="!wide">
       <router-link to="/">
         <span class="icon"><Icon name="home" /><i v-if="store.tree?.feed_new || store.tree?.asks_waiting" class="dot" aria-label="Есть новое"></i></span>
         Главная
@@ -132,4 +151,10 @@ function added(id) {
 .points .ico { flex: none; display: grid; place-items: center; width: 2.444rem; height: 2.444rem; border-radius: 0.778rem; background: var(--accent-soft); color: var(--accent-soft-text); }
 .points svg { width: 1.444rem; height: 1.444rem; }
 .welcome .card p { margin: 0.333rem 0 0; }
+@media (min-width: 64em) {
+  .welcome { max-width: 66rem; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 3rem; align-items: center; min-height: 100vh; }
+  .welcome h1 { font-size: 2.444rem; }
+  .welcome .lead { font-size: 1.222rem; }
+  .enter .card { padding: 1.333rem 1.556rem; }
+}
 </style>

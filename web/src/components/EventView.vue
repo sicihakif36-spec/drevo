@@ -220,7 +220,7 @@ async function remove() {
 </template>
 
 <style scoped>
-.event { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; overscroll-behavior: contain; }
+.event { position: fixed; inset: 0 0 0 var(--side); z-index: 50; background: var(--bg); overflow-y: auto; overscroll-behavior: contain; }
 .event .page { padding-bottom: calc(32px + var(--safe-b)); }
 .top { margin-bottom: 8px; }
 h1 { font-size: 1.333rem; overflow-wrap: anywhere; margin-top: 2px; }

@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router';
 import { store, canEdit, loadTree, toast } from '../store.js';
 import { layoutTree } from '@shared/layout.js';
 import { homePerson, treeParts, centralPerson } from '@shared/wholetree.js';
-import { fullName, lifespan, kinship, personHas, altName } from '@shared/names.js';
+import { fullName, lifespan, kinship, personHas, altName, dateText, parentsOf, spousesOf } from '@shared/names.js';
+import { wide } from '../wide.js';
 import TreeCanvas from '../components/TreeCanvas.vue';
 import { openAdd } from '../components/addState.js';
 import { ask } from '../components/ask.js';
@@ -58,6 +59,31 @@ watch(selected, (id) => (store.selectedId = id));
 
 const sel = computed(() => (selected.value ? idx.value?.persons.get(selected.value) : null));
 const selKin = computed(() => sel.value && kinship(idx.value, store.me?.person_id, sel.value.id));
+// На компьютере выбранный — панелью справа: главные даты и ближайшие родные (гостю сервер даты живых не отдаёт).
+const selFacts = computed(() => {
+  const p = sel.value;
+  if (!p) return [];
+  const F = p.sex === 'F';
+  const birth = [dateText(p.birth_date), p.birth_place].filter(Boolean).join(', ');
+  const death = [dateText(p.death_date), p.death_place].filter(Boolean).join(', ');
+  return [birth && { label: F ? 'Родилась' : 'Родился', text: birth }, death && { label: F ? 'Умерла' : 'Умер', text: death }].filter(Boolean);
+});
+const selFamily = computed(() => {
+  const p = sel.value;
+  if (!p) return [];
+  const get = (id) => idx.value.persons.get(id);
+  const rows = [];
+  const parents = parentsOf(idx.value, p.id).map(get).filter(Boolean);
+  if (parents.length) rows.push({ label: 'Родители', people: parents });
+  for (const s of spousesOf(idx.value, p.id)) {
+    const fam = idx.value.families.get(s.familyId);
+    const spouse = s.spouseId && get(s.spouseId);
+    if (spouse) rows.push({ label: fam?.kind === 'partners' ? 'Вместе с' : spouse.sex === 'F' ? 'Жена' : 'Муж', people: [spouse] });
+    const kids = (fam?.children || []).map(get).filter(Boolean);
+    if (kids.length) rows.push({ label: 'Дети', people: kids });
+  }
+  return rows;
+});
 
 function makeRoot(id) {
   rootId.value = id;
@@ -133,7 +159,7 @@ function gens(delta) {
 </script>
 
 <template>
-  <div class="tree-page">
+  <div class="tree-page" :class="{ 'has-sel': sel }">
     <div class="top">
       <div class="seg">
         <button :class="{ on: mode === 'hourglass' }" @click="mode = 'hourglass'">Ветка</button>
@@ -143,6 +169,7 @@ function gens(delta) {
       </div>
       <button class="round" @click="searching = true" aria-label="Найти человека">
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span v-if="wide" aria-hidden="true">Найти на дереве</span>
       </button>
       <div class="banner offline" v-if="store.offline">Нет связи. Показано сохранённое дерево.</div>
       <div class="note" v-if="showFind && !sel">
@@ -166,7 +193,7 @@ function gens(delta) {
     <TreeCanvas v-else ref="canvas" :layout="layout" :idx="idx" :selected-id="selected" :focus-id="root"
       @select="selected = $event" @placeholder="onPlaceholder" @open="router.push(`/person/${$event}`)" />
 
-    <div class="tools" v-if="store.tree?.persons.length && !sel">
+    <div class="tools" v-if="store.tree?.persons.length && (!sel || wide)">
       <div class="row tools-top">
         <div class="views">
           <button @click="canvas.fitAll()">Показать целиком</button>
@@ -196,6 +223,11 @@ function gens(delta) {
         </div>
         <button class="ghost close" @click="selected = null" aria-label="Закрыть">✕</button>
       </div>
+      <dl v-if="wide && (selFacts.length || selFamily.length)" class="facts">
+        <div v-for="f in selFacts" :key="f.label"><dt>{{ f.label }}</dt><dd>{{ f.text }}</dd></div>
+        <div v-for="(f, i) in selFamily" :key="'f' + i"><dt>{{ f.label }}</dt>
+          <dd><router-link v-for="x in f.people" :key="x.id" :to="`/person/${x.id}`">{{ fullName(x) }}</router-link></dd></div>
+      </dl>
       <div class="grid2 actions">
         <button class="primary" :class="{ wide: !canEdit() }" @click="router.push(`/person/${sel.id}`)">Открыть карточку</button>
         <button v-if="canEdit()" @click="add(null)">Добавить родственника</button>
@@ -238,7 +270,7 @@ function gens(delta) {
 </template>
 
 <style scoped>
-.tree-page { position: fixed; inset: 0; bottom: calc(var(--nav-h) + var(--safe-b)); overflow: hidden; }
+.tree-page { position: fixed; inset: 0; left: var(--side); bottom: calc(var(--nav-h) + var(--safe-b)); overflow: hidden; }
 /* На узком экране или с крупным шрифтом лупа уходит на вторую строку, справа. */
 .top { position: absolute; z-index: 5; top: calc(0.556rem + var(--safe-t)); left: 0.667rem; right: 0.667rem; display: flex; flex-wrap: wrap; gap: 0.444rem; pointer-events: none; }
 .top > * { pointer-events: auto; }
@@ -272,4 +304,33 @@ function gens(delta) {
 .actions { margin-top: 0.667rem; }
 .actions button { min-height: 3rem; padding: 0.333rem 0.5rem; font-size: 0.944rem; }
 .actions .wide { grid-column: 1 / -1; }
+.facts { margin: 0; display: grid; gap: 0.667rem; }
+.facts dt { font-size: 0.889rem; font-weight: 700; }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.facts a { display: block; color: var(--accent-text); }
+/* Компьютер: панель управления строкой внизу, поиск с подписью, выбранный человек — панелью справа. */
+@media (min-width: 64em) {
+  .top { top: 1.111rem; left: 1.333rem; right: 1.333rem; }
+  .top .seg { flex: 0 1 auto; }
+  .round { width: auto; padding: 0 1rem; gap: 0.444rem; font-size: 0.889rem; }
+  .round svg { width: 1.222rem; height: 1.222rem; }
+  .tools { flex-direction: row; flex-wrap: wrap; align-items: flex-end; left: 1.333rem; right: 1.333rem; bottom: 1.111rem; }
+  .tools-top { display: contents; }
+  .views { flex-direction: row; }
+  .gens { order: 1; }
+  .zoom { order: 2; margin-left: auto; flex-direction: row-reverse; }
+  .zoom > button + button { border-top: 0; border-right: 1px solid var(--line); }
+  .has-sel .top, .has-sel .tools { right: calc(22rem + 1.333rem); }
+  .selsheet {
+    top: 0; right: 0; bottom: 0; left: auto; width: 22rem; max-width: none; margin: 0; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 1.111rem; padding: 1.333rem;
+    border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: -6px 0 24px rgba(0,0,0,.08);
+  }
+  .selsheet > .row { align-items: flex-start; }
+  .selsheet .who { flex-direction: column; align-items: flex-start; gap: 0.667rem; }
+  .selsheet .avatar { width: 5.333rem; height: 5.333rem; border-radius: 1.111rem; font-size: 1.778rem; }
+  .selsheet .name { font-size: 1.333rem; line-height: 1.25; }
+  .actions { grid-template-columns: 1fr; margin-top: auto; }
+  .actions button { min-height: 3rem; font-size: 1rem; }
+}
 </style>
