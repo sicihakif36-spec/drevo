@@ -38,6 +38,7 @@ import NewFamilyView from './views/NewFamilyView.vue';
 import HelpView from './views/HelpView.vue';
 import ArchiveView from './views/ArchiveView.vue';
 import { store } from './store.js';
+import { watchUpdates } from './update.js';
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -88,3 +89,4 @@ const router = createRouter({
 });
 
 createApp(App).use(router).mount('#app');
+watchUpdates(router);
