@@ -8,7 +8,7 @@
 // а телефону, который состоит в нескольких семьях, в заголовке сказано, из какого дерева новость.
 import webpush from 'web-push';
 import { q, core } from './db.js';
-import { currentTenant, tenants, withTenant } from './tenants.js';
+import { currentTenant, gone, loadTenants, tenants, withTenant } from './tenants.js';
 import { config } from './config.js';
 import { need } from './auth.js';
 import { HttpError } from './tree.js';
@@ -196,12 +196,19 @@ export function pushPlugin(app, opts = {}) {
   );
 
   // Какие из телефонов состоят ещё и в других семьях: им в заголовке — название дерева.
-  async function inOthers(endpoints) {
+  async function inOthers(endpoints, again = false) {
     const me = currentTenant();
     const others = tenants().filter((t) => t.id !== me.id && !t.closed_at);
     if (!others.length) return new Set();
-    const rows = await core(others.map((t) => `select endpoint from ${t.schema}.push_subs where endpoint = any($1)`).join(' union '), [endpoints]);
-    return new Set(rows.map((r) => r.endpoint));
+    try {
+      const rows = await core(others.map((t) => `select endpoint from ${t.schema}.push_subs where endpoint = any($1)`).join(' union '), [endpoints]);
+      return new Set(rows.map((r) => r.endpoint));
+    } catch (err) {
+      // Другую семью только что удалили на сервере — уведомление всё равно уходит, список семей перечитывается.
+      if (again || !gone(err)) throw err;
+      await loadTenants();
+      return inOthers(endpoints, true);
+    }
   }
 
   // Разослать; подписку, которой больше нет (404/410 от сервиса), удалить. Возвращает, сколько ушло.
