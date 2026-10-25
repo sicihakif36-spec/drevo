@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue';
-import { toast, isOwner } from '../store.js';
+import { store, toast, isOwner } from '../store.js';
 import { api } from '../api.js';
 import { pushState, enablePush, disablePush, testPush } from '../push.js';
 
@@ -72,6 +72,7 @@ async function toggle(key, on) {
         <p class="big"><span class="ok">✓</span> На этом телефоне уведомления включены</p>
         <button class="block" :disabled="busy" @click="test">Прислать проверочное</button>
         <button class="danger block" :disabled="busy" @click="disable">Выключить на этом телефоне</button>
+        <p v-if="store.tenants.length > 1" class="small muted" style="margin:0.444rem 0 0">Уведомления приходят из всех ваших семей, в заголовке — название дерева. Выключатся тоже во всех.</p>
       </template>
       <template v-else-if="state === 'off'">
         <p class="big">На этом телефоне уведомления выключены</p>
@@ -98,7 +99,7 @@ async function toggle(key, on) {
     </div>
 
     <template v-if="prefs">
-      <h2>О чём сообщать</h2>
+      <h2>О чём сообщать{{ store.tenants.length > 1 ? ` — «${store.title}»` : '' }}</h2>
       <div class="list">
         <label v-for="[key, title, hint] in OPTIONS.filter(([k]) => k in prefs)" :key="key" class="opt">
           <div class="grow">
@@ -108,7 +109,7 @@ async function toggle(key, on) {
           <input type="checkbox" :checked="prefs[key]" @change="toggle(key, $event.target.checked)" />
         </label>
       </div>
-      <p class="small muted">Эти настройки действуют на всех ваших телефонах.</p>
+      <p class="small muted">Эти настройки действуют на всех ваших телефонах.<template v-if="store.tenants.length > 1"> В другой семье они свои: перейдите в неё в «Ещё».</template></p>
     </template>
   </div>
 </template>

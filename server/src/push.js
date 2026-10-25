@@ -4,8 +4,11 @@
 // Владельцу — ещё напоминание о семейном архиве: месяц не скачивали «Скачать всё» — днём, не чаще раза в неделю.
 // Расписание — раз в минуту внутри процесса. Что уже отправлено, отмечается в базе до отправки (migrations/006_push.sql):
 // одно и то же не уйдёт дважды и после перезапуска. Содержимое шифруется для телефона, сервис браузера его не видит.
+// Семей на сервере несколько (src/tenants.js): расписание проходит по каждой; ссылка в уведомлении открывает нужную семью,
+// а телефону, который состоит в нескольких семьях, в заголовке сказано, из какого дерева новость.
 import webpush from 'web-push';
-import { q } from './db.js';
+import { q, core } from './db.js';
+import { currentTenant, gone, loadTenants, tenants, withTenant } from './tenants.js';
 import { config } from './config.js';
 import { need } from './auth.js';
 import { HttpError } from './tree.js';
@@ -165,16 +168,16 @@ export function pushPlugin(app, opts = {}) {
   let keys = null;
   let busy = null;
   let timer = null;
-  let cleaned = '';
+  const cleaned = new Map(); // семья → день, когда убраны старые отметки
 
-  // Ключи VAPID создаются при первом запуске. Публичный отдаётся телефонам, закрытый не покидает базу.
+  // Ключи VAPID создаются при первом запуске, одни на сервер (core.push_keys). Публичный отдаётся телефонам, закрытый не покидает базу.
   function vapid() {
     keys ??= (async () => {
-      const read = async () => (await q('select public_key, private_key from push_keys'))[0];
+      const read = async () => (await core('select public_key, private_key from core.push_keys'))[0];
       const k = await read();
       if (k) return k;
       const g = webpush.generateVAPIDKeys();
-      await q('insert into push_keys (public_key, private_key) values ($1, $2) on conflict do nothing', [g.publicKey, g.privateKey]);
+      await core('insert into core.push_keys (public_key, private_key) values ($1, $2) on conflict do nothing', [g.publicKey, g.privateKey]);
       return read();
     })();
     keys.catch(() => { keys = null; });
@@ -192,9 +195,33 @@ export function pushPlugin(app, opts = {}) {
     [except],
   );
 
+  // Какие из телефонов состоят ещё и в других семьях: им в заголовке — название дерева.
+  async function inOthers(endpoints, again = false) {
+    const me = currentTenant();
+    const others = tenants().filter((t) => t.id !== me.id && !t.closed_at);
+    if (!others.length) return new Set();
+    try {
+      const rows = await core(others.map((t) => `select endpoint from ${t.schema}.push_subs where endpoint = any($1)`).join(' union '), [endpoints]);
+      return new Set(rows.map((r) => r.endpoint));
+    } catch (err) {
+      // Другую семью только что удалили на сервере — уведомление всё равно уходит, список семей перечитывается.
+      if (again || !gone(err)) throw err;
+      await loadTenants();
+      return inOthers(endpoints, true);
+    }
+  }
+
   // Разослать; подписку, которой больше нет (404/410 от сервиса), удалить. Возвращает, сколько ушло.
+  // Телефону, который состоит и в других семьях, — название дерева в заголовке и ссылка с ?t=<номер семьи>:
+  // нажатие откроет ту семью, откуда новость. У остальных всё как раньше.
   async function deliver(subs, msg) {
     if (!subs.length) return 0;
+    const shared = await inOthers(subs.map((s) => s.endpoint));
+    let titled = null;
+    if (shared.size) {
+      const [s] = await q("select value #>> '{}' as title from settings where key = 'title'");
+      titled = JSON.stringify({ ...msg, title: `${s?.title || 'Семейное древо'}: ${msg.title}`, url: `/?t=${currentTenant().id}${msg.url.replace(/^\//, '')}` });
+    }
     const k = await vapid();
     const options = {
       vapidDetails: {
@@ -208,7 +235,7 @@ export function pushPlugin(app, opts = {}) {
     const payload = JSON.stringify(msg);
     const done = await Promise.all(subs.map(async (s) => {
       try {
-        await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, options);
+        await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, shared.has(s.endpoint) ? titled : payload, options);
         return 1;
       } catch (err) {
         if (err.statusCode === 404 || err.statusCode === 410) await q('delete from push_subs where endpoint = $1', [s.endpoint]);
@@ -313,6 +340,15 @@ export function pushPlugin(app, opts = {}) {
     await deliver(subs, { ...loginText(l), url: '/#/family', tag: `login-${id}` });
   }
 
+  // По ссылке «Завести своё дерево» завели семью — владельцам главной семьи (зовётся в ней), без переключателя: это ответ на их ссылку.
+  async function tenant({ name, title }) {
+    const subs = await q(
+      `select s.endpoint, s.p256dh, s.auth from push_subs s join users u on u.id = s.user_id
+       where not u.disabled and u.role = 'owner'`,
+    );
+    await deliver(subs, { title: `${name} — новое дерево на сервере`, body: `«${title}». Его видит только эта семья.`, url: '/#/tenants', tag: 'tenants' });
+  }
+
   // Комментарии, о которых не успели сообщить сразу.
   async function missedComments(now) {
     const rows = await q(
@@ -365,9 +401,9 @@ export function pushPlugin(app, opts = {}) {
   async function dates(now) {
     const t = moscow(now);
     if (t.hour < HOUR) return;
-    if (cleaned !== t.day) {
+    if (cleaned.get(currentTenant().id) !== t.day) {
       await q("delete from push_sent where sent_at < now() - interval '40 days'");
-      cleaned = t.day;
+      cleaned.set(currentTenant().id, t.day);
     }
     const subs = await q(
       `select s.endpoint, s.p256dh, s.auth, u.id as user_id, u.role from push_subs s join users u on u.id = s.user_id
@@ -419,16 +455,20 @@ export function pushPlugin(app, opts = {}) {
     });
   }
 
-  // Один проход расписания; если предыдущий ещё идёт — ждём его, а не запускаем второй.
+  // Один проход расписания по всем открытым семьям; если предыдущий ещё идёт — ждём его, а не запускаем второй.
   function tick() {
     busy ??= (async () => {
       const now = clock();
-      for (const step of [missedComments, digests, dates, archive]) {
-        try {
-          await step(now);
-        } catch (err) {
-          app.log.error({ err }, 'уведомления: ошибка в расписании');
-        }
+      for (const t of tenants().filter((x) => !x.closed_at)) {
+        await withTenant(t, async () => {
+          for (const step of [missedComments, digests, dates, archive]) {
+            try {
+              await step(now);
+            } catch (err) {
+              app.log.error({ err, tenant: t.id }, 'уведомления: ошибка в расписании');
+            }
+          }
+        });
       }
     })().finally(() => { busy = null; });
     return busy;
@@ -446,6 +486,7 @@ export function pushPlugin(app, opts = {}) {
     login: (id) => later(() => login(id)),
     ask: (id, key) => later(() => ask(id, key)),
     answer: (id) => later(() => answer(id)),
+    tenant: (t) => later(() => tenant(t)),
     tick,
     settled: () => Promise.all([...pending, busy]),
   });

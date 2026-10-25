@@ -36,6 +36,9 @@ services:
     environment:
       DATABASE_URL: postgres://drevo:${POSTGRES_PASSWORD}@db:5432/drevo
       PUBLIC_URL: ${PUBLIC_URL:-https://drevo.myryadom.su}
+      # Семьи на сервере (docs/semyi.md): сколько, кроме главной, и сколько места у новой по умолчанию, МБ.
+      MAX_FAMILIES: ${MAX_FAMILIES:-20}
+      FAMILY_QUOTA_MB: ${FAMILY_QUOTA_MB:-5120}
     ports:
       - "127.0.0.1:8095:8095"
     volumes:

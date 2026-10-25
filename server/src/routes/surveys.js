@@ -5,13 +5,13 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { q, tx } from '../db.js';
 import { need, hash, newToken } from '../auth.js';
 import { config } from '../config.js';
 import { listOps } from '../changes.js';
 import { HttpError, alive } from '../tree.js';
+import { checkSpace } from '../tenants.js';
 import { checkRate, badLink } from '../limit.js';
 import { MAX_FILE, mediaPath } from './media.js';
 import { SURVEY_DAYS, surveyPath, surveyStatus, UNDONE, loadSurvey } from '../surveys.js';
@@ -61,8 +61,6 @@ const LIST = `select s.id, s.name, s.person_id, s.created_at, s.expires_at, s.re
 const row = ({ undone, loaded_op: op, ...s }) => ({ ...s, status: surveyStatus({ ...s, loaded_op: op, undone }) });
 
 export default async function surveyRoutes(app) {
-  await fsp.mkdir(path.join(config.dataDir, 'survey'), { recursive: true });
-
   // ---------- Для того, кто заполняет (без входа) ----------
 
   app.get('/api/survey', async (req) => {
@@ -102,6 +100,7 @@ export default async function surveyRoutes(app) {
   app.post('/api/survey/photos', async (req) => {
     const s = await bySurveyToken(req, { write: true });
     if ((await photos(s.id)).length >= MAX_PHOTOS) throw new HttpError(400, `Можно приложить не больше ${MAX_PHOTOS} фото`);
+    await checkSpace();
     const id = crypto.randomUUID();
     const fields = {};
     let file = null;

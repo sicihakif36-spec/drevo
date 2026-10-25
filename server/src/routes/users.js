@@ -1,5 +1,7 @@
 import { q, tx } from '../db.js';
-import { need, meOf, createInvite, startSession, endSession, hash, needsPassword, INVITE_DAYS, ALIVE } from '../auth.js';
+import { need, meOf, createInvite, startSession, endSession, hash, needsPassword, INVITE_DAYS, ALIVE, chooseTenant, cookieOptions } from '../auth.js';
+import { TENANT_COOKIE, findByToken, withTenant } from '../tenants.js';
+import { myTenants, tenantInfo } from './tenants.js';
 import { hashPassword, checkPassword } from '../password.js';
 import { HttpError } from '../tree.js';
 import { deviceName } from '../../../shared/device.js';
@@ -84,14 +86,22 @@ async function signOut(db, userId) {
 }
 
 export default async function userRoutes(app) {
-  app.get('/api/me', async (req) => ({ user: meOf(req.user), pending: req.pending && { name: req.pending.name } }));
+  // Кто я в семье, выбранной на телефоне; что это за семья и в каких ещё семьях этот телефон (для «Мои семьи»).
+  app.get('/api/me', async (req) => ({
+    user: meOf(req.user),
+    pending: req.pending && { name: req.pending.name },
+    tenant: await tenantInfo(req.tenant),
+    tenants: await myTenants(req),
+  }));
 
+  // Приглашение — в ту семью, где оно сделано: телефон входит в неё и переключается на неё, входы в другие семьи остаются.
   app.post('/api/invites/redeem', async (req, reply) => {
     if (limited(req.ip)) return reply.code(429).send({ error: 'Слишком много попыток, подождите 10 минут' });
     const token = String(req.body?.token || '');
     const name = String(req.body?.name || '').trim().slice(0, 80);
     const userAgent = String(req.headers['user-agent'] || '');
-    const res = await tx(async (db) => {
+    const tenant = token.length >= 20 && token.length <= 100 ? await findByToken('invites', hash(token)) : null;
+    const res = tenant && await withTenant(tenant, () => tx(async (db) => {
       const [inv] = await db.q(
         'update invites set used_at = now() where token_hash = $1 and used_at is null and expires_at > now() returning *',
         [hash(token)],
@@ -116,12 +126,12 @@ export default async function userRoutes(app) {
         [user.id, inv.for_user ? 'link' : 'invite', user.role, userAgent.slice(0, 300), req.ip || '', session],
       );
       return { login: login.id, pending };
-    });
+    }));
     if (!res) {
       limited(req.ip, true);
       return reply.code(400).send({ error: 'Ссылка недействительна или уже использована. Попросите новую.' });
     }
-    app.push.login(res.login);
+    withTenant(tenant, () => app.push.login(res.login));
     return { ok: true, password: res.pending };
   });
 
@@ -133,10 +143,14 @@ export default async function userRoutes(app) {
     return { ok: true };
   });
 
+  // Выйти из семьи, выбранной на телефоне. Если телефон состоит в других семьях, он переходит в одну из них.
   app.post('/api/logout', async (req, reply) => {
     if (req.sessionHash) await q('delete from sessions where token_hash = $1', [req.sessionHash]);
     endSession(reply);
-    return { ok: true };
+    const next = (await myTenants(req)).find((t) => t.id !== req.tenant.id && !t.closed);
+    if (next) chooseTenant(reply, next);
+    else reply.clearCookie(TENANT_COOKIE, cookieOptions());
+    return { ok: true, next: next?.id || null };
   });
 
   app.patch('/api/me', { preHandler: need('viewer') }, async (req, reply) => {

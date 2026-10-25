@@ -6,12 +6,12 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { q, tx } from '../db.js';
 import { need, hash, newToken } from '../auth.js';
 import { config } from '../config.js';
 import { HttpError } from '../tree.js';
+import { checkSpace } from '../tenants.js';
 import { checkRate, badLink } from '../limit.js';
 import { toMp3 } from '../audio.js';
 import { MAX_FILE, mediaPath, audioMime, parseRange } from './media.js';
@@ -143,6 +143,7 @@ async function addQuestion(i, body) {
 async function receive(req, i, qkey) {
   question(i, qkey);
   writable(i, i.pub);
+  await checkSpace();
   const id = crypto.randomUUID();
   const upload = `${ivPath(id)}.upload`;
   let file = null;
@@ -236,8 +237,6 @@ async function sendFile(req, reply, ivId, thumb) {
 }
 
 export default async function interviewRoutes(app) {
-  await fsp.mkdir(path.join(config.dataDir, 'interview'), { recursive: true });
-
   // ---------- По ссылке, без входа ----------
 
   // Только вопросы интервью и свои ответы — ничего из дерева: ни имени того, о ком оно, ни подписи «для кого».

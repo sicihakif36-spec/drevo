@@ -5,7 +5,7 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { config } from './config.js';
+import { dataDir } from './tenants.js';
 import { logChange } from './changes.js';
 import { HttpError, alive } from './tree.js';
 import { createStory } from './stories.js';
@@ -13,7 +13,7 @@ import { snapshot } from './album.js';
 import { mediaPath } from './routes/media.js';
 import { hasAnswer, ivTitle } from '../../shared/interview.js';
 
-export const ivPath = (id, thumb = false) => path.join(config.dataDir, 'interview', thumb ? `${id}.thumb` : id);
+export const ivPath = (id, thumb = false) => path.join(dataDir(), 'interview', thumb ? `${id}.thumb` : id);
 
 // Для запроса: отменено ли сохранение интервью i (и отмену не вернули).
 export const SAVED_UNDONE = `exists (select 1 from changes c join changes r on r.id = c.reverted_by

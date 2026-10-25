@@ -8,7 +8,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { q, tx } from '../db.js';
 import { need } from '../auth.js';
-import { config } from '../config.js';
+import { dataDir, checkSpace } from '../tenants.js';
 import { logChange } from '../changes.js';
 import { HttpError, alive } from '../tree.js';
 import { snapshot, liveMedia, setMain, deleteMedia, tag, untag, updateMedia } from '../album.js';
@@ -27,7 +27,7 @@ const AUDIO_EXT = { m4a: 'audio/mp4', mp4: 'audio/mp4', aac: 'audio/aac', mp3: '
 export const audioMime = (mime, name) => AUDIO[String(mime).split(';')[0].trim().toLowerCase()] || AUDIO_EXT[/\.([a-z0-9]+)$/i.exec(name)?.[1].toLowerCase()];
 const MIME = { photo: IMAGES, doc: [...IMAGES, 'application/pdf'] };
 export const MAX_FILE = 20 * 1024 * 1024; // крупный PDF; nginx пропускает до 25 МБ (deploy/nginx/drevo.conf)
-export const mediaPath = (id, thumb = false) => path.join(config.dataDir, 'media', thumb ? `${id}.thumb` : id);
+export const mediaPath = (id, thumb = false) => path.join(dataDir(), 'media', thumb ? `${id}.thumb` : id);
 
 const text = (v, n) => String(v ?? '').trim().slice(0, n);
 
@@ -57,8 +57,6 @@ export function parseRange(header, size) {
 }
 
 export default async function mediaRoutes(app) {
-  await fsp.mkdir(path.join(config.dataDir, 'media'), { recursive: true });
-
   app.get('/api/persons/:id/media', { preHandler: need('viewer') }, async (req) => {
     const rows = await q(`${LIST} join media_persons t on t.media_id = m.id and t.person_id = $1
       where m.deleted_at is null order by m.created_at, m.id`, [req.params.id]);
@@ -70,6 +68,7 @@ export default async function mediaRoutes(app) {
   // Один файл (и его уменьшенная копия thumb для сетки). Поля до файла: kind — photo или doc, batch, caption, date.
   app.post('/api/persons/:id/media', { preHandler: need('editor') }, async (req) => {
     if (!(await alive({ q }, req.params.id))) throw new HttpError(404, 'Человек не найден');
+    await checkSpace();
     const id = crypto.randomUUID();
     const fields = {};
     let file = null;
@@ -164,6 +163,7 @@ export default async function mediaRoutes(app) {
   // Любую запись сервер переводит в MP3 (src/audio.js): так она играет и на Android, и на любом iPhone.
   // Длительность — у ffmpeg: в записи с телефона её часто нет.
   app.post('/api/audio', { preHandler: need('editor') }, async (req) => {
+    await checkSpace();
     const id = crypto.randomUUID();
     const upload = `${mediaPath(id)}.upload`;
     let file = null;

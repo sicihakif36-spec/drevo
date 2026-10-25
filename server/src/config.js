@@ -10,4 +10,7 @@ export const config = {
   dataDir: process.env.DATA_DIR || fileURLToPath(new URL('../var', import.meta.url)),
   webDir: process.env.WEB_DIR || path.resolve('../web/dist'),
   secureCookies: process.env.SECURE_COOKIES !== 'false',
+  // Сколько семей, кроме главной, можно завести на сервере, и сколько места у новой семьи по умолчанию (МБ).
+  maxFamilies: Number(process.env.MAX_FAMILIES || 20),
+  familyQuotaMb: Number(process.env.FAMILY_QUOTA_MB || 5120),
 };

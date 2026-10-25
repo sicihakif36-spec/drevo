@@ -1,8 +1,9 @@
 // Вымышленная семья для проверки интерфейса и печати. Только для разработки:
 //   node bin/demo.js   (очищает базу!)
 // Печатает ссылку входа владельца Сергея и пароль демо: он же у участницы Елены.
-import { pool, tx } from '../src/db.js';
+import { pool, tx, core } from '../src/db.js';
 import { migrate } from '../src/migrate.js';
+import { loadTenants } from '../src/tenants.js';
 import { createInvite } from '../src/auth.js';
 import { hashPassword } from '../src/password.js';
 import { logChange } from '../src/changes.js';
@@ -20,6 +21,15 @@ import { createPlace } from '../src/places.js';
 import { demoImage, demoLetter, demoVoice } from './demo-media.js';
 
 if (process.env.NODE_ENV === 'production') { console.error('Не запускайте на рабочей базе'); process.exit(1); }
+await migrate(() => {});
+// Другие семьи на сервере — тоже долой: демо — одна главная семья.
+for (const t of await core('select id, schema from core.tenants where not main')) {
+  await core(`drop schema if exists ${t.schema} cascade`);
+  fs.rmSync(path.join(config.dataDir, 'families', t.id), { recursive: true, force: true });
+}
+await core('delete from core.tenant_links');
+await core('delete from core.tenants where not main');
+await loadTenants();
 await pool.query('drop schema public cascade; create schema public;');
 await migrate(() => {});
 const P = async (o) => (await pool.query(

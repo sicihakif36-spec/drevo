@@ -4,7 +4,7 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { config } from './config.js';
+import { dataDir } from './tenants.js';
 import { logChange } from './changes.js';
 import { HttpError, alive } from './tree.js';
 import { createStory } from './stories.js';
@@ -12,7 +12,7 @@ import { createNote } from './research.js';
 import { snapshot } from './album.js';
 import { mediaPath } from './routes/media.js';
 
-export const askPath = (id, thumb = false) => path.join(config.dataDir, 'ask', thumb ? `${id}.thumb` : id);
+export const askPath = (id, thumb = false) => path.join(dataDir(), 'ask', thumb ? `${id}.thumb` : id);
 
 // Для запроса: отменено ли действие из колонки col вопроса a (и отмену не вернули).
 export const undone = (col) => `exists (select 1 from changes c join changes r on r.id = c.reverted_by

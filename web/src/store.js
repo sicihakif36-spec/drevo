@@ -7,6 +7,9 @@ export const store = reactive({
   me: null,
   // Вход по ссылке на новом телефоне ждёт пароль: { name }.
   pending: null,
+  // Семья, выбранная на телефоне: { id, main, title, closed }, и все семьи, в которые на нём вошли («Мои семьи»).
+  tenant: null,
+  tenants: [],
   tree: null,
   idx: null,
   title: '',
@@ -24,14 +27,30 @@ export function toast(text) {
 
 export async function loadMe() {
   try {
-    const r = await api('GET', '/api/me');
+    let r = await api('GET', '/api/me');
+    // В выбранной семье входа нет, а в другой есть (выбор семьи забылся или из неё вышли) — в ту.
+    const other = !r.user && !r.pending && !r.tenant?.closed && r.tenants?.find((t) => !t.current && !t.closed);
+    if (other) {
+      await api('POST', '/api/tenants/switch', { id: other.id });
+      r = await api('GET', '/api/me');
+    }
     store.me = r.user;
     store.pending = r.pending || null;
-    if (!r.user) forget();
+    store.tenant = r.tenant || null;
+    store.tenants = r.tenants || [];
+    if (!r.user && !r.tenants?.length) forget();
   } catch (e) {
     store.offline = e.status === 0;
   }
   store.ready = true;
+}
+
+// Перейти в другую семью на этом телефоне: приложение открывается заново уже в ней (hash — куда, например '#/feed').
+export async function switchTenant(id, hash = '') {
+  await api('POST', '/api/tenants/switch', { id });
+  // Сохранённое для работы без сети дерево — прежней семьи.
+  if (typeof caches !== 'undefined') await caches.delete('tree').catch(() => {});
+  location.replace(`/${hash}`);
 }
 
 export async function loadTree() {
@@ -65,6 +84,8 @@ export const isGuest = () => store.me?.role === 'viewer';
 // Обсуждать и смотреть историю правок — все, кроме гостей.
 export const canTalk = () => Boolean(store.me) && !isGuest();
 export const isOwner = () => store.me?.role === 'owner' && !needsPassword();
+// Владелец главной семьи ведёт и «Семьи на сервере».
+export const isAdmin = () => isOwner() && Boolean(store.tenant?.main);
 
 // Обновления у всех сразу: сервер сообщает о правках (GET /api/events), телефон перечитывает нужное.
 // События: { kind: 'tree' } — дерево изменилось, { kind: 'comments', person_id } — новое в обсуждении
