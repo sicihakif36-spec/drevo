@@ -8,7 +8,7 @@ import { need, hash, newToken, startSession, chooseTenant, ALIVE } from '../auth
 import { config } from '../config.js';
 import { HttpError } from '../tree.js';
 import { checkRate, badLink } from '../limit.js';
-import { USED, createTenant, loadTenants, mainTenant, space, tenantById, tenantOfCookie, tenants, withTenant } from '../tenants.js';
+import { USED, createTenant, gone, loadTenants, mainTenant, space, tenantById, tenantOfCookie, tenants, withTenant } from '../tenants.js';
 
 const DAYS = [1, 3, 7, 14];
 const LINK_DAYS = 7;
@@ -32,7 +32,12 @@ export async function myTenants(req) {
       `select u.name, u.role, s.pending, (select value #>> '{}' from settings where key = 'title') as title
        from sessions s join users u on u.id = s.user_id where s.token_hash = $1 and not u.disabled and ${ALIVE}`,
       [hash(token)],
-    ));
+    )).catch(async (err) => {
+      // Семью удалили на сервере — её просто нет в списке.
+      if (!gone(err)) throw err;
+      await loadTenants();
+      return [];
+    });
     if (row) out.push({ id: t.id, main: t.main, title: row.title || t.title, name: row.name, role: row.role, pending: row.pending, closed: Boolean(t.closed_at), current: t.id === req.tenant.id });
   }
   // Главная — первой, дальше — по порядку создания.
@@ -85,6 +90,8 @@ export default async function tenantRoutes(app) {
 
   app.get('/api/tenants', { preHandler: need('owner') }, async (req) => {
     mainOnly(req);
+    // Список — свежий: семью могли удалить скриптом на сервере.
+    await loadTenants();
     const list = [];
     for (const t of tenants()) list.push(await summary(t));
     return { list, max: config.maxFamilies, count: count(), quota: config.familyQuotaMb * MB };

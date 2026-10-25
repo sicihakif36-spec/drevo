@@ -7,7 +7,7 @@
 import fsp from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { migrate } from '../src/migrate.js';
-import { pool, q, core } from '../src/db.js';
+import { pool, q } from '../src/db.js';
 import { USED, dataDir, sizeText, tenantById, tenants, withTenant } from '../src/tenants.js';
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: { yes: { type: 'boolean', default: false } } });
@@ -44,8 +44,19 @@ if (!cmd) {
       console.log(`Будет удалено навсегда: «${s.title}» (владельцы: ${s.owners || '—'}), ${s.persons} человек, файлы ${sizeText(Number(s.used))}.`);
       console.log(`Чтобы удалить, повторите с --yes. Перед этим сделайте копию: deploy/backup.sh`);
     } else {
-      await core(`drop schema ${t.schema} cascade`);
-      await core('delete from core.tenants where id = $1', [t.id]);
+      // Запись о семье и её схема — одной транзакцией; работающий сервер перечитает список сам.
+      const client = await pool.connect();
+      try {
+        await client.query('begin');
+        await client.query('delete from core.tenants where id = $1', [t.id]);
+        await client.query(`drop schema ${t.schema} cascade`);
+        await client.query('commit');
+      } catch (e) {
+        await client.query('rollback');
+        throw e;
+      } finally {
+        client.release();
+      }
       await fsp.rm(dataDir(t), { recursive: true, force: true });
       console.log(`Семья «${s.title}» удалена.`);
     }

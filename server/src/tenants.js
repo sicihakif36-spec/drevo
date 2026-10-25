@@ -62,12 +62,21 @@ export const ensureDirs = (t) => Promise.all(DIRS.map((d) => fsp.mkdir(path.join
 
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
 
+// Схемы семьи в базе уже нет: её удалили скриптом (bin/families.js), а список семей здесь ещё прежний.
+export const gone = (err) => err?.code === '42P01' || err?.code === '3F000';
+
 // В какой открытой семье есть ссылка с этим хешем ключа. Семей немного — один запрос на все схемы.
-export async function findByToken(table, tokenHash) {
+export async function findByToken(table, tokenHash, again = false) {
   const open = list.filter((t) => !t.closed_at);
   const parts = open.map((t) => `select '${t.id}' as id from ${t.schema}.${table} where token_hash = $1`);
-  const [r] = await core(`select id from (${parts.join(' union all ')}) x limit 1`, [tokenHash]);
-  return r ? tenantById(r.id) : null;
+  try {
+    const [r] = await core(`select id from (${parts.join(' union all ')}) x limit 1`, [tokenHash]);
+    return r ? tenantById(r.id) : null;
+  } catch (err) {
+    if (again || !gone(err)) throw err;
+    await loadTenants();
+    return findByToken(table, tokenHash, true);
+  }
 }
 
 async function pick(req) {

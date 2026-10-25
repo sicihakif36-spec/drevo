@@ -379,3 +379,22 @@ test('владелец другой семьи потерял вход: нова
   const list = execFileSync(process.execPath, [path.join(bin, 'families.js')], { encoding: 'utf8' });
   assert.match(list, new RegExp(`${fam.id}\\t«Род Галиевых»\\tвладельцы: Ольга\\tлюдей: 3`));
 });
+
+test('семью с закрытым входом удаляют скриптом на сервере; работающий сервер это переживает', async () => {
+  const script = fileURLToPath(new URL('../bin/families.js', import.meta.url));
+  const run = (...args) => execFileSync(process.execPath, [script, ...args], { encoding: 'utf8', stdio: 'pipe' });
+  assert.throws(() => run('delete', fam.id, '--yes'), /Сначала закройте вход/);
+  await sergey.call('PATCH', `/api/tenants/${fam.id}`, { closed: true });
+  assert.match(run('delete', fam.id), /Будет удалено навсегда: «Род Галиевых» \(владельцы: Ольга\), 3 человек/);
+  assert.ok(fs.existsSync(dataDir(fam)));
+  assert.match(run('delete', fam.id, '--yes'), /Семья «Род Галиевых» удалена/);
+  assert.ok(!fs.existsSync(dataDir(fam)));
+  assert.equal((await core('select count(*)::int as n from pg_namespace where nspname = $1', [fam.schema]))[0].n, 0);
+  // Сервер ещё помнит семью, но ничего не падает: список перечитывается сам.
+  const me = await olga.call('GET', '/api/me');
+  assert.equal(me.user, null);
+  assert.deepEqual(me.tenants, []);
+  assert.equal((await new Phone().raw('POST', '/api/invites/redeem', { token: 'x'.repeat(43) })).statusCode, 400);
+  assert.deepEqual((await sergey.call('GET', '/api/tenants')).list.map((t) => t.id), ['main']);
+  assert.equal((await olga.call('GET', '/api/me')).tenant.id, 'main');
+});

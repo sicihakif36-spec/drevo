@@ -1,8 +1,9 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { store, isOwner, canTalk, canEdit, loadTree, toast, forget } from '../store.js';
+import { store, isOwner, isAdmin, canTalk, canEdit, loadTree, toast, forget, switchTenant } from '../store.js';
 import { api } from '../api.js';
+import { sizeText } from '../size.js';
 import { fullName } from '@shared/names.js';
 import { disablePush } from '../push.js';
 import { ask, askText } from '../components/ask.js';
@@ -16,11 +17,17 @@ const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 
 const route = useRoute();
-onMounted(() => {
+// Место на сервере для фото и записей — владельцу семьи, у которой есть предел.
+const space = ref(null);
+onMounted(async () => {
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent.value = e; });
   // Из плашки в ленте и из уведомления: «Ещё → Скачать всё» сразу открыто.
   if (route.query.archive && isOwner()) openArchive();
+  if (isOwner() && !store.tenant?.main) space.value = await api('GET', '/api/tenants/space').catch(() => null);
 });
+// Несколько семей на этом телефоне: «Мои семьи».
+const ROLE_SHORT = { owner: 'владелец', editor: 'участник', relative: 'родственник', viewer: 'гость' };
+const others = () => store.tenants.filter((t) => !t.current);
 
 async function saveTitle() {
   await api('PUT', '/api/settings/title', { title: title.value });
@@ -68,16 +75,17 @@ async function openArchive() {
   }
 }
 const BIG = 200 * 1024 * 1024;
-function sizeText(n) {
-  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} КБ`;
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toLocaleString('ru-RU', { maximumFractionDigits: n < 10 * 1024 ** 2 ? 1 : 0 })} МБ`;
-  return `${(n / 1024 ** 3).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} ГБ`;
-}
 
 async function logout() {
-  if (!await ask({ text: 'Выйти на этом телефоне?', note: 'Войти снова можно будет только по новой ссылке-приглашению.', yes: 'Выйти', no: 'Не выходить', danger: true })) return;
-  // Этот телефон больше не получает уведомлений и не хранит дерево.
-  await disablePush().catch(() => {});
+  const more = others().length > 0;
+  if (!await ask({
+    text: more ? `Выйти из дерева «${store.title}» на этом телефоне?` : 'Выйти на этом телефоне?',
+    note: `Войти снова можно будет только по новой ссылке-приглашению.${more ? ' Другие ваши семьи останутся.' : ''}`,
+    yes: 'Выйти', no: 'Не выходить', danger: true,
+  })) return;
+  // Этот телефон больше не получает уведомлений и не хранит дерево. Если он есть и в других семьях,
+  // уведомления от них остаются: о них сервер забывает вместе со входом.
+  if (!more) await disablePush().catch(() => {});
   await api('POST', '/api/logout');
   forget();
   location.replace('/');
@@ -92,6 +100,16 @@ async function logout() {
       <div class="muted small">{{ ROLE[store.me.role] }}<template v-if="store.me.person_id && store.idx?.persons.get(store.me.person_id)"> · в дереве: {{ fullName(store.idx.persons.get(store.me.person_id)) }}</template></div>
       <button style="margin-top:0.667rem" @click="rename">Изменить имя</button>
     </div>
+    <template v-if="others().length">
+      <h2>Мои семьи</h2>
+      <p class="muted small hint">У каждой семьи своё дерево. Сейчас открыто «{{ store.title }}».</p>
+      <div class="list">
+        <a v-for="t in others()" :key="t.id" href="#" @click.prevent="!t.closed && switchTenant(t.id)">
+          <span class="grow">«{{ t.title }}»<br /><span class="muted small">{{ t.closed ? 'вход закрыт' : t.pending ? 'ждёт пароль' : `вы — ${ROLE_SHORT[t.role]}` }}</span></span>
+          <span v-if="!t.closed" class="go">Перейти</span>
+        </a>
+      </div>
+    </template>
     <div v-if="store.me.needs_password" class="card nopass">
       <b>Придумайте пароль, чтобы править дерево.</b>
       <p class="small">Он нужен, только когда вы входите с нового телефона. Пока пароля нет, дерево можно только смотреть.</p>
@@ -125,11 +143,16 @@ async function logout() {
       <a href="/api/export.ged" download><span>Скачать дерево для другой программы<br /><span class="muted small">файл GEDCOM</span></span></a>
       <router-link v-if="canEdit()" to="/import"><span>Загрузить дерево из файла<br /><span class="muted small">из другой программы, файл GEDCOM</span></span></router-link>
       <router-link v-if="isOwner()" to="/family">Родственники и приглашения</router-link>
+      <router-link v-if="isAdmin()" to="/tenants"><span>Семьи на сервере<br /><span class="muted small">завести дерево другой семье по ссылке</span></span></router-link>
     </div>
 
     <template v-if="isOwner()">
       <h2>Название дерева</h2>
       <div class="row"><input v-model="title" class="grow" /><button @click="saveTitle">Сохранить</button></div>
+      <p v-if="space?.quota" class="small" :class="{ full: space.used >= space.quota * 0.9 }">
+        Место на сервере для фото, документов и записей: занято {{ sizeText(space.used) }} из {{ sizeText(space.quota) }}.
+        <template v-if="space.used >= space.quota">Новые файлы не загрузятся — попросите прибавить места того, кто дал ссылку на дерево.</template>
+      </p>
     </template>
 
     <h2>О датах</h2>
@@ -178,6 +201,9 @@ async function logout() {
 .nopass { margin-top: 12px; background: var(--warn-bg); color: var(--warn-text); border-color: transparent; }
 .nopass p { margin: 0.333rem 0 0.667rem; }
 .last { margin: 0.667rem 0 0.333rem; }
+.hint { margin: 0 0 0.333rem; }
+.go { flex: none; color: var(--accent-text); font-weight: 700; }
+.full { color: var(--danger); font-weight: 700; }
 .last.done { color: var(--accent-text); font-weight: 700; }
 .count { flex: none; min-width: 1.778rem; padding: 0 0.444rem; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 700; text-align: center; }
 </style>

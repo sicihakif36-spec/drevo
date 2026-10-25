@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { store, loadMe, loadTree, canEdit } from './store.js';
+import { store, loadMe, loadTree, canEdit, switchTenant } from './store.js';
 import AddPersonSheet from './components/AddPersonSheet.vue';
 import AskDialog from './components/AskDialog.vue';
 import AskSheet from './components/AskSheet.vue';
@@ -22,15 +22,28 @@ function putOff() {
 }
 const askPassword = computed(() => store.me?.needs_password && !later.value && route.path !== '/password');
 
+// Уведомление из другой семьи этого телефона открывает приложение с ?t=<номер семьи>: сначала — в ту семью,
+// а до тех пор ничего из прежней не показываем.
+const wanted = (t) => t && t !== store.tenant?.id && store.tenants.some((x) => x.id === t && !x.closed);
+const switching = ref(new URLSearchParams(location.search).has('t'));
 loadMe().then(() => {
+  const t = new URLSearchParams(location.search).get('t');
+  if (t) history.replaceState(null, '', `/${location.hash}`);
+  if (wanted(t)) return switchTenant(t, location.hash);
+  switching.value = false;
   if (!store.me) return;
   loadTree();
   syncPush();
 });
 // Нажали на уведомление, а приложение уже открыто: service worker просит перейти в нужное место.
 navigator.serviceWorker?.addEventListener('message', (e) => {
-  if (e.data?.type === 'drevo-open') router.push(new URL(e.data.url).hash.slice(1) || '/');
+  if (e.data?.type !== 'drevo-open') return;
+  const url = new URL(e.data.url);
+  if (wanted(url.searchParams.get('t'))) switchTenant(url.searchParams.get('t'), url.hash);
+  else router.push(url.hash.slice(1) || '/');
 });
+// Другие семьи этого телефона — на экране, когда в выбранную войти нельзя.
+const others = computed(() => store.tenants.filter((t) => !t.current && !t.closed));
 watch(() => store.me?.id, (id, old) => { if (id && id !== old && !store.tree) loadTree(); });
 
 function plus() {
@@ -44,17 +57,27 @@ function added(id) {
 
 <template>
   <template v-if="isPublic"><router-view /></template>
-  <template v-else-if="!store.ready"><div class="page muted">Загрузка…</div></template>
+  <template v-else-if="!store.ready || switching"><div class="page muted">Загрузка…</div></template>
   <PasswordView v-else-if="!store.me && store.pending" mode="enter" />
   <PasswordView v-else-if="askPassword" mode="create" later @later="putOff" />
   <template v-else-if="!store.me">
     <div class="page">
       <h1>Древо</h1>
       <div class="card" v-if="store.offline">Нет связи с сервером. Если вы уже входили, откройте приложение, когда появится интернет.</div>
+      <div class="card" v-else-if="store.tenant?.closed">
+        <p>Вход в дерево «{{ store.tenant.title }}» сейчас закрыт.</p>
+        <p class="muted small">Его закрыл тот, кто держит сервер. Узнайте у владельца дерева, что случилось. Само дерево никуда не делось.</p>
+      </div>
       <div class="card" v-else>
         <p>Это закрытое семейное дерево. Войти можно только по ссылке-приглашению.</p>
         <p class="muted small">Попросите ссылку у того, кто ведёт дерево. Если ссылка уже открыта на другом телефоне, попросите новую: она срабатывает один раз.</p>
       </div>
+      <template v-if="others.length">
+        <h2>Другие ваши семьи</h2>
+        <div class="list">
+          <a v-for="t in others" :key="t.id" href="#" @click.prevent="switchTenant(t.id)">«{{ t.title }}»</a>
+        </div>
+      </template>
     </div>
   </template>
   <template v-else>

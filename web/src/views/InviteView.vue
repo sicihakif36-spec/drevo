@@ -1,11 +1,13 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api.js';
-import { loadMe, loadTree } from '../store.js';
+import { store, loadMe, loadTree } from '../store.js';
 
 const props = defineProps({ token: String });
 const router = useRouter();
+// Телефон уже в какой-то семье: приглашение добавит ещё одну, прежние останутся.
+const before = computed(() => Boolean(store.me || store.tenants.length));
 const name = ref('');
 const error = ref('');
 const busy = ref(false);
@@ -15,6 +17,12 @@ async function enter() {
   error.value = '';
   try {
     const r = await api('POST', '/api/invites/redeem', { token: props.token, name: name.value });
+    // Была открыта другая семья — приложение открывается заново, уже в этой.
+    if (before.value) {
+      if (typeof caches !== 'undefined') await caches.delete('tree').catch(() => {});
+      location.replace('/');
+      return;
+    }
     await loadMe();
     // Вход на новом телефоне у того, кто правит дерево, ждёт пароль: экран пароля покажет App.vue.
     if (!r.password) await loadTree();
@@ -36,6 +44,7 @@ async function enter() {
       <p class="error" v-if="error">{{ error }}</p>
       <button class="primary block" :disabled="busy" @click="enter">{{ busy ? 'Вхожу…' : 'Войти' }}</button>
       <p class="muted small">Ссылка срабатывает один раз. После входа добавьте приложение на главный экран, чтобы открывать его как обычное.</p>
+      <p v-if="before" class="muted small">Если вы уже пользуетесь Древом в другой семье, она останется — переключаться можно в «Ещё».</p>
     </div>
   </div>
 </template>

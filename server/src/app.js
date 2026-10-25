@@ -5,7 +5,7 @@ import multipart from '@fastify/multipart';
 import staticFiles from '@fastify/static';
 import { config } from './config.js';
 import { authPlugin } from './auth.js';
-import { tenantPlugin } from './tenants.js';
+import { tenantPlugin, gone, loadTenants } from './tenants.js';
 import { pool } from './db.js';
 import personRoutes from './routes/persons.js';
 import userRoutes from './routes/users.js';
@@ -37,6 +37,8 @@ export async function buildApp(opts = {}) {
   // До регистрации маршрутов: плагины берут обработчик ошибок, действующий в момент их подключения.
   app.setErrorHandler((err, req, reply) => {
     if (err.code === '22P02') return reply.code(400).send({ error: 'Неверный идентификатор' });
+    // Семью только что удалили на сервере: перечитать список семей, следующий запрос пойдёт уже без неё.
+    if (gone(err)) loadTenants().catch(() => {});
     if (err.statusCode && err.statusCode < 500) return reply.code(err.statusCode).send({ error: err.message });
     req.log.error(err);
     return reply.code(500).send({ error: 'Ошибка на сервере' });
