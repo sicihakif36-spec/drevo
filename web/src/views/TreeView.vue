@@ -151,11 +151,26 @@ onDeactivated(() => { choosing.value = false; });
 const lineGroups = computed(() => {
   if (!choosing.value || !rootP.value) return [];
   const [father, mother] = fatherMother(idx.value, root.value);
+  const side = (s) => lines.value.filter((l) => l.side === s);
   return [
-    { title: 'Со стороны отца', lines: lines.value.filter((l) => l.path[0] === 'M'), missing: !father && 'Отец в дереве не указан.' },
-    { title: 'Со стороны матери', lines: lines.value.filter((l) => l.path[0] === 'F'), missing: !mother && 'Мать в дереве не указана.' },
-  ];
+    { title: 'Со стороны отца', lines: side('M'), missing: !father && 'Отец в дереве не указан.', grand: side('M').length === 1 },
+    { title: 'Со стороны матери', lines: side('F'), missing: !mother && 'Мать в дереве не указана.', grand: side('F').length === 1 },
+    { title: 'С обеих сторон', lines: side('both') },
+  ].filter((g) => g.lines.length || g.missing);
 });
+// Через кого линия: «Смирнов Юрий Петрович, отец»; у общей — имена: «Юрий и Галина, отец и мать»,
+// «Пётр, Клавдия, Андрей и Мария, дедушки и бабушки» (известны не все — «Пётр и Клавдия, дедушка и бабушка»).
+function viaText(l) {
+  const ps = l.vias.map((id) => idx.value.persons.get(id));
+  if (ps.length === 1) return `${fullName(ps[0])}, ${l.who}`;
+  const names = ps.map((p) => p.given || fullName(p));
+  let who = l.who;
+  if (l.key === 'grand') {
+    const w = ps.filter((p) => p.sex === 'F').length;
+    who = [ps.length - w && (ps.length - w > 1 ? 'дедушки' : 'дедушка'), w && (w > 1 ? 'бабушки' : 'бабушка')].filter(Boolean).join(' и ');
+  }
+  return `${names.slice(0, -1).join(', ')} и ${names[names.length - 1]}, ${who}`;
+}
 function pickLine(l) {
   line.value = l.key;
   kinUp.value = null;
@@ -320,17 +335,17 @@ function gens(delta) {
       <div class="sheet-backdrop" @click="choosing = false" />
       <div class="sheet" role="dialog" aria-modal="true" aria-label="Чья родня">
         <div class="row"><h2 class="grow" style="margin:0">{{ whose }}</h2><button class="ghost" @click="choosing = false" aria-label="Закрыть">✕</button></div>
-        <p class="muted small" style="margin:4px 0 0">Кровные родственники по одной линии. Сверху — общие предки, под ними все их дети, внуки и правнуки с мужьями и жёнами. Больше поколений вверх — больше родни.</p>
+        <p class="muted small" style="margin:4px 0 0">Кровные родственники по одной линии или с обеих сторон. Сверху — общие предки, под ними все их дети, внуки и правнуки с мужьями и жёнами. Больше поколений вверх — больше родни.</p>
         <template v-for="g in lineGroups" :key="g.title">
           <h3 class="side">{{ g.title }}</h3>
           <div class="list" v-if="g.lines.length">
             <button v-for="l in g.lines" :key="l.key" :aria-pressed="kin?.key === l.key" @click="pickLine(l)">
-              <div class="grow"><div :class="{ b: kin?.key === l.key }">{{ l.title }}</div><div class="muted small">{{ fullName(idx.persons.get(l.via)) }}, {{ l.who }}</div></div>
+              <div class="grow"><div :class="{ b: kin?.key === l.key }">{{ l.title }}</div><div class="muted small">{{ viaText(l) }}</div></div>
               <span v-if="kin?.key === l.key" class="tick" aria-hidden="true">✓</span>
             </button>
           </div>
           <p class="muted small" v-if="g.missing">{{ g.missing }}</p>
-          <p class="muted small" v-else-if="g.lines.length === 1">Родня по деду и по бабушке появится, когда в дереве будут их родители.</p>
+          <p class="muted small" v-else-if="g.grand">Родня по деду и по бабушке появится, когда в дереве будут их родители.</p>
         </template>
       </div>
     </Teleport>

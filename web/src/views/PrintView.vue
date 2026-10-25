@@ -201,7 +201,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <button :class="{ on: isKin }" class="span" @click="o.mode = 'kin'">Родня</button>
       </div></div>
       <template v-if="isKin">
-        <p class="muted small" style="margin-top:0">Кровные родственники по одной линии: сверху — общие предки, под ними все их дети, внуки и правнуки с мужьями и жёнами.</p>
+        <p class="muted small" style="margin-top:0">Кровные родственники по одной линии или с обеих сторон: сверху — общие предки, под ними все их дети, внуки и правнуки с мужьями и жёнами.</p>
         <div class="field" v-if="lines.length"><span class="small muted">По какой линии</span>
           <div class="chips"><button v-for="l in lines" :key="l.key" class="chip" :class="{ on: kin?.key === l.key }" @click="pickLine(l)">{{ l.text[0].toUpperCase() + l.text.slice(1) }}</button></div>
         </div>
