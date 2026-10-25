@@ -9,7 +9,7 @@ import { loadTreeData, THEMES } from './routes/print.js';
 import { mediaPath } from './routes/media.js';
 import { LIST as EVENT_LIST, visibleEvents } from './routes/timeline.js';
 import { personSources } from './routes/sources.js';
-import { buildIndex, childrenOf, dateText, fullName, lifespan, parentsOf, siblingsOf, spousesOf } from '../../shared/names.js';
+import { altLabel, altName, buildIndex, childrenOf, dateText, fullName, lifespan, parentsOf, siblingsOf, spousesOf } from '../../shared/names.js';
 import { lifeItems } from '../../shared/life.js';
 import { sourceLine } from '../../shared/sources.js';
 import { MARGIN, WIDTH, colors, ensure, footer, newDoc, place, today } from './pdf.js';
@@ -146,6 +146,7 @@ export function renderCard(stream, data, o) {
   }
   const tw = L + WIDTH - tx;
   doc.font(c.bold).fontSize(SIZE.name).fillColor(c.title).text(fullName(p), tx, top + 4, { width: tw });
+  if (altName(p)) doc.font(c.font).fontSize(SIZE.sub).fillColor(c.muted).text(`${altLabel(p)}: ${altName(p)}`, tx, doc.y + 2, { width: tw });
   if (p.birth_surname && p.birth_surname !== p.surname) {
     doc.font(c.font).fontSize(SIZE.sub).fillColor(c.muted).text(`${she(p) ? 'урождённая' : 'при рождении'} ${p.birth_surname}`, tx, doc.y + 2, { width: tw });
   }

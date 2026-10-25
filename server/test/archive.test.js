@@ -1,15 +1,15 @@
 // Полный архив «Скачать всё»: только владельцу; дерево.ged, index.html, прочтите.txt и файлы по папкам;
 // GEDCOM ссылается ровно на файлы архива; безопасные и неповторяющиеся имена; удалённого нет;
-// большое дерево идёт потоком без роста памяти, а прерванное скачивание не ломает сервер.
+// журнал поиска по людям без удалённого; большое дерево идёт потоком без роста памяти, а прерванное скачивание не ломает сервер.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import yauzl from 'yauzl';
 import { buildApp } from '../src/app.js';
+import { signIn } from './helpers.js';
 import { migrate } from '../src/migrate.js';
 import { pool, q } from '../src/db.js';
-import { createInvite } from '../src/auth.js';
 import { mediaPath } from '../src/routes/media.js';
 import { safeName, Names } from '../src/archive.js';
 
@@ -18,10 +18,7 @@ const H = { 'x-drevo': '1' };
 let owner;
 
 async function login(role) {
-  const { token } = await createInvite({ role, label: role });
-  const r = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token } });
-  assert.equal(r.statusCode, 200, r.body);
-  return r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  return signIn(app, role, { label: role });
 }
 const call = (cookie, method, url, payload) => app.inject({ method, url, payload, headers: { ...H, cookie } });
 const json = async (...args) => {
@@ -206,9 +203,58 @@ test('в архиве: дерево.ged с файлами, index.html, проч�
   assert.match(readme, /index\.html/);
 });
 
+test('журнал поиска в архиве: вопросы и записи по людям, кто и когда, ссылки и шифры; удалённого нет', async () => {
+  const editor = await login('editor');
+  const as = (cookie, method, url, payload) => json(cookie, method, url, payload);
+  const ahmet = await add({ given: 'Ахмет', surname: 'Галиев', sex: 'M', living: false, birth_date: '1901' });
+  const quiet = await add({ given: 'Тихон', surname: 'Безвопросов', sex: 'M', living: false });
+  const gone = await add({ given: 'Ушедший', surname: 'Изархива', sex: 'M', living: false });
+
+  const x = await as(editor, 'POST', `/api/persons/${ahmet.id}/research`, { title: 'Где погиб в 1943' });
+  await as(editor, 'POST', `/api/research/${x.id}/notes`, { result: 'notfound', place: 'Память народа', url: 'https://pamyat-naroda.ru/', body: 'По фамилии не нашли.\nПопробовать Галеев.' });
+  await as(owner, 'POST', `/api/research/${x.id}/notes`, { result: 'found', place: 'ЦАМО', ref: 'ф. 58, оп. 18001, д. 1', body: 'Донесение о потерях.' });
+  const wrong = await as(owner, 'POST', `/api/research/${x.id}/notes`, { body: 'Ошибочная запись' });
+  await as(owner, 'DELETE', `/api/research/notes/${wrong.id}`);
+  await as(owner, 'PATCH', `/api/research/${x.id}`, { status: 'found' });
+  await as(owner, 'POST', `/api/persons/${ahmet.id}/research`, { title: 'Родители Ахмета' });
+  const removed = await as(owner, 'POST', `/api/persons/${ahmet.id}/research`, { title: 'Удалённый вопрос' });
+  await as(owner, 'POST', `/api/research/${removed.id}/notes`, { body: 'Запись удалённого вопроса' });
+  await as(owner, 'DELETE', `/api/research/${removed.id}`);
+  await as(owner, 'POST', `/api/persons/${gone.id}/research`, { title: 'Вопрос об удалённом человеке' });
+  await as(owner, 'DELETE', `/api/persons/${gone.id}`);
+
+  const info = await json(owner, 'GET', '/api/archive');
+  assert.equal(info.research, 2);
+  assert.match(info.summary, /2 вопроса поиска/);
+  const files = await unzip((await call(owner, 'GET', '/api/archive.zip')).rawPayload);
+  const paths = [...files.keys()];
+  const log = paths.filter((p) => p.startsWith('Журнал поиска/'));
+  assert.deepEqual(log, ['Журнал поиска/Галиев Ахмет (1901–…).txt'], 'файл только у человека с вопросами');
+  const t = files.get(log[0]).toString();
+  assert.match(t, /^\ufeffЖурнал поиска: Галиев Ахмет \(1901–…\)\r\n/);
+  assert.match(t, /Вопрос: Где погиб в 1943\r\nСостояние: Нашли\r\nЗаписал\(а\): editor, \d\d\.\d\d\.\d{4}/);
+  assert.match(t, /editor — Не нашли\r\n  Где искали: Память народа\r\n  Ссылка: https:\/\/pamyat-naroda\.ru\/\r\n  По фамилии не нашли\.\r\n  Попробовать Галеев\./);
+  assert.match(t, /owner — Нашли\r\n  Где искали: ЦАМО\r\n  Шифр: ф\. 58, оп\. 18001, д\. 1\r\n  Донесение о потерях\./);
+  assert.match(t, /Вопрос: Родители Ахмета\r\nСостояние: Ищем[^]*Записей пока нет\./);
+  assert.ok(t.indexOf('Где погиб') < t.indexOf('Родители'), 'по порядку');
+  for (const no of ['Ошибочная', 'Удалённый вопрос', 'Запись удалённого', 'удалённом человеке']) assert.ok(!t.includes(no), no);
+
+  const html = files.get('index.html').toString();
+  const card = (name) => html.split('<section').find((c) => c.includes(`<h2>${name}</h2>`));
+  const a = card('Галиев Ахмет');
+  assert.match(a, /<h3>Журнал поиска<\/h3>/);
+  assert.ok(a.includes('Где погиб в 1943') && a.includes('ф. 58, оп. 18001, д. 1') && a.includes('Донесение о потерях.'));
+  assert.ok(a.includes(`href="${encodeURIComponent('Журнал поиска')}/`));
+  assert.ok(!a.includes('Ошибочная') && !a.includes('Удалённый вопрос'));
+  assert.doesNotMatch(html, /(src|href)="(https?:)?\/\//, 'ссылки поиска — текстом, страница без интернета');
+  assert.doesNotMatch(card('Безвопросов Тихон'), /Журнал поиска/);
+  assert.ok(!html.includes('удалённом человеке'));
+  assert.match(files.get('прочтите.txt').toString(), /2 вопроса поиска[^]*Журнал поиска {3}— /);
+});
+
 // Тысячи файлов по 128 КБ — жёсткие ссылки на один файл, чтобы не занимать диск. Архив — около 380 МБ;
 // память растёт от длины списка файлов (на 1000 файлов — около 50 МБ, на 6000 — около 75), а не от их веса.
-test('большое дерево собирается потоком: память не растёт вместе с архивом; прерванное скачивание не ломает сервер', async () => {
+test('большое дерево собирается потоком: память не растёт вместе с архивом; прерванное скачивание не ломает сервер и не считается скачанным', async () => {
   const N = 3000;
   const seed = mediaPath('seed-archive-test');
   fs.writeFileSync(seed, Buffer.alloc(128 * 1024, 7));
@@ -232,6 +278,8 @@ test('большое дерево собирается потоком: памя�
       req.on('error', (err) => (err.message === 'прервано' ? resolve({ aborted: true }) : reject(err)));
     });
 
+    const downloads = async () => (await q('select count(*)::int as n from archive_downloads'))[0].n;
+    const before = await downloads();
     global.gc?.();
     const base = process.memoryUsage().rss;
     let peak = base;
@@ -248,6 +296,9 @@ test('большое дерево собирается потоком: памя�
     // Ушли на середине: сервер бросает чтение и дальше работает.
     const cut = await get((got, req) => { if (got > 20 * 1024 * 1024) req.destroy(new Error('прервано')); });
     assert.ok(cut.aborted);
+    // Отметка о скачивании — только о дошедшем до конца: полное считается, прерванное — нет.
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await downloads(), before + 1);
     const info = await json(owner, 'GET', '/api/archive');
     assert.equal(info.photos, 7 + N);
   } finally {

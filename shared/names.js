@@ -11,7 +11,7 @@ export const foldName = (s) => String(s ?? '').trim().toLowerCase().replace(/[ә
 // Гласные по созвучию, г/х/һ — одна буква, без ь и ъ, двойные буквы — одной.
 export function looseName(s) {
   return foldName(s).replace(/дж/g, 'ж').replace(/[ьъ]/g, '').replace(/[оуюө]/g, 'у').replace(/[еиэыё]/g, 'и').replace(/я/g, 'а')
-    .replace(/[гх]/g, 'х').replace(/(.)\1+/g, '$1');
+    .replace(/[гх]/g, 'х').replace(/(.)\1+/g, '$1').replace(/([хк])ий/g, '$1и');
 }
 // Одно ли это имя (фамилия, отчество) в разных написаниях. Пустое ни с чем не совпадает.
 export const sameName = (a, b) => Boolean(looseName(a)) && looseName(a) === looseName(b);
@@ -23,8 +23,65 @@ export function textHas(text, query) {
   const hay = looseName(text);
   return looseName(query).split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
 }
-// Человек подходит под поиск: по фамилии, имени, отчеству и фамилии при рождении.
-export const personHas = (p, query) => textHas(`${fullName(p)} ${p?.birth_surname || ''}`, query);
+// Человек подходит под поиск: по фамилии, имени, отчеству, фамилии при рождении и второму написанию.
+export const personHas = (p, query) => textHas(`${fullName(p)} ${p?.birth_surname || ''} ${altName(p)}`, query);
+
+// ---------- Второе написание имени ----------
+// Основное написание — как в семейной схеме (часто по-татарски), второе — как в документах (по-русски) или латиницей.
+export const ALT_FIELDS = ['alt_surname', 'alt_given', 'alt_patronymic'];
+export const altName = (p) => (p ? [p.alt_surname, p.alt_given, p.alt_patronymic].filter((x) => String(x || '').trim()).join(' ') : '');
+// Как человек записан во втором написании: незаполненное — как в основном.
+export const altPerson = (p) => ({ ...p, surname: p.alt_surname || p.surname, given: p.alt_given || p.given, patronymic: p.alt_patronymic || p.patronymic });
+// Оба написания для сравнения: основное и, если есть, второе.
+export const spellings = (p) => (altName(p) ? [p, altPerson(p)] : [p]);
+const TATAR_PATRONYMIC = /\s(улы|углы|кызы|кзы)$/i;
+// Записан ли человек по-татарски: татарские буквы или отчество «… улы» / «… кызы».
+export const isTatarName = (p) => [p?.surname, p?.given, p?.patronymic].some((x) => TATAR_LETTERS.test(x || '')) || TATAR_PATRONYMIC.test(String(p?.patronymic || '').trim());
+// Подпись второго написания по его буквам: «В документах» (русские буквы), «По-татарски», «Латиницей».
+export function altLabel(p) {
+  const s = altName(p);
+  if (/[a-z]/i.test(s)) return 'Латиницей';
+  if (isTatarName({ surname: p.alt_surname, given: p.alt_given, patronymic: p.alt_patronymic })) return 'По-татарски';
+  return 'В документах';
+}
+
+// Татарские буквы — как в русских документах: Рәшит -> Рашит, Гыйльмия -> Гильмия, Гөлнара -> Гульнара, Һади -> Хади.
+// ө в именах по-русски обычно у: Мөхәммәт -> Мухаммат, Төхфәт -> Тухфат, Өлфәт -> Ульфат.
+const RU_LETTERS = { 'ә': 'а', 'ө': 'у', 'ү': 'у', 'һ': 'х', 'җ': 'ж', 'ң': 'н' };
+function ruWord(w) {
+  const low = w.toLowerCase()
+    .replace(/өл(?=[бвгджзклмнпрстфхцчшщһҗң])/g, 'уль')
+    .replace(/([гк])ый/g, '$1и')
+    .replace(/[әөүһҗң]/g, (c) => RU_LETTERS[c]);
+  // Заглавные — как были: по первой букве слова и частей через дефис.
+  return low.replace(/(^|[-\s])(\S)/g, (m, a, c) => a + c.toUpperCase());
+}
+export const russianLetters = (s) => String(s || '').trim().split(/\s+/).filter(Boolean).map(ruWord).join(' ');
+
+// Татарское отчество -> русское: «Хәсән улы» -> «Хасанович», «Габдулла кызы» -> «Габдулловна», «Вәли улы» -> «Валиевич».
+// Где русская форма неочевидна (имя отца на -а, кроме -улла, — «Муса», «Дәүләтшә»; на -у, -о, -е; женское имя) — пусто: пусть решит человек.
+export function russianPatronymic(patronymic, sex) {
+  const m = String(patronymic || '').trim().match(/^(.+?)\s+(улы|углы|кызы|кзы)$/i);
+  if (!m) return TATAR_LETTERS.test(patronymic || '') ? russianLetters(patronymic) : String(patronymic || '').trim();
+  const father = russianLetters(m[1]);
+  if (/\s/.test(father)) return '';
+  const f = /^к/i.test(m[2]) || sex === 'F';
+  const low = father.toLowerCase();
+  if (/лла$/.test(low)) return father.slice(0, -1) + (f ? 'овна' : 'ович');
+  if (/[ауоыэеюё]$/.test(low)) return '';
+  if (/и$/.test(low)) return father + (f ? 'евна' : 'евич');
+  if (/я$/.test(low)) return '';
+  return patronymicFrom(father, f ? 'F' : 'M');
+}
+
+// Подсказка второго написания по-русски: { alt_surname, alt_given, alt_patronymic }. Отчество пустое, если правило не подходит.
+export function suggestRussian(p) {
+  return {
+    alt_surname: russianLetters(p.surname),
+    alt_given: russianLetters(p.given),
+    alt_patronymic: russianPatronymic(p.patronymic, p.sex),
+  };
+}
 
 export function fullName(p) {
   if (!p) return '';

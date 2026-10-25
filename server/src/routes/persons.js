@@ -1,10 +1,12 @@
 import { q, tx } from '../db.js';
-import { need } from '../auth.js';
-import { logChange, listOps, countNew } from '../changes.js';
+import { need, meOf } from '../auth.js';
+import { logChange, listOps, countNew, canResearch } from '../changes.js';
 import { revertOp } from '../revert.js';
+import { ALT_FIELDS } from '../../../shared/names.js';
 import { HttpError, ownerPerson, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
 import { guestTree, isGuest, privateIds } from '../privacy.js';
 import { listPlaces } from './places.js';
+import { listMarks } from './checks.js';
 
 function clean(body, fields) {
   const out = {};
@@ -32,14 +34,19 @@ async function insertPerson(db, data, userId) {
 export default async function personRoutes(app) {
   app.get('/api/tree', { preHandler: need('viewer') }, async (req) => {
     const guest = isGuest(req.user);
-    const [persons, families, children, settings, feedNew, places, owner] = await Promise.all([
+    const editor = ['owner', 'editor'].includes(req.user.role);
+    const [persons, families, children, settings, feedNew, places, owner, marks, asked] = await Promise.all([
       q('select * from persons where deleted_at is null order by surname, given'),
       q('select * from families order by created_at'),
       q('select * from family_children'),
       q('select key, value from settings'),
-      countNew(req.user.id, guest ? await privateIds() : [], ['owner', 'editor'].includes(req.user.role)),
+      countNew(req.user.id, guest ? await privateIds() : [], editor, !guest),
       listPlaces(),
       ownerPerson({ q }),
+      editor ? listMarks() : null,
+      // Сколько вопросов ждут ответа от этого человека («Вас спросили»). Гостей не спрашивают.
+      guest ? null : q(`select count(*)::int as n from asks a join persons p on p.id = a.person_id where a.to_user = $1
+        and a.answered_at is null and a.revoked_at is null and a.closed_at is null and a.deleted_at is null and p.deleted_at is null`, [req.user.id]),
     ]);
     const data = { persons, families, children };
     return {
@@ -47,10 +54,13 @@ export default async function personRoutes(app) {
       settings: Object.fromEntries(settings.map((s) => [s.key, s.value])),
       // Справочник мест: в нём нет данных людей, гостю тоже.
       places,
-      me: req.user,
+      me: meOf(req.user),
       // С кого начинать дерево тем, кто себя не отметил. Гостю тоже: это лишь id человека, которого он и так видит.
       owner_person_id: owner,
       feed_new: feedNew,
+      // Отметки проверки дерева — только владельцу и участникам: в них даты живых.
+      ...(editor ? { check_marks: marks } : {}),
+      ...(guest ? {} : { asks_waiting: asked[0].n }),
     };
   });
 
@@ -91,6 +101,33 @@ export default async function personRoutes(app) {
       await logChange(db, req.user.id, 'person', cur.id, 'update',
         Object.fromEntries(changed.map((k) => [k, cur[k]])), Object.fromEntries(changed.map((k) => [k, next[k]])));
       return next;
+    });
+  });
+
+  // «Ещё → Написание имён»: второе написание нескольким людям сразу — одно действие в журнале, отменяется одной кнопкой.
+  // items: [{ id, alt_surname, alt_given, alt_patronymic }]. Уже заполненное другим второе написание не трогаем.
+  app.post('/api/persons/alt-names', { preHandler: need('editor') }, async (req) => {
+    const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 2000) : [];
+    if (!items.length) throw new HttpError(400, 'Никто не отмечен');
+    return tx(async (db) => {
+      let saved = 0;
+      for (const item of items) {
+        const data = clean(item, ALT_FIELDS);
+        if (!/^[0-9a-f-]{36}$/.test(String(item?.id || ''))) continue;
+        const cur = (await db.q('select * from persons where id = $1 and deleted_at is null for update', [item.id]))[0];
+        if (!cur || ALT_FIELDS.some((k) => cur[k])) continue;
+        const changed = ALT_FIELDS.filter((k) => data[k] && data[k] !== cur[k]);
+        if (!changed.length) continue;
+        const next = (await db.q(
+          `update persons set ${changed.map((k, i) => `${k} = $${i + 2}`).join(', ')}, version = version + 1, updated_at = now() where id = $1 returning *`,
+          [cur.id, ...changed.map((k) => data[k])],
+        ))[0];
+        await logChange(db, req.user.id, 'person', cur.id, 'update',
+          Object.fromEntries(changed.map((k) => [k, cur[k]])), Object.fromEntries(changed.map((k) => [k, next[k]])));
+        saved += 1;
+      }
+      if (!saved) throw new HttpError(409, 'Сохранять нечего: у отмеченных уже есть второе написание или их удалили');
+      return { saved };
     });
   });
 
@@ -138,9 +175,10 @@ export default async function personRoutes(app) {
   });
 
   // История — всем, кроме гостей: в старых значениях есть данные живых. Откат — только тем, кто правит.
-  app.get('/api/persons/:id/history', { preHandler: need('relative') }, async (req) => listOps({ person: req.params.id, limit: 100 }));
+  // Записи исследования — только владельцу и участникам. op — одно действие (ссылка из журнала поиска).
+  app.get('/api/persons/:id/history', { preHandler: need('relative') }, async (req) => listOps({ person: req.params.id, limit: 100, research: canResearch(req.user) }));
 
-  app.get('/api/changes', { preHandler: need('relative') }, async () => listOps({ limit: 50 }));
+  app.get('/api/changes', { preHandler: need('relative') }, async (req) => listOps({ limit: 50, op: req.query.op || null, research: canResearch(req.user) }));
 
   // Отменить действие, в которое входит правка :id.
   app.post('/api/changes/:id/revert', { preHandler: need('editor') }, async (req) => {

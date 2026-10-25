@@ -1,6 +1,7 @@
 // Уведомления на телефон через Web Push (VAPID): приходят и при закрытом приложении.
-// Три вида, у каждого свой переключатель: новый комментарий — сразу; правки в дереве — одной сводкой по автору,
+// Три вида, у каждого свой переключатель: новый комментарий (и вопрос родным — адресату, ответ — спросившему) — сразу; правки в дереве — одной сводкой по автору,
 // когда он 10 минут ничего не правил; дни рождения и памятные даты — в 9:00 по Москве.
+// Владельцу — ещё напоминание о семейном архиве: месяц не скачивали «Скачать всё» — днём, не чаще раза в неделю.
 // Расписание — раз в минуту внутри процесса. Что уже отправлено, отмечается в базе до отправки (migrations/006_push.sql):
 // одно и то же не уйдёт дважды и после перезапуска. Содержимое шифруется для телефона, сервис браузера его не видит.
 import webpush from 'web-push';
@@ -8,16 +9,22 @@ import { q } from './db.js';
 import { config } from './config.js';
 import { need } from './auth.js';
 import { HttpError } from './tree.js';
-import { STANDS } from './changes.js';
+import { STANDS, RESEARCH } from './changes.js';
 import { isGuest, hideLiving } from './privacy.js';
 import { fullName, isPrivate, upcomingDates, yearsText } from '../../shared/names.js';
+import { deviceName } from '../../shared/device.js';
+import { about } from '../../shared/asks.js';
+import { lastText } from '../../shared/archive.js';
+import { ARCHIVE_DUE, lastDownload } from './archive.js';
 
 const TICK = 60000;
 const QUIET = 10; // минут тишины после последней правки автора
 const HOUR = 9; // во сколько по Москве присылать даты
 const MSK = 3 * 3600000; // Москва без перехода на летнее время
 const CATCH_UP = 15; // минут: комментарии, которые не успели разослать (сервер перезапускался)
-const FLAGS = { comments: 'notify_comments', edits: 'notify_edits', dates: 'notify_dates' };
+const FLAGS = { comments: 'notify_comments', edits: 'notify_edits', dates: 'notify_dates', archive: 'notify_archive' };
+const ARCHIVE_HOURS = [11, 20]; // напоминание об архиве — днём по Москве, не ночью и не с утра пораньше
+const ARCHIVE_EVERY = 7; // дней между напоминаниями, пока не скачает
 // Адреса подписок — только сервисы уведомлений браузеров: сервер не должен ходить куда попало по чужой указке.
 const SERVICES = /(^|\.)(googleapis\.com|mozilla\.com|push\.apple\.com|notify\.windows\.com)$/;
 
@@ -39,7 +46,7 @@ function moscow(now) {
 export function digestText(name, sex, entries, ops) {
   const n = { added: 0, removed: 0, photos: 0, docs: 0, dropPhotos: 0, dropDocs: 0, cards: new Set(), files: new Set(),
     stories: 0, dropStories: 0, storyEdits: new Set(), sources: 0, dropSources: 0, sourceEdits: new Set(), cited: new Set(), quality: 0,
-    events: 0, dropEvents: 0, eventEdits: new Set(), places: 0, dropPlaces: 0, placeEdits: new Set() };
+    events: 0, dropEvents: 0, eventEdits: new Set(), places: 0, dropPlaces: 0, placeEdits: new Set(), merged: 0 };
   let links = 0;
   const loads = [];
   for (const op of ops) {
@@ -85,7 +92,10 @@ export function digestText(name, sex, entries, ops) {
       } else if (e.entity === 'quality') {
         n.quality++;
       } else if (e.entity === 'person') {
-        if (e.action === 'create') n.added++;
+        // Объединение дублей — одной фразой: правка оставшейся карточки и удаление второй — его части.
+        if (e.action === 'merge') n.merged++;
+        else if (mine.some((x) => x.entity === 'person' && x.action === 'merge')) continue;
+        else if (e.action === 'create') n.added++;
         else if (e.action === 'delete') n.removed++;
         else if (e.action !== 'photo' || !withFiles) n.cards.add(e.entity_id);
       }
@@ -102,6 +112,7 @@ export function digestText(name, sex, entries, ops) {
       events(n.events), sources(n.sources), places(n.places)]],
     [verb('изменил', sex), [n.cards.size && plural(n.cards.size, 'карточку', 'карточки', 'карточек'), n.files.size && `${n.files.size} фото`,
       stories(n.storyEdits.size), events(n.eventEdits.size), sources(n.sourceEdits.size), places(n.placeEdits.size), links && plural(links, 'связь', 'связи', 'связей')]],
+    [verb('объединил', sex), [n.merged && `${plural(n.merged, 'пару', 'пары', 'пар')} карточек-дублей`]],
     [verb('указал', sex), [sources(n.cited.size)]],
     [verb('отметил', sex), [n.quality && `достоверность ${plural(n.quality, 'сведения', 'сведений', 'сведений')}`]],
     [verb('удалил', sex), [n.removed && plural(n.removed, 'человека', 'человек', 'человек'), n.dropPhotos && `${n.dropPhotos} фото`, docs(n.dropDocs), stories(n.dropStories),
@@ -117,6 +128,26 @@ export function digestText(name, sex, entries, ops) {
   if (loads.some((x) => !x)) groups.push([verb('отменил', sex), ['загрузку из файла']]);
   const what = groups.map(([v, items]) => `${v} ${items.length > 1 ? `${items.slice(0, -1).join(', ')} и ${items.at(-1)}` : items[0]}`).join(', ');
   return `${name || 'Кто-то'} ${what || `${verb('сделал', sex)} ${plural(ops.length, 'правку', 'правки', 'правок')}`}`;
+}
+
+const ROLE = { owner: 'владелец', editor: 'участник', relative: 'родственник', viewer: 'гость' };
+// «24 октября, 14:05» по Москве.
+const when = (at) => {
+  const t = (o) => new Date(at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', ...o });
+  return `${t({ day: 'numeric', month: 'long' })}, ${t({ hour: '2-digit', minute: '2-digit' })}`;
+};
+
+// Вход для владельца: «Вошла Ольга (участник)», «Android, Chrome · 24 октября, 14:05».
+export function loginText(l) {
+  const by = { F: ['Вошла', 'она'], M: ['Вошёл', 'он'] }[l.sex] || ['Вошёл(а)', 'он(а)'];
+  const line = `${deviceName(l.user_agent)} · ${when(l.at)}`;
+  if (l.kind === 'fails') {
+    return { title: `${l.name}: пять раз неверный пароль`, body: `${line}. Кто-то пробует войти. Вход закрыт на 15 минут.` };
+  }
+  return {
+    title: l.pending ? `${l.name} (${ROLE[l.role]}) открыл${l.sex === 'F' ? 'а' : l.sex === 'M' ? '' : '(а)'} ссылку для входа` : `${by[0]} ${l.name} (${ROLE[l.role]})`,
+    body: `${line}.${l.pending ? ' Войдёт после пароля.' : ''} Если это не ${by[1]} — отключите в «Ещё → Родственники и приглашения».`,
+  };
 }
 
 function dateLine(d) {
@@ -226,6 +257,62 @@ export function pushPlugin(app, opts = {}) {
     });
   }
 
+  // Вопрос родному в приложении — только ему, если у него включены уведомления об обсуждении. key — повторное «Напомнить».
+  async function ask(id, key = id) {
+    const a = (await q(
+      `select a.id, a.question, a.to_user, u.name as from_name, p.surname, p.given, p.patronymic, p.sex
+       from asks a join persons p on p.id = a.person_id left join users u on u.id = a.created_by
+       where a.id = $1 and a.to_user is not null and a.answered_at is null and a.revoked_at is null and a.deleted_at is null`, [id],
+    ))[0];
+    if (!a || !(await claim('ask', key))) return;
+    const subs = await q(
+      `select s.endpoint, s.p256dh, s.auth from push_subs s join users u on u.id = s.user_id
+       where u.id = $1 and not u.disabled and u.role <> 'viewer' and u.notify_comments`, [a.to_user],
+    );
+    await deliver(subs, {
+      title: `${a.from_name || 'Кто-то'} спрашивает вас ${about(a)}`,
+      body: short(a.question),
+      url: `/#/asks/${a.id}`,
+      tag: `ask-${a.id}`,
+    });
+  }
+
+  // Ответили — тому, кто спрашивал, и больше никому.
+  async function answer(id) {
+    const a = (await q(
+      `select a.id, a.answer, a.created_by, coalesce(u.name, a.to_name) as who, w.sex as who_sex, p.surname, p.given, p.patronymic, p.sex
+       from asks a join persons p on p.id = a.person_id left join users u on u.id = a.to_user left join persons w on w.id = u.person_id
+       where a.id = $1 and a.answered_at is not null and a.deleted_at is null`, [id],
+    ))[0];
+    if (!a || !(await claim('answer', a.id))) return;
+    const subs = await q(
+      `select s.endpoint, s.p256dh, s.auth from push_subs s join users u on u.id = s.user_id
+       where u.id = $1 and not u.disabled and u.role <> 'viewer' and u.notify_comments`, [a.created_by],
+    );
+    await deliver(subs, {
+      title: `${a.who || 'Родственник'} ${verb('ответил', a.who_sex)} на ваш вопрос ${about(a)}`,
+      body: short(a.answer || 'Прислали фото или запись голоса'),
+      url: `/#/asks/${a.id}`,
+      tag: `ask-${a.id}`,
+    });
+  }
+
+  // Новый вход или пять неверных паролей — всем владельцам, на все их телефоны; без переключателя: это защита.
+  async function login(id) {
+    const [l] = await q(
+      `select l.at, l.kind, l.role, l.user_agent, u.name, p.sex, coalesce(s.pending, false) as pending
+       from logins l join users u on u.id = l.user_id left join persons p on p.id = u.person_id
+       left join sessions s on s.token_hash = l.session_hash where l.id = $1`,
+      [id],
+    );
+    if (!l || !(await claim('login', id))) return;
+    const subs = await q(
+      `select s.endpoint, s.p256dh, s.auth from push_subs s join users u on u.id = s.user_id join sessions x on x.token_hash = s.session_hash
+       where not u.disabled and u.role = 'owner' and u.password_hash is not null and not x.pending`,
+    );
+    await deliver(subs, { ...loginText(l), url: '/#/family', tag: `login-${id}` });
+  }
+
   // Комментарии, о которых не успели сообщить сразу.
   async function missedComments(now) {
     const rows = await q(
@@ -258,8 +345,9 @@ export function pushPlugin(app, opts = {}) {
         `select c.op, c.entity, c.entity_id, c.action, c.before, c.after from changes c where c.op in (
            select c.op from changes c where c.user_id = $1 group by c.op
            having max(c.id) > $2 and max(c.id) <= $3 and ${STANDS})
+         and c.entity <> all($4)
          order by c.id`,
-        [d.user_id, d.prev, d.last],
+        [d.user_id, d.prev, d.last, RESEARCH],
       );
       if (!entries.length) continue;
       const [author] = await q('select u.name, p.sex from users u left join persons p on p.id = u.person_id where u.id = $1', [d.user_id]);
@@ -308,11 +396,34 @@ export function pushPlugin(app, opts = {}) {
     }
   }
 
+  // Напоминание об архиве — каждому владельцу, кому пора (ARCHIVE_DUE) и у кого есть телефон с уведомлениями.
+  // Отметка archive_reminded_at ставится до отправки: второй проход в ту же неделю не напомнит.
+  async function archive(now) {
+    const { hour } = moscow(now);
+    if (hour < ARCHIVE_HOURS[0] || hour >= ARCHIVE_HOURS[1]) return;
+    const due = await q(
+      `update users u set archive_reminded_at = $1 where ${ARCHIVE_DUE} and u.notify_archive
+         and (u.archive_reminded_at is null or u.archive_reminded_at <= $1::timestamptz - make_interval(days => ${ARCHIVE_EVERY}))
+         and exists (select 1 from push_subs s where s.user_id = u.id)
+       returning u.id`,
+      [now],
+    );
+    if (!due.length) return;
+    const last = await lastDownload();
+    const subs = await q('select endpoint, p256dh, auth from push_subs where user_id = any($1::uuid[])', [due.map((u) => u.id)]);
+    await deliver(subs, {
+      title: 'Пора сохранить семейный архив',
+      body: last ? `Последний раз — ${lastText(last.at, now)}. Откройте «Ещё → Скачать всё».` : 'Вы его ещё не скачивали. Откройте «Ещё → Скачать всё».',
+      url: '/#/more?archive=1',
+      tag: 'archive',
+    });
+  }
+
   // Один проход расписания; если предыдущий ещё идёт — ждём его, а не запускаем второй.
   function tick() {
     busy ??= (async () => {
       const now = clock();
-      for (const step of [missedComments, digests, dates]) {
+      for (const step of [missedComments, digests, dates, archive]) {
         try {
           await step(now);
         } catch (err) {
@@ -332,6 +443,9 @@ export function pushPlugin(app, opts = {}) {
   app.decorate('push', {
     comment: (id) => later(() => comment(id)),
     survey: (id) => later(() => survey(id)),
+    login: (id) => later(() => login(id)),
+    ask: (id, key) => later(() => ask(id, key)),
+    answer: (id) => later(() => answer(id)),
     tick,
     settled: () => Promise.all([...pending, busy]),
   });
@@ -363,20 +477,22 @@ export function pushPlugin(app, opts = {}) {
     return { ok: true };
   });
 
-  const settings = async (userId) => {
-    const u = (await q('select notify_comments, notify_edits, notify_dates from users where id = $1', [userId]))[0];
-    return Object.fromEntries(Object.entries(FLAGS).map(([k, col]) => [k, u[col]]));
+  // Об архиве — только владельцу: остальные «Скачать всё» не видят.
+  const flags = (user) => Object.entries(FLAGS).filter(([k]) => k !== 'archive' || user.role === 'owner');
+  const settings = async (user) => {
+    const u = (await q('select notify_comments, notify_edits, notify_dates, notify_archive from users where id = $1', [user.id]))[0];
+    return Object.fromEntries(flags(user).map(([k, col]) => [k, u[col]]));
   };
 
-  app.get('/api/push/settings', { preHandler: need('viewer') }, async (req) => settings(req.user.id));
+  app.get('/api/push/settings', { preHandler: need('viewer') }, async (req) => settings(req.user));
 
   app.patch('/api/push/settings', { preHandler: need('viewer') }, async (req) => {
-    const set = Object.entries(FLAGS).filter(([k]) => typeof req.body?.[k] === 'boolean');
+    const set = flags(req.user).filter(([k]) => typeof req.body?.[k] === 'boolean');
     if (set.length) {
       await q(`update users set ${set.map(([, col], i) => `${col} = $${i + 2}`).join(', ')} where id = $1`,
         [req.user.id, ...set.map(([k]) => req.body[k])]);
     }
-    return settings(req.user.id);
+    return settings(req.user);
   });
 
   // Проверочное — на этот телефон (endpoint), а если он не указан — на все телефоны человека.

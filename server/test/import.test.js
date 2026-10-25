@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from '../src/app.js';
+import { signIn } from './helpers.js';
 import { migrate } from '../src/migrate.js';
 import { pool, q } from '../src/db.js';
-import { createInvite } from '../src/auth.js';
 import { parseGedcom, fromGedDate, splitPatronymic } from '../src/gedcom.js';
 import { toGedcom, gedDate, gedPeriod } from '../src/routes/export.js';
 import { loadTreeData } from '../src/routes/print.js';
@@ -25,10 +25,7 @@ let relative;
 let guest;
 
 async function login(role, name) {
-  const { token } = await createInvite({ role });
-  const r = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token, name } });
-  assert.equal(r.statusCode, 200, r.body);
-  return r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  return signIn(app, role, { name });
 }
 const call = (cookie, method, url, payload) => app.inject({ method, url, payload, headers: { ...H, cookie } });
 const json = async (...args) => {
@@ -247,13 +244,36 @@ test('кодировки и битые файлы', () => {
   assert.throws(() => parseGedcom(Buffer.from(text.replace('CHAR ANSI', 'CHAR ANSEL'))), /ANSEL/);
 });
 
-test('только владелец', async () => {
+test('права: владелец и участник — да; родственник, гость, без входа — нет', async () => {
   const file = ged('0 @I1@ INDI\n1 NAME Пётр /Сидоров/');
-  for (const c of [editor, relative, guest]) assert.equal((await upload(c, file)).statusCode, 403);
+  for (const c of [relative, guest]) assert.equal((await upload(c, file)).statusCode, 403);
+  assert.equal((await upload('', file)).statusCode, 401);
   const p = await preview(file);
-  for (const c of [editor, relative, guest]) assert.equal((await call(c, 'POST', `/api/import/${p.id}/load`, {})).statusCode, 403);
+  for (const c of [relative, guest]) {
+    assert.equal((await call(c, 'POST', `/api/import/${p.id}/load`, {})).statusCode, 403);
+    assert.equal((await call(c, 'DELETE', `/api/import/${p.id}`)).statusCode, 403);
+  }
+  assert.equal((await call('', 'POST', `/api/import/${p.id}/load`, {})).statusCode, 401);
+  // Чужой незагруженный файл не виден ни участнику, ни владельцу.
+  assert.equal((await call(editor, 'POST', `/api/import/${p.id}/load`, {})).statusCode, 404);
+  assert.equal((await call(editor, 'DELETE', `/api/import/${p.id}`)).statusCode, 404);
   assert.equal((await call(owner, 'DELETE', `/api/import/${p.id}`)).statusCode, 200);
   assert.equal((await call(owner, 'POST', `/api/import/${p.id}/load`, {})).statusCode, 404);
+
+  // Участник: свой файл — предпросмотр, «передумал», загрузка; отменить могут он сам и владелец.
+  const e1 = await upload(editor, file);
+  assert.equal(e1.statusCode, 200, e1.body);
+  assert.equal((await call(owner, 'POST', `/api/import/${e1.json().id}/load`, {})).statusCode, 404, 'чужой файл');
+  assert.equal((await call(editor, 'DELETE', `/api/import/${e1.json().id}`)).statusCode, 200);
+  const n = (await tree()).persons.length;
+  for (const who of [editor, owner]) {
+    const e = (await upload(editor, file)).json();
+    const res = await json(editor, 'POST', `/api/import/${e.id}/load`, {});
+    assert.equal(res.persons, 1);
+    assert.equal((await tree()).persons.length, n + 1);
+    await json(who, 'POST', `/api/changes/${res.change}/revert`);
+    assert.equal((await tree()).persons.length, n);
+  }
 });
 
 // Сведения дерева без id, с именами вместо ссылок: так их можно сравнить до выгрузки и после загрузки.

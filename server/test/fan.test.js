@@ -4,9 +4,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildApp } from '../src/app.js';
+import { signIn } from './helpers.js';
 import { migrate } from '../src/migrate.js';
 import { pool } from '../src/db.js';
-import { createInvite } from '../src/auth.js';
 import { loadTreeData, parsePrintOptions } from '../src/routes/print.js';
 import { buildIndex } from '../../shared/names.js';
 import { FAN, layoutFan, fanGeometry, nameVariants, textWidth } from '../../shared/fan.js';
@@ -154,10 +154,7 @@ let owner;
 let guest;
 
 async function login(role) {
-  const { token } = await createInvite({ role, label: role });
-  const r = await app.inject({ method: 'POST', url: '/api/invites/redeem', headers: H, payload: { token } });
-  assert.equal(r.statusCode, 200, r.body);
-  return r.cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+  return signIn(app, role, { label: role });
 }
 const call = (cookie, url) => app.inject({ method: 'GET', url, headers: { ...H, cookie } });
 const add = async (person, relation) => {

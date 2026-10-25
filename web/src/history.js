@@ -3,13 +3,16 @@
 import { fullName, nameGenitive } from '@shared/names.js';
 import { KINDS, QUALITY, factLabel } from '@shared/sources.js';
 import { eventTitle } from '@shared/events.js';
+import { ANSWER_FILE } from '@shared/research.js';
 
 export const FIELDS = [
   ['surname', 'Фамилия'], ['given', 'Имя'], ['patronymic', 'Отчество'], ['birth_surname', 'Фамилия при рождении'],
   ['birth_date', 'Дата рождения'], ['birth_place', 'Место рождения'], ['death_date', 'Дата смерти'], ['death_place', 'Место смерти'],
   ['burial_place', 'Место захоронения'], ['occupation', 'Род занятий'], ['notes', 'Заметки и воспоминания'],
 ];
-const LABEL = Object.fromEntries([...FIELDS, ['sex', 'Пол'], ['living', 'Жив или умер']]);
+// Второе написание имени — отдельным блоком в правке карточки.
+export const ALT = [['alt_surname', 'Фамилия (второе написание)'], ['alt_given', 'Имя (второе написание)'], ['alt_patronymic', 'Отчество (второе написание)']];
+const LABEL = Object.fromEntries([...FIELDS, ...ALT, ['sex', 'Пол'], ['living', 'Жив или умер']]);
 
 // Имя по id: из дерева, а для удалённых — из снимков в самом журнале.
 // name(id) — «Смирнов Пётр Иванович», name.gen(ids) — «у кого»: «Петра Ивановича и Клавдии Николаевны», name.sex(id).
@@ -41,7 +44,11 @@ function personLine(e, name) {
   if (e.action === 'delete') return `${bySex(sex, 'удалён', 'удалена')} из дерева: ${n}`;
   if (e.action === 'restore') return `${bySex(sex, 'возвращён', 'возвращена')} в дерево: ${n}`;
   if (e.action === 'photo') return `${e.after?.photo_id ? 'другое фото на карточке' : 'убрано фото с карточки'}${at([e.entity_id], name)}`;
-  if (e.action === 'update') return `исправлено${at([e.entity_id], name)}: ${Object.keys(e.after || {}).map((k) => (LABEL[k] || k).toLowerCase()).join(', ')}`;
+  // Три поля второго написания — одной подписью.
+  if (e.action === 'update') return `исправлено${at([e.entity_id], name)}: ${[...new Set(Object.keys(e.after || {}).map((k) => (k.startsWith('alt_') ? 'второе написание имени' : (LABEL[k] || k).toLowerCase())))].join(', ')}`;
+  // Объединение дублей: вторая карточка — в снимке её удаления в том же действии.
+  if (e.action === 'merge') return `объединены две карточки одного человека: ${n} и ${name(e.after?.from)}`;
+  if (e.action === 'unmerge') return `отменено объединение карточек: ${n} и ${name(e.before?.from)}`;
   return null;
 }
 
@@ -226,6 +233,44 @@ function placeLines(entries, name) {
   return lines;
 }
 
+// Исследование (видят только владелец и участники): «новый вопрос поиска у Петра Ивановича — «Где погиб в 1943»»,
+// «новая запись поиска у … — «…»», «вопрос «…»: нашли».
+const STATUS_WORD = { open: 'ищем', found: 'нашли', notfound: 'не нашли' };
+const NOTE_FIELD = { result: 'итог', place: 'где искали', url: 'ссылка', ref: 'шифр', body: 'что нашли' };
+function researchLine(e, name) {
+  const x = e.after || e.before || {};
+  const title = x.title ? ` — «${x.title}»` : '';
+  const who = at(e.persons, name);
+  if (e.entity === 'research_note') {
+    switch (e.action) {
+      case 'add': return `новая запись поиска${who}${title}`;
+      case 'delete': return `удалена запись поиска${who}${title}`;
+      case 'restore': return `возвращена запись поиска${who}${title}`;
+      case 'update': return `исправлена запись поиска${who}${title}: ${Object.keys(e.before || {}).map((k) => NOTE_FIELD[k] || k).join(', ')}`;
+    }
+    return null;
+  }
+  switch (e.action) {
+    case 'add': return `новый вопрос поиска${who}${title}`;
+    case 'delete': return `удалён вопрос поиска${who}${title}`;
+    case 'restore': return `возвращён вопрос поиска${who}${title}`;
+    case 'update': {
+      if (Object.keys(e.before || {}).join() === 'status') return `вопрос поиска${who}${title}: ${STATUS_WORD[e.after?.status] || e.after?.status}`;
+      return `исправлен вопрос поиска${who}${title}`;
+    }
+  }
+  return null;
+}
+
+// Интервью, сохранённое в истории, — одной строкой: «сохранено интервью у Клавдии Николаевны — 12 историй, 2 фото».
+// Сами истории и фото — в том же действии, по отдельности их не показываем. Гостю дата не приходит.
+function interviewLine(e, name) {
+  const x = e.after || e.before || {};
+  const what = [x.stories && count(x.stories, 'история', 'истории', 'историй'), x.photos && `фото: ${x.photos}`].filter(Boolean).join(', ');
+  const title = x.title ? ` («${x.title}»)` : '';
+  return `${e.action === 'save' ? 'интервью сохранено в истории' : 'отменено сохранение интервью'}${at(e.persons, name)}${title}${what ? ` — ${what}` : ''}`;
+}
+
 // Загрузка из файла — одной строкой-сводкой: «загрузка из файла «семья.ged» — 186 человек, 52 семьи, 40 событий».
 // Подробности — только у небольших загрузок: тысячи строк никто читать не будет.
 export function importSummary(x, undo = false) {
@@ -236,12 +281,16 @@ export function importSummary(x, undo = false) {
     x?.events && count(x.events, 'событие', 'события', 'событий'),
     x?.sources && count(x.sources, 'источник', 'источника', 'источников'),
   ].filter(Boolean).join(', ');
-  return `${undo ? 'отменена загрузка из файла' : 'загрузка из файла'}${x?.file ? ` «${x.file}»` : ''}${what ? ` — ${what}` : ''}`;
+  // Ответ ИИ-помощника из «Исследования» (routes/research.js) загружается как файл с этим именем.
+  const where = x?.file === ANSWER_FILE ? 'из ответа помощника' : `из файла${x?.file ? ` «${x.file}»` : ''}`;
+  return `${undo ? 'отменена загрузка' : 'загрузка'} ${where}${what ? ` — ${what}` : ''}`;
 }
 const SMALL_IMPORT = 40;
 
 // Строки действия, главная — первой. Служебные записи (пустая семья создана или убрана) не показываем.
 export function opLines(op, name) {
+  const iv = op.entries.find((e) => e.entity === 'interview');
+  if (iv) return [interviewLine(iv, name)];
   const imp = op.entries.find((e) => e.entity === 'import');
   if (imp) {
     const head = importSummary(imp.after || imp.before, imp.action === 'revert');
@@ -249,6 +298,9 @@ export function opLines(op, name) {
     return [head, ...opLines({ ...op, entries: op.entries.filter((e) => e !== imp) }, name).filter((l) => l !== 'изменены связи')];
   }
   if (op.entries.some((e) => e.entity === 'place')) return placeLines(op.entries, name);
+  // Объединение: удаление второй карточки — часть объединения, отдельной строкой не показываем.
+  const merge = op.entries.find((e) => e.entity === 'person' && e.action === 'merge');
+  if (merge) op = { ...op, entries: op.entries.filter((e) => !(e.entity === 'person' && e.action === 'delete' && e.entity_id === merge.after?.from)) };
   // Первое фото само становится главным, удалённое перестаёт им быть — отдельной строкой это не показываем.
   const withFiles = op.entries.some((e) => e.entity === 'media' && ['add', 'delete', 'restore'].includes(e.action));
   const lines = [
@@ -258,6 +310,7 @@ export function opLines(op, name) {
       if (e.entity === 'person') return e.action === 'photo' && withFiles ? null : personLine(e, name);
       if (e.entity === 'story') return storyLine(e, name);
       if (e.entity === 'event') return eventLine(e, name);
+      if (e.entity === 'research' || e.entity === 'research_note') return researchLine(e, name);
       return e.entity === 'family' ? familyLine(e, name) : null;
     }),
   ].filter(Boolean);
@@ -272,17 +325,20 @@ export const moreText = (n) => `Ещё ${count(n, 'изменение', 'изм�
 // У события — без вида и описания.
 const WAS = {
   story: ['title', 'date'], place: ['title', 'now'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'url'], event: ['date', 'place', 'title', 'unit', 'rank'],
+  research: ['title'], research_note: ['place', 'ref', 'url'],
 };
 export function opWas(op) {
   // Загрузка из файла показывается сводкой — без «было».
-  if (op.entries.some((e) => e.entity === 'import')) return [];
+  if (op.entries.some((e) => e.entity === 'import' || e.entity === 'interview')) return [];
   // У правки места — только само место: в карточках было его прежнее название.
   const withPlace = op.entries.some((e) => e.entity === 'place');
   return op.entries
     .filter((e) => (!withPlace || e.entity === 'place') && e.entity !== 'family' && e.action === 'update')
     .map((e) => Object.entries(e.before || {}).filter(([k]) => !WAS[e.entity] || WAS[e.entity].includes(k)).map(([, v]) => v).filter((v) => v !== null && v !== undefined)) // гостю старые значения не приходят
-    .filter((vals) => vals.length)
+    // Было пусто везде («было: —, —, —») — не пишем: поля просто заполнили.
+    .filter((vals) => vals.some((v) => v !== ''))
     .map((vals) => 'было: ' + vals.map((v) => (v === '' ? '—' : String(v))).join(', '));
 }
 
-export const restoresSomeone = (op) => op.entries.some((e) => e.entity !== 'family' && e.action === 'delete');
+// Объединение дублей тоже удаляет вторую карточку, но отменяется как действие: «Отменить объединение».
+export const restoresSomeone = (op) => !op.entries.some((e) => e.action === 'merge') && op.entries.some((e) => e.entity !== 'family' && e.action === 'delete');

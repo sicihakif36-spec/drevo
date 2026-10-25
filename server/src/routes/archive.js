@@ -1,13 +1,25 @@
 // Полный архив «Скачать всё» (src/archive.js) — только владельцу. Сначала телефон спрашивает, сколько он весит,
 // потом скачивает. В журнал правок не пишется (это не правка дерева), в журнал сервера — кто и когда скачал.
+// Скачивание, дошедшее до конца, отмечается в archive_downloads: от него считается напоминание раз в месяц (src/push.js).
 import { PassThrough } from 'node:stream';
+import { q } from '../db.js';
 import { need } from '../auth.js';
-import { archivePlan, countsText, planSize, writeArchive } from '../archive.js';
+import { archivePlan, countsText, planSize, writeArchive, lastDownload } from '../archive.js';
+import { LATER_DAYS } from '../../../shared/archive.js';
 
 export default async function archiveRoutes(app) {
   app.get('/api/archive', { preHandler: need('owner') }, async (req) => {
     const plan = await archivePlan(req.user);
-    return { ...plan.counts, files: plan.files, bytes: planSize(plan), summary: countsText(plan.counts) };
+    return { ...plan.counts, files: plan.files, bytes: planSize(plan), summary: countsText(plan.counts), last: await lastDownload() };
+  });
+
+  // Когда скачивали в последний раз: окно «Скачать всё» спрашивает, пока идёт скачивание.
+  app.get('/api/archive/last', { preHandler: need('owner') }, async () => ({ last: await lastDownload() }));
+
+  // «Напомнить позже» — через неделю, и плашкой в ленте, и на телефон.
+  app.post('/api/archive/later', { preHandler: need('owner') }, async (req) => {
+    await q(`update users set archive_later = now() + make_interval(days => ${LATER_DAYS}) where id = $1`, [req.user.id]);
+    return { ok: true };
   });
 
   app.get('/api/archive.zip', { preHandler: need('owner') }, async (req, reply) => {
@@ -25,6 +37,8 @@ export default async function archiveRoutes(app) {
     reply.raw.once('finish', () => {
       done = true;
       req.log.info({ ...who, bytes: size, seconds: seconds() }, 'полный архив скачан');
+      q('insert into archive_downloads (user_id, bytes) values ($1, $2)', [req.user.id, size])
+        .catch((err) => req.log.error({ err, ...who }, 'полный архив: не удалось отметить скачивание'));
     });
     reply.raw.once('close', () => {
       if (done) return;

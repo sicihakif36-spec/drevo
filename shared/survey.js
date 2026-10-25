@@ -1,7 +1,7 @@
 // Анкета для родственника: что спрашиваем и в каком порядке. Одно описание для страницы по ссылке,
 // для загрузки ответов в дерево и для бумажного бланка (server/src/blank.js): бланк печатает те же шаги и поля,
 // у «много» — несколько пустых мест (paper). Подписи только для бумаги — paperLabel, paperHint, paperLines.
-import { parseDate, patronymicFrom, surnameFor, foldName, sameName, samePatronymic } from './names.js';
+import { parseDate, patronymicFrom, surnameFor, foldName, sameName, samePatronymic, spellings } from './names.js';
 
 // Кем приходится человек тому, кто заполняет. many — сколько можно указать, sex — пол заранее.
 export const ROLES = {
@@ -168,7 +168,11 @@ export function suggest(answers, role, p) {
 // Похож ли человек из анкеты (или файла) на человека из дерева: по имени, отчеству, фамилии и году рождения,
 // как проверка дубликатов. Написание сравнивается без различий татарских и русских букв, похожие имена (Ренат и Ринат) — тоже он.
 // 0 — точно не он (другое имя, другое отчество, годы рождения расходятся больше чем на 5 лет).
+// Второе написание (по-русски из документов) — тоже он: берём лучшее совпадение из всех пар написаний.
 export function matchScore(rec, p) {
+  return Math.max(...spellings(rec).flatMap((a) => spellings(p).map((b) => spellingScore(a, b))));
+}
+function spellingScore(rec, p) {
   if (!sameName(rec.given, p.given)) return 0;
   let score = foldName(rec.given) === foldName(p.given) ? 1 : 0.5;
   if (t(rec.patronymic) && t(p.patronymic)) {

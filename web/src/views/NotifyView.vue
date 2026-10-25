@@ -1,13 +1,14 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue';
-import { toast } from '../store.js';
+import { toast, isOwner } from '../store.js';
 import { api } from '../api.js';
 import { pushState, enablePush, disablePush, testPush } from '../push.js';
 
 const OPTIONS = [
-  ['comments', 'Новые комментарии', 'Сразу, как только кто-то напишет в обсуждении'],
+  ['comments', 'Обсуждение и вопросы родным', 'Сразу: новый комментарий, вопрос вам, ответ на ваш вопрос'],
   ['edits', 'Правки в дереве', 'Одной сводкой: кто сколько добавил и изменил'],
   ['dates', 'Дни рождения и памятные даты', 'В 9 утра по Москве, в сам день'],
+  ['archive', 'Напоминать о семейном архиве', 'Если месяц не скачивали «Скачать всё». Днём, раз в неделю'],
 ];
 const state = ref('');
 const prefs = ref(null);
@@ -99,7 +100,7 @@ async function toggle(key, on) {
     <template v-if="prefs">
       <h2>О чём сообщать</h2>
       <div class="list">
-        <label v-for="[key, title, hint] in OPTIONS" :key="key" class="opt">
+        <label v-for="[key, title, hint] in OPTIONS.filter(([k]) => k in prefs)" :key="key" class="opt">
           <div class="grow">
             <div>{{ title }}</div>
             <div class="small muted">{{ hint }}</div>

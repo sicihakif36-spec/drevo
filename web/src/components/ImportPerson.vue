@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { store } from '../store.js';
-import { FIELDS } from '../history.js';
+import { FIELDS, ALT } from '../history.js';
 import { fullName, lifespan, personHas } from '@shared/names.js';
 
 // Человек из файла при загрузке (views/ImportView.vue): «уже есть в дереве», «новый» или «пропустить».
@@ -30,7 +30,7 @@ const diff = computed(() => {
   const x = props.p;
   if (!t) return [];
   const out = [];
-  for (const [key, label] of FIELDS) {
+  for (const [key, label] of [...FIELDS, ...ALT]) {
     const v = (x[key] || '').trim();
     if (v && v !== t[key]) out.push({ key, label, tree: t[key], file: v, add: !t[key] });
   }

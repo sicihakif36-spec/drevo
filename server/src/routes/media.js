@@ -24,7 +24,7 @@ const AUDIO = {
   'video/webm': 'audio/webm', 'audio/wav': 'audio/wav', 'audio/x-wav': 'audio/wav', 'audio/wave': 'audio/wav', 'audio/vnd.wave': 'audio/wav',
 };
 const AUDIO_EXT = { m4a: 'audio/mp4', mp4: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', webm: 'audio/webm', wav: 'audio/wav' };
-const audioMime = (mime, name) => AUDIO[String(mime).split(';')[0].trim().toLowerCase()] || AUDIO_EXT[/\.([a-z0-9]+)$/i.exec(name)?.[1].toLowerCase()];
+export const audioMime = (mime, name) => AUDIO[String(mime).split(';')[0].trim().toLowerCase()] || AUDIO_EXT[/\.([a-z0-9]+)$/i.exec(name)?.[1].toLowerCase()];
 const MIME = { photo: IMAGES, doc: [...IMAGES, 'application/pdf'] };
 export const MAX_FILE = 20 * 1024 * 1024; // крупный PDF; nginx пропускает до 25 МБ (deploy/nginx/drevo.conf)
 export const mediaPath = (id, thumb = false) => path.join(config.dataDir, 'media', thumb ? `${id}.thumb` : id);

@@ -1,5 +1,6 @@
 // Полный архив «Скачать всё»: всё дерево одним ZIP — страховка семьи и перенос в другую программу.
 // Внутри: дерево.ged с файлами, оригиналы фото, документов и записей голоса по папкам людей, истории текстом,
+// журнал поиска («Исследование») текстом по людям, вопросы родным с ответами и черновики интервью, ещё не сохранённые в истории,
 // index.html — страница, которая открывается без интернета, и прочтите.txt.
 // Архив не собирается в памяти: archivePlan() только перечисляет файлы, а writeArchive() отдаёт их потоком по одному.
 import fs from 'node:fs';
@@ -12,10 +13,23 @@ import { sourceData } from './routes/sources.js';
 import { eventData } from './routes/timeline.js';
 import { listPlaces } from './routes/places.js';
 import { toGedcom } from './routes/export.js';
-import { buildIndex, childrenOf, dateText, fullName, parentsOf, parseDate, spousesOf } from '../../shared/names.js';
+import { buildIndex, childrenOf, dateText, fullName, parentsOf, parseDate, spousesOf, altName, altLabel, foldName } from '../../shared/names.js';
+
+// Второе написание: «В документах: Галиев Рашит Хасанович».
+const altLine = (p) => (altName(p) ? `${altLabel(p)}: ${altName(p)}` : '');
+// Для поиска на странице: оба написания и без татарских букв — «рашит» находит «Рәшит».
+const searchName = (p) => { const s = `${fullName(p)} ${altName(p)}`.toLowerCase(); return `${s} ${foldName(s)}`; };
+import { STATUSES, RESULTS } from '../../shared/research.js';
+import { askStatus, STATUS as ASK_STATUS } from '../../shared/asks.js';
+import { KEEP_HINT, ARCHIVE_DAYS } from '../../shared/archive.js';
+import { askPath } from './asks.js';
+import { ivPath, SAVED_UNDONE, answersOf } from './interviews.js';
 
 const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf', 'audio/mpeg': 'mp3' };
 const DIRS = { photo: 'Фото', doc: 'Документы', audio: 'Записи голоса' };
+const FALLBACK = { photo: 'фото', doc: 'документ', audio: 'запись' };
+const ASKS_DIR = 'Вопросы родным';
+const IV_DIR = 'Интервью (черновики)';
 // Вид файла в GEDCOM (SOURCE_MEDIA_TYPE): снимок, документ, запись.
 const GED_TYPE = { photo: 'photo', doc: 'manuscript', audio: 'audio' };
 
@@ -62,7 +76,7 @@ const stripExt = (name) => String(name || '').replace(/\.[a-z0-9]{1,5}$/i, '');
 
 // Что кладётся в архив. entries — по порядку: { path, file, size, mtime } для файлов с диска, { path, buffer } для текстов.
 export async function archivePlan(user) {
-  const [tree, src, ev, places, media, stories, settings] = await Promise.all([
+  const [tree, src, ev, places, media, stories, questions, notes, settings, asks, askFiles, drafts] = await Promise.all([
     loadTreeData(user, false), sourceData(user), eventData(user), listPlaces(),
     // Групповое фото лежит у первого отмеченного: у того, к кому его загрузили, потом — по порядку отметок в журнале.
     q(`select m.id, m.kind, m.mime, m.name, m.caption, m.date, m.created_at,
@@ -72,14 +86,31 @@ export async function archivePlan(user) {
                            and ((c.action = 'add' and c.persons[1] = mp.person_id)
                              or (c.action = 'tag' and c.after->>'person_id' = mp.person_id::text))) nulls last, mp.ctid) as persons
        from media m where m.deleted_at is null and m.kind in ('photo', 'doc') order by m.created_at, m.id`),
-    q(`select s.id, s.title, s.date, s.body, s.created_at, u.name as user_name,
+    q(`select s.id, s.title, s.date, s.body, s.created_at, u.name as user_name, s.interview_no, iv.created_at as interview_at,
          a.id as audio_id, a.mime as audio_mime, a.created_at as audio_at,
          array(select sp.person_id from story_persons sp join persons p on p.id = sp.person_id and p.deleted_at is null
                where sp.story_id = s.id order by sp.ctid) as persons
        from stories s left join users u on u.id = s.created_by
        left join media a on a.id = s.audio_id and a.kind = 'audio' and a.deleted_at is null
-       where s.deleted_at is null order by s.created_at, s.id`),
+       left join interviews iv on iv.id = s.interview_id
+       where s.deleted_at is null order by s.created_at, s.interview_no nulls first, s.id`),
+    // Журнал поиска: удалённые вопросы и записи не берём.
+    q(`select x.id, x.person_id, x.title, x.status, x.created_at, u.name as user_name
+       from research_questions x left join users u on u.id = x.created_by
+       where x.deleted_at is null order by x.created_at, x.id`),
+    q(`select n.question_id, n.result, n.place, n.url, n.ref, n.body, n.created_at, u.name as user_name
+       from research_notes n left join users u on u.id = n.created_by
+       where n.deleted_at is null order by n.created_at, n.id`),
     q("select value from settings where key = 'title'"),
+    // Вопросы родным: отозванные и удалённые не берём.
+    q(`select a.id, a.person_id, a.question, a.created_at, a.answer, a.answered_at, a.closed_at, a.revoked_at, a.expires_at,
+         u.name as from_name, coalesce(tu.name, a.to_name) as to_name
+       from asks a left join users u on u.id = a.created_by left join users tu on tu.id = a.to_user
+       where a.deleted_at is null and a.revoked_at is null order by a.created_at, a.id`),
+    q('select id, ask_id, kind, mime, created_at from ask_files order by created_at, id'),
+    // Черновики интервью: сохранённые уже лежат в историях — их не дублируем.
+    q(`select i.id, i.person_id, i.questions, i.created_at, u.name as by_name from interviews i left join users u on u.id = i.created_by
+       where i.deleted_at is null and (i.saved_op is null or ${SAVED_UNDONE}) order by i.created_at, i.id`),
   ]);
   const title = settings[0]?.value || 'Семейное древо';
   const persons = [...tree.persons].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru')
@@ -94,16 +125,21 @@ export async function archivePlan(user) {
   const names = new Names();
   const files = [];
   let missing = 0;
-  const addFile = async (m, kind, owner, base) => {
-    const st = await fsp.stat(mediaPath(m.id)).catch(() => null);
+  // Файл с диска в папку dir. extra — файл вопроса родным или черновика интервью: в счёт фото и записей дерева не идёт.
+  const addDisk = async ({ file, mime, mtime, kind, dir, base, max = 60, extra = false }) => {
+    const st = await fsp.stat(file).catch(() => null);
     if (!st?.isFile()) {
       missing++;
       return null;
     }
-    const ext = EXT[m.mime] || 'bin';
-    const f = { id: m.id, kind, size: st.size, mtime: m.created_at, file: mediaPath(m.id), ext,
-      path: names.take(`${DIRS[kind]}/${folder.get(owner)}`, safeName(base, kind === 'photo' ? 'фото' : kind === 'doc' ? 'документ' : 'запись'), ext) };
+    const ext = EXT[mime] || 'bin';
+    const f = { kind, extra, size: st.size, mtime, file, ext, path: names.take(dir, safeName(base, FALLBACK[kind], max), ext) };
     files.push(f);
+    return f;
+  };
+  const addFile = async (m, kind, owner, base, max = 60) => {
+    const f = await addDisk({ file: mediaPath(m.id), mime: m.mime, mtime: m.created_at, kind, dir: `${DIRS[kind]}/${folder.get(owner)}`, base, max });
+    if (f) f.id = m.id;
     return f;
   };
 
@@ -126,24 +162,84 @@ export async function archivePlan(user) {
   for (const s of stories) {
     const about = s.persons.filter((id) => live.has(id));
     if (!about.length) continue;
-    const story = { ...s, persons: about, audio: null };
+    // Ответ из интервью — по порядку: «Интервью 24.10.2026 — 03 — Какой была ваша мама».
+    const base = s.interview_at ? `Интервью ${shortDay(s.interview_at)} — ${String(s.interview_no).padStart(2, '0')} — ${s.title}` : s.title;
+    const story = { ...s, base, persons: about, audio: null };
     if (s.audio_id) {
-      story.audio = await addFile({ id: s.audio_id, mime: s.audio_mime, created_at: s.audio_at }, 'audio', about[0], s.title || 'запись');
+      story.audio = await addFile({ id: s.audio_id, mime: s.audio_mime, created_at: s.audio_at }, 'audio', about[0], base || 'запись', s.interview_at ? 90 : 60);
       if (story.audio) objects.push({ id: s.audio_id, file: story.audio.path, form: story.audio.ext, type: 'audio', title: s.title, persons: about, kind: 'audio' });
     }
     storyList.push(story);
   }
   for (const s of storyList) {
-    s.path = names.take(`Истории/${folder.get(s.persons[0])}`, safeName(s.title, 'история'), 'txt');
+    s.path = names.take(`Истории/${folder.get(s.persons[0])}`, safeName(s.base, 'история', s.interview_at ? 90 : 60), 'txt');
+  }
+
+  // Журнал поиска — один файл на человека, все его вопросы с записями.
+  const notesOf = new Map();
+  for (const n of notes) notesOf.set(n.question_id, [...(notesOf.get(n.question_id) || []), n]);
+  const research = new Map();
+  for (const x of questions) {
+    if (!live.has(x.person_id)) continue;
+    research.set(x.person_id, [...(research.get(x.person_id) || []), { ...x, notes: notesOf.get(x.id) || [] }]);
+  }
+  const researchFiles = persons.filter((p) => research.has(p.id))
+    .map((p) => ({ person: p, questions: research.get(p.id), path: names.take('Журнал поиска', folder.get(p.id), 'txt') }));
+
+  // Вопросы родным — один файл на человека, голос и фото ответов — в папке рядом: «01 — голос.mp3».
+  const filesOf = new Map();
+  for (const f of askFiles) filesOf.set(f.ask_id, [...(filesOf.get(f.ask_id) || []), f]);
+  const asksOf = new Map();
+  for (const a of asks) if (live.has(a.person_id)) asksOf.set(a.person_id, [...(asksOf.get(a.person_id) || []), a]);
+  const askList = [];
+  for (const p of persons.filter((x) => asksOf.has(x.id))) {
+    const list = asksOf.get(p.id);
+    const dir = `${ASKS_DIR}/${folder.get(p.id)}`;
+    for (const [i, a] of list.entries()) {
+      a.no = String(i + 1).padStart(2, '0');
+      a.files = [];
+      for (const f of filesOf.get(a.id) || []) {
+        const x = await addDisk({ file: askPath(f.id), mime: f.mime, mtime: f.created_at, kind: f.kind, dir, base: `${a.no} — ${f.kind === 'audio' ? 'голос' : 'фото'}`, extra: true });
+        if (x) a.files.push(x);
+      }
+    }
+    askList.push({ person: p, asks: list, path: names.take(ASKS_DIR, folder.get(p.id), 'txt') });
+  }
+
+  // Черновики интервью: папка на интервью, в ней на каждый ответ «03 — <вопрос>.txt», запись голоса и фото рядом.
+  // Пропущенные вопросы и вопросы без ответа не кладём; интервью, где ответов нет совсем, — тоже.
+  const ivAnswers = await answersOf({ q }, drafts.map((i) => i.id));
+  const ivDirs = new Names();
+  const draftList = [];
+  for (const iv of drafts) {
+    if (!live.has(iv.person_id)) continue;
+    const answers = ivAnswers.get(iv.id);
+    const items = iv.questions.map((x, i) => ({ ...x, no: String(i + 1).padStart(2, '0'), answer: answers[x.key] }))
+      .filter((x) => x.answer && !x.answer.skipped && (x.answer.note || x.answer.files.length));
+    if (!items.length) continue;
+    const dir = ivDirs.take(IV_DIR, safeName(`${folder.get(iv.person_id)} — ${shortDay(iv.created_at)}`, 'интервью', 90));
+    for (const x of items) {
+      const base = `${x.no} — ${x.text}`;
+      x.files = [];
+      for (const f of x.answer.files) {
+        const y = await addDisk({ file: ivPath(f.id), mime: f.mime, mtime: f.created_at, kind: f.kind, dir, base: f.kind === 'audio' ? base : `${base} (фото)`, extra: true });
+        if (y) x.files.push(y);
+      }
+      x.path = names.take(dir, safeName(base, 'ответ'), 'txt');
+    }
+    draftList.push({ ...iv, dir, items, person: persons.find((p) => p.id === iv.person_id) });
   }
 
   const stamp = new Date();
   const counts = {
     persons: persons.length,
-    photos: files.filter((f) => f.kind === 'photo').length,
+    photos: files.filter((f) => f.kind === 'photo' && !f.extra).length,
     docs: files.filter((f) => f.kind === 'doc').length,
-    audio: files.filter((f) => f.kind === 'audio').length,
+    audio: files.filter((f) => f.kind === 'audio' && !f.extra).length,
     stories: storyList.length,
+    research: questions.filter((x) => live.has(x.person_id)).length,
+    asks: askList.reduce((n, x) => n + x.asks.length, 0),
+    drafts: draftList.length,
     missing,
   };
   const ged = toGedcom({ ...data, objects, stories: storyList });
@@ -151,13 +247,28 @@ export async function archivePlan(user) {
   const text = (s) => Buffer.from(`\ufeff${s.replace(/\r?\n/g, '\r\n')}`);
   const entries = [
     { path: 'прочтите.txt', buffer: text(readme(title, stamp, counts)) },
-    { path: 'index.html', buffer: Buffer.from(indexHtml({ title, stamp, counts, persons, idx, objects, fileOf, photoOf, stories: storyList })) },
+    { path: 'index.html', buffer: Buffer.from(indexHtml({ title, stamp, counts, persons, idx, objects, fileOf, photoOf, stories: storyList, research: researchFiles, asks: askList, drafts: draftList })) },
     { path: 'дерево.ged', buffer: Buffer.from(ged) },
     ...storyList.map((s) => ({ path: s.path, buffer: text(storyText(s, idx)) })),
+    ...researchFiles.map((r) => ({ path: r.path, buffer: text(researchText(r)) })),
+    ...askList.map((r) => ({ path: r.path, buffer: text(asksText(r)) })),
+    ...draftList.flatMap((iv) => iv.items.map((x) => ({ path: x.path, buffer: text(draftText(iv, x)) }))),
     ...files,
   ];
   return { title, stamp, counts, files: files.length, entries };
 }
+
+// Последнее полное скачивание: { at, bytes, name } или null.
+export async function lastDownload() {
+  return (await q(`select d.at, d.bytes, u.name from archive_downloads d left join users u on u.id = d.user_id
+    order by d.at desc, d.id desc limit 1`))[0] || null;
+}
+
+// Пора ли напомнить владельцу u ($1 — «сейчас»): с последнего скачивания прошло больше 30 дней (или его не было, а дерево
+// уже не пустое) и он не просил «Напомнить позже». Скачал любой из владельцев — копия у семьи есть.
+export const ARCHIVE_DUE = `u.role = 'owner' and not u.disabled and (u.archive_later is null or u.archive_later <= $1)
+  and coalesce((select max(at) from archive_downloads) <= $1::timestamptz - make_interval(days => ${ARCHIVE_DAYS}),
+    exists (select 1 from persons where deleted_at is null))`;
 
 // Примерный вес архива: файлы хранятся без сжатия (фото, PDF и MP3 уже сжаты), плюс заголовки ZIP.
 export function planSize(plan) {
@@ -168,12 +279,65 @@ function storyText(s, idx) {
   const who = s.persons.map((id) => fullName(idx.persons.get(id))).join(', ');
   const head = [
     s.title || 'История',
+    s.interview_at && `Интервью ${shortDay(s.interview_at)}, ответ ${s.interview_no}`,
     s.date && `Когда: ${dateText(s.date)}`,
     `О ком: ${who}`,
     s.user_name && `Записал(а): ${s.user_name}`,
     s.audio && `Запись голоса: ${s.audio.path}`,
   ].filter(Boolean).join('\n');
   return `${head}\n${s.body ? `\n${s.body.trimEnd()}\n` : ''}`;
+}
+
+// «24.10.2026» по Москве.
+const shortDay = (d) => new Date(d).toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' });
+const noteHead = (n) => [`${shortDay(n.created_at)}${n.user_name ? `, ${n.user_name}` : ''}`, n.result && RESULTS[n.result]?.label].filter(Boolean).join(' — ');
+const noteFacts = (n) => [['Где искали', n.place], ['Ссылка', n.url], ['Шифр', n.ref]].filter(([, v]) => v);
+
+function researchText({ person, questions }) {
+  const life = years(person);
+  const parts = [`Журнал поиска: ${fullName(person)}${life ? ` (${life})` : ''}`, altLine(person)].filter(Boolean);
+  for (const x of questions) {
+    const head = [
+      `Вопрос: ${x.title}`,
+      `Состояние: ${STATUSES[x.status]?.label || x.status}`,
+      `Записал(а): ${[x.user_name, shortDay(x.created_at)].filter(Boolean).join(', ')}`,
+    ];
+    const items = x.notes.map((n) => [
+      `  ${noteHead(n)}`,
+      ...noteFacts(n).map(([k, v]) => `  ${k}: ${v}`),
+      ...(n.body ? n.body.trimEnd().split(/\r?\n/).map((l) => `  ${l}`) : []),
+    ].join('\n'));
+    parts.push([head.join('\n'), ...(items.length ? items : ['  Записей пока нет.'])].join('\n\n'));
+  }
+  return `${parts.join('\n\n\n')}\n`;
+}
+
+// Кто кого спросил и что ответили: «Спросил(а): Анна, 24.10.2026».
+const askFacts = (a) => [
+  ['Спросил(а)', [a.from_name, shortDay(a.created_at)].filter(Boolean).join(', ')],
+  ['Кого', a.to_name],
+  ['Состояние', ASK_STATUS[askStatus(a)]],
+  ['Ответили', a.answered_at ? shortDay(a.answered_at) : ''],
+].filter(([, v]) => v);
+
+function asksText({ person, asks }) {
+  const life = years(person);
+  const parts = [`Вопросы родным: ${fullName(person)}${life ? ` (${life})` : ''}`, altLine(person)].filter(Boolean).join('\n');
+  return `${[parts, ...asks.map((a) => [
+    `${a.no}. Вопрос: ${a.question}`,
+    ...askFacts(a).map(([k, v]) => `${k}: ${v}`),
+    ...(a.answer ? ['Ответ:', ...a.answer.trimEnd().split(/\r?\n/).map((l) => `  ${l}`)] : []),
+    ...a.files.map((f) => `${f.kind === 'audio' ? 'Запись голоса' : 'Фото'}: ${f.path}`),
+  ].join('\n'))].join('\n\n\n')}\n`;
+}
+
+function draftText(iv, x) {
+  return `${[
+    `Интервью: ${fullName(iv.person)} — черновик, ещё не сохранён в историях`,
+    `Начато ${shortDay(iv.created_at)}${iv.by_name ? `, записывал(а) ${iv.by_name}` : ''}`,
+    `Вопрос ${Number(x.no)}: ${x.text}`,
+    ...x.files.map((f) => `${f.kind === 'audio' ? 'Запись голоса' : 'Фото'}: ${f.path}`),
+  ].join('\n')}\n${x.answer.note ? `\n${x.answer.note.trimEnd()}\n` : ''}`;
 }
 
 const plural = (n, one, few, many) => {
@@ -187,7 +351,10 @@ const dayText = (d) => `${d.toLocaleDateString('ru-RU', { day: 'numeric', month:
 export function countsText(c) {
   return [plural(c.persons, 'человек', 'человека', 'человек'), plural(c.photos, 'фото', 'фото', 'фото'),
     plural(c.docs, 'документ', 'документа', 'документов'), plural(c.audio, 'запись голоса', 'записи голоса', 'записей голоса'),
-    plural(c.stories, 'история', 'истории', 'историй')].join(', ');
+    plural(c.stories, 'история', 'истории', 'историй'),
+    ...(c.research ? [plural(c.research, 'вопрос поиска', 'вопроса поиска', 'вопросов поиска')] : []),
+    ...(c.asks ? [plural(c.asks, 'вопрос родным', 'вопроса родным', 'вопросов родным')] : []),
+    ...(c.drafts ? [plural(c.drafts, 'черновик интервью', 'черновика интервью', 'черновиков интервью')] : [])].join(', ');
 }
 
 function readme(title, stamp, c) {
@@ -209,12 +376,17 @@ ${c.missing ? `\n${plural(c.missing, 'файл не нашёлся', 'файла
   Документы       — сканы и PDF, по папкам людей.
   Записи голоса   — рассказы голосом, MP3.
   Истории         — истории текстом.
+  Журнал поиска   — что искали в архивах и на сайтах и что нашли, по людям.
+  Вопросы родным  — кого о ком спрашивали и что ответили; голос и фото ответов — в папке рядом.
+  Интервью (черновики) — записанные интервью, которые ещё не сохранили в истории: вопрос, заметка, голос.
 
 Перенести в другую программу
 Gramps, MyHeritage, «Древо Жизни» и другие умеют загружать GEDCOM: выберите в программе «Импорт» и файл дерево.ged.
 Фото подхватятся, если дерево.ged лежит рядом с папками «Фото» и «Документы», как в этом архиве.
 
-Храните копию архива в двух местах, например на компьютере и на флешке.
+Где хранить
+${KEEP_HINT}
+Скачивайте новый архив раз в месяц: приложение напомнит.
 `;
 }
 
@@ -222,7 +394,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', 
 // Ссылка на файл рядом со страницей: каждая часть пути — своим кодом, «/» остаются.
 const href = (p) => p.split('/').map(encodeURIComponent).join('/');
 
-function indexHtml({ title, stamp, counts, persons, idx, objects, fileOf, photoOf, stories }) {
+function indexHtml({ title, stamp, counts, persons, idx, objects, fileOf, photoOf, stories, research, asks, drafts }) {
   const num = new Map(persons.map((p, i) => [p.id, i + 1]));
   const link = (id) => (num.has(id) ? `<a href="#p${num.get(id)}">${esc(fullName(idx.persons.get(id)))}</a>` : '');
   const links = (ids) => ids.filter((id) => num.has(id)).map(link).join(', ');
@@ -233,6 +405,15 @@ function indexHtml({ title, stamp, counts, persons, idx, objects, fileOf, photoO
   };
   const objectsOf = byPerson(objects.filter((o) => o.kind !== 'audio'));
   const storiesOf = byPerson(stories);
+  const researchOf = new Map(research.map((r) => [r.person.id, r]));
+  const asksOf = new Map(asks.map((r) => [r.person.id, r]));
+  const draftsOf = new Map();
+  for (const iv of drafts) draftsOf.set(iv.person_id, [...(draftsOf.get(iv.person_id) || []), iv]);
+  // Голос и фото ответа: проигрыватель и миниатюры.
+  const media = (list) => [
+    ...list.filter((f) => f.kind === 'audio').map((f) => `<audio controls preload="none" src="${href(f.path)}"></audio>`),
+    ...(list.some((f) => f.kind === 'photo') ? [`<div class="photos">${list.filter((f) => f.kind === 'photo').map((f) => `<a href="${href(f.path)}"><img src="${href(f.path)}" alt="" loading="lazy"></a>`).join('')}</div>`] : []),
+  ].join('');
   const cards = persons.map((p) => {
     const n = num.get(p.id);
     const life = years(p);
@@ -254,9 +435,12 @@ function indexHtml({ title, stamp, counts, persons, idx, objects, fileOf, photoO
     const photos = own.filter((o) => o.kind === 'photo');
     const docs = own.filter((o) => o.kind === 'doc');
     const tales = storiesOf.get(p.id) || [];
-    return `<section class="person" id="p${n}" data-name="${esc(fullName(p).toLowerCase())}">
+    const search = researchOf.get(p.id);
+    const asked = asksOf.get(p.id);
+    const ivs = draftsOf.get(p.id) || [];
+    return `<section class="person" id="p${n}" data-name="${esc(searchName(p))}">
 <div class="head">${main ? `<img class="main" src="${href(main.path)}" alt="" loading="lazy">` : `<div class="main none">${esc((p.surname || p.given || '?')[0])}</div>`}
-<div><h2>${esc(fullName(p))}</h2>${life ? `<div class="muted">${esc(life)}</div>` : ''}</div></div>
+<div><h2>${esc(fullName(p))}</h2>${altLine(p) ? `<div class="muted">${esc(altLine(p))}</div>` : ''}${life ? `<div class="muted">${esc(life)}</div>` : ''}</div></div>
 ${facts.length || rel.length ? `<dl>${[...facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`), ...rel.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)].join('')}</dl>` : ''}
 ${p.notes ? `<p class="notes">${esc(p.notes)}</p>` : ''}
 ${photos.length ? `<h3>Фото</h3><div class="photos">${photos.map((o) => `<a href="${href(o.file)}"><img src="${href(o.file)}" alt="${esc(o.title)}" title="${esc(o.title)}" loading="lazy"></a>`).join('')}</div>` : ''}
@@ -264,10 +448,22 @@ ${docs.length ? `<h3>Документы</h3><ul>${docs.map((o) => `<li><a href="
 ${tales.length ? `<h3>Истории</h3>${tales.map((s) => `<details><summary>${esc(s.title || 'История')}${s.date ? ` <span class="muted">· ${esc(dateText(s.date))}</span>` : ''}</summary>
 ${s.body ? `<p class="notes">${esc(s.body)}</p>` : ''}${s.audio ? `<audio controls preload="none" src="${href(s.audio.path)}"></audio>` : ''}
 <p class="small"><a href="${href(s.path)}">Текстом</a>${s.audio ? ` · <a href="${href(s.audio.path)}">Запись голоса</a>` : ''}</p></details>`).join('')}` : ''}
+${search ? `<h3>Журнал поиска</h3>${search.questions.map((x) => `<details><summary>${esc(x.title)} <span class="muted">· ${esc(STATUSES[x.status]?.label || x.status)}</span></summary>
+<p class="small muted">Записал(а): ${esc([x.user_name, shortDay(x.created_at)].filter(Boolean).join(', '))}</p>
+${x.notes.map((n) => `<div class="note"><div class="small muted">${esc(noteHead(n))}</div>${noteFacts(n).length ? `<dl>${noteFacts(n).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>` : ''}${n.body ? `<p class="notes">${esc(n.body)}</p>` : ''}</div>`).join('') || '<p class="small muted">Записей пока нет.</p>'}</details>`).join('')}
+<p class="small"><a href="${href(search.path)}">Текстом</a></p>` : ''}
+${asked ? `<h3>Вопросы родным</h3>${asked.asks.map((a) => `<details><summary>${esc(a.question)} <span class="muted">· ${esc(ASK_STATUS[askStatus(a)])}</span></summary>
+<dl>${askFacts(a).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+${a.answer ? `<p class="notes">${esc(a.answer)}</p>` : ''}${media(a.files)}</details>`).join('')}
+<p class="small"><a href="${href(asked.path)}">Текстом</a></p>` : ''}
+${ivs.map((iv) => `<h3>Интервью ${esc(shortDay(iv.created_at))} — черновик</h3>
+<p class="small muted">Ещё не сохранено в истории${iv.by_name ? `. Записывал(а): ${esc(iv.by_name)}` : ''}.</p>
+${iv.items.map((x) => `<details><summary>${esc(x.text)}</summary>${x.answer.note ? `<p class="notes">${esc(x.answer.note)}</p>` : ''}${media(x.files)}
+<p class="small"><a href="${href(x.path)}">Текстом</a></p></details>`).join('')}`).join('')}
 <p class="small"><a href="#top">↑ К списку</a></p>
 </section>`;
   });
-  const list = persons.map((p) => `<li data-name="${esc(fullName(p).toLowerCase())}"><a href="#p${num.get(p.id)}">${esc(fullName(p))}</a>${years(p) ? ` <span class="muted">${esc(years(p))}</span>` : ''}</li>`);
+  const list = persons.map((p) => `<li data-name="${esc(searchName(p))}"><a href="#p${num.get(p.id)}">${esc(fullName(p))}</a>${altName(p) ? ` <span class="muted">(${esc(altName(p))})</span>` : ''}${years(p) ? ` <span class="muted">${esc(years(p))}</span>` : ''}</li>`);
   return `<!doctype html>
 <html lang="ru">
 <head>
@@ -302,6 +498,8 @@ dd { margin: 0; overflow-wrap: anywhere; }
 details { border-top: 1px solid var(--line); padding: 8px 0; }
 summary { cursor: pointer; font-weight: 600; }
 audio { width: 100%; margin-top: 6px; }
+.note { border-left: 3px solid var(--line); padding: 2px 0 2px 10px; margin: 8px 0; }
+.note dl { margin-top: 4px; }
 @media (max-width: 480px) { dl { grid-template-columns: 1fr; } dt { margin-top: 6px; } }
 @media print { .person { break-inside: avoid; } #find { display: none; } }
 </style>

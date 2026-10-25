@@ -1,15 +1,26 @@
 <script setup>
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { store, loadMe, loadTree, canEdit } from './store.js';
 import AddPersonSheet from './components/AddPersonSheet.vue';
 import AskDialog from './components/AskDialog.vue';
+import AskSheet from './components/AskSheet.vue';
+import { askSheet } from './asks.js';
+import PasswordView from './views/PasswordView.vue';
 import { addState, openAdd } from './components/addState.js';
 import { syncPush } from './push.js';
 
 const route = useRoute();
 const router = useRouter();
 const isPublic = computed(() => route.meta.public);
+// Участник без пароля: экран «Придумайте пароль» при каждом открытии, пока не придумает; можно отложить до следующего.
+const LATER = 'drevo-password-later';
+const later = ref((() => { try { return sessionStorage.getItem(LATER) === '1'; } catch { return false; } })());
+function putOff() {
+  later.value = true;
+  try { sessionStorage.setItem(LATER, '1'); } catch { /* без хранилища — до перезагрузки */ }
+}
+const askPassword = computed(() => store.me?.needs_password && !later.value && route.path !== '/password');
 
 loadMe().then(() => {
   if (!store.me) return;
@@ -34,6 +45,8 @@ function added(id) {
 <template>
   <template v-if="isPublic"><router-view /></template>
   <template v-else-if="!store.ready"><div class="page muted">Загрузка…</div></template>
+  <PasswordView v-else-if="!store.me && store.pending" mode="enter" />
+  <PasswordView v-else-if="askPassword" mode="create" later @later="putOff" />
   <template v-else-if="!store.me">
     <div class="page">
       <h1>Древо</h1>
@@ -68,6 +81,7 @@ function added(id) {
       </router-link>
     </nav>
     <AddPersonSheet v-if="addState.open" @done="added" />
+    <AskSheet v-if="askSheet.open" />
   </template>
   <div class="toast" v-if="store.toast">{{ store.toast }}</div>
   <AskDialog />

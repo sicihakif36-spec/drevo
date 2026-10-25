@@ -1,11 +1,12 @@
 // Обновления у всех сразу: GET /api/events — поток Server-Sent Events.
 // Источник — NOTIFY из базы (migrations/005_events.sql): одно подключение с LISTEN на всё приложение,
-// при обрыве переподключается. События без данных людей: tree — дерево изменилось, comments — новое в обсуждении.
+// при обрыве переподключается. События без данных людей: tree — дерево изменилось, comments — новое в обсуждении,
+// asks — в вопросах родным, interviews — в черновиках интервью (обоих гостям не шлём).
 // Гость не узнаёт об обсуждении живых: по событиям было бы видно, что там пишут.
 import pg from 'pg';
 import { config } from './config.js';
 import { q } from './db.js';
-import { need } from './auth.js';
+import { need, sessionUser, ALIVE } from './auth.js';
 import { isGuest, privateIds } from './privacy.js';
 
 const GLUE = 300; // одно действие — несколько записей журнала: склеиваем в одно событие
@@ -32,7 +33,7 @@ export function eventsPlugin(app, { ping = PING } = {}) {
         c.end().catch(() => {});
         if (err) app.log.warn({ err }, 'обрыв LISTEN, переподключаюсь');
         // Пока связи не было, события потеряны: пусть телефоны перечитают всё.
-        if (!closed && streams.size) retry = setTimeout(() => listen().then(() => push({ kind: 'tree' }, { kind: 'comments' })).catch(() => {}), RETRY);
+        if (!closed && streams.size) retry = setTimeout(() => listen().then(() => push({ kind: 'tree' }, { kind: 'comments' }, { kind: 'asks' })).catch(() => {}), RETRY);
       };
       client = c;
       c.on('notification', (m) => { try { push(JSON.parse(m.payload)); } catch { /* чужое уведомление */ } });
@@ -62,6 +63,8 @@ export function eventsPlugin(app, { ping = PING } = {}) {
     for (const s of streams) {
       for (const { kind, ...data } of events) {
         if (isGuest(s.user) && data.person_id && (!hidden || hidden.has(data.person_id))) continue;
+        // Вопросы родным и черновики интервью гостю не видны вовсе.
+        if (isGuest(s.user) && (kind === 'asks' || kind === 'interviews')) continue;
         s.raw.write(`event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`);
       }
     }
@@ -72,11 +75,12 @@ export function eventsPlugin(app, { ping = PING } = {}) {
     const list = [...streams];
     if (!list.length) return;
     const rows = await q(
-      `select s.token_hash, u.id, u.name, u.role, u.person_id from sessions s join users u on u.id = s.user_id
-       where s.token_hash = any($1) and not u.disabled`,
+      `select s.token_hash, u.id, u.name, u.role, u.person_id, u.password_hash is not null as has_password
+       from sessions s join users u on u.id = s.user_id
+       where s.token_hash = any($1) and not u.disabled and not s.pending and ${ALIVE}`,
       [list.map((s) => s.session)],
     );
-    const users = new Map(rows.map(({ token_hash: t, ...u }) => [t, u]));
+    const users = new Map(rows.map((r) => [r.token_hash, sessionUser(r)]));
     for (const s of list) {
       if (users.has(s.session)) s.user = users.get(s.session);
       else {

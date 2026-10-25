@@ -2,6 +2,7 @@
 // Родственник (роль relative) — не гость: видит всё, как участник, только не правит.
 import { isPrivate } from '../../shared/names.js';
 import { q } from './db.js';
+import { RESEARCH } from './changes.js';
 
 const HIDDEN = {
   birth_surname: '', birth_date: '', birth_place: '', death_date: '', death_place: '', burial_place: '',
@@ -21,9 +22,11 @@ export function hideLiving(data) {
 
 // Запись журнала для гостя. В before/after лежат старые значения, в том числе данные живых,
 // поэтому оставляем только то, что нужно для подписи: имена и пол, названия полей, «есть фото или нет», кто с кем связан.
-const NAME = ['surname', 'given', 'patronymic', 'sex'];
+const NAME = ['surname', 'given', 'patronymic', 'alt_surname', 'alt_given', 'alt_patronymic', 'sex'];
 const LINK = ['partner1', 'partner2', 'partners', 'children', 'child_id', 'kind'];
 const pick = (o, keys) => o && Object.fromEntries(keys.filter((k) => k in o).map((k) => [k, o[k]]));
+// Имя для подписи: второе написание — только если оно есть.
+const nameOf = (o) => o && Object.fromEntries(Object.entries(pick(o, NAME)).filter(([k, v]) => !k.startsWith('alt_') || v));
 const fieldsOnly = (o) => o && Object.fromEntries(Object.keys(o).map((k) => [k, null]));
 // В старых записях снимок семьи — сама строка семьи, без детей.
 const familySnap = (s) => s && { family: pick(s.family || s, ['id', ...LINK]), children: (s.children || []).map((c) => pick(c, ['child_id', 'kind'])) };
@@ -31,10 +34,14 @@ const familySnap = (s) => s && { family: pick(s.family || s, ['id', ...LINK]), c
 // hidden — живые (см. privateIds): о событии с живым участником гостю известно только, что оно есть.
 export function trimEntry(e, hidden = new Set()) {
   const both = (fn) => ({ ...e, before: fn(e.before), after: fn(e.after) });
+  // Исследование гостю не отдаётся вовсе (listOps research: false); если запись всё же сюда попала — без содержимого.
+  if (RESEARCH.includes(e.entity)) return { ...e, before: null, after: null, entity_id: null };
   if (e.entity === 'person') {
-    if (e.action === 'create') return both((x) => pick(x, NAME));
-    if (e.action === 'delete') return both((x) => x && { person: pick(x.person, NAME) });
+    if (e.action === 'create') return both(nameOf);
+    if (e.action === 'delete') return both((x) => x && { person: nameOf(x.person) });
     if (e.action === 'photo') return both((x) => x && { photo_id: Boolean(x.photo_id) });
+    // Объединение дублей: кого с кем, без перенесённых привязок.
+    if (e.action === 'merge' || e.action === 'unmerge') return both((x) => x && pick(x, ['from', 'into']));
     return both(fieldsOnly);
   }
   // Файлы: без подписей, имён и id — только вид (фото или документ) и кто отмечен.
@@ -53,6 +60,8 @@ export function trimEntry(e, hidden = new Set()) {
   if (e.entity === 'place') return both((x) => pick(x, ['kind', 'title']));
   // Загрузка из файла: только числа и имя файла.
   if (e.entity === 'import') return both((x) => pick(x, ['file', 'persons', 'matched', 'families', 'events', 'sources']));
+  // Интервью, сохранённое в истории: только сколько историй и фото — без даты и имени.
+  if (e.entity === 'interview') return { ...both((x) => pick(x, ['stories', 'photos'])), entity_id: null };
   if (e.entity === 'source') return { ...both((x) => pick(x, ['kind'])), entity_id: null };
   if (e.entity === 'citation') return { ...both((x) => pick(x, ['kind', 'subject', 'fact'])), entity_id: null };
   if (e.entity === 'quality') return { ...both((x) => x && { ...pick(x, ['subject', 'fact']), marked: Boolean(x.quality) }), entity_id: null };

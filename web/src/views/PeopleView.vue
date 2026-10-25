@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { store } from '../store.js';
 import { photoUrl } from '../api.js';
-import { fullName, lifespan, missingFields, personHas, textHas } from '@shared/names.js';
+import { fullName, lifespan, missingFields, personHas, textHas, altName } from '@shared/names.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -45,7 +45,7 @@ const people = computed(() => {
         <div v-else class="avatar" :class="p.sex">{{ (p.given || p.surname || '?')[0] }}</div>
         <div class="grow">
           <div class="name">{{ fullName(p) }}</div>
-          <div class="muted small name">{{ [lifespan(p), p.birth_place].filter(Boolean).join(' · ') }}</div>
+          <div class="muted small name">{{ [altName(p), lifespan(p), p.birth_place].filter(Boolean).join(' · ') }}</div>
         </div>
       </router-link>
       <div v-if="!people.length" class="muted">{{ query.trim() ? 'Никого не нашлось. Попробуйте только фамилию' : 'Никого нет' }}</div>

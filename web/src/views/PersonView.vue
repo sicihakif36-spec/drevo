@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onUnmounted, reactive, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { store, loadTree, canEdit, canTalk, toast, onLive } from '../store.js';
 import { api, photoUrl } from '../api.js';
 import { openAdd } from '../components/addState.js';
@@ -11,18 +11,23 @@ import Stories from '../components/Stories.vue';
 import Life from '../components/Life.vue';
 import MarriageSheet from '../components/MarriageSheet.vue';
 import Sources from '../components/Sources.vue';
+import Research from '../components/Research.vue';
 import FactBadge from '../components/FactBadge.vue';
 import FactSheet from '../components/FactSheet.vue';
 import DateInput from '../components/DateInput.vue';
 import PlaceInput from '../components/PlaceInput.vue';
 import { placeKey } from '@shared/places.js';
 import { factInfo, personFacts } from '../sources.js';
-import { FIELDS } from '../history.js';
-import { fullName, dateText, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields, nameAccusative, nameGenitive } from '@shared/names.js';
+import { FIELDS, ALT } from '../history.js';
+import { fullName, dateText, lifespan, kinship, parentsOf, spousesOf, siblingsOf, missingFields, nameAccusative, nameGenitive, altName, altLabel, isTatarName, suggestRussian } from '@shared/names.js';
 import { ask } from '../components/ask.js';
+import Finding from '../components/Finding.vue';
+import { findingsOf } from '../checks.js';
+import { openAsk } from '../asks.js';
 
 const props = defineProps({ id: String });
 const router = useRouter();
+const route = useRoute();
 const idx = computed(() => store.idx);
 const p = computed(() => idx.value?.persons.get(props.id));
 const editing = ref(false);
@@ -35,7 +40,7 @@ const album = ref(null);
 const marriage = ref(null); // { family, spouse } — окно «Брак»
 const linking = ref(false); // «Убрать связь»: у мужа, жены и детей появляется кнопка
 // Сколько фото, историй, источников, сообщений — для закладок под именем; null — ещё не знаем.
-const counts = reactive({ photo: null, stories: null, talk: null });
+const counts = reactive({ photo: null, stories: null, talk: null, research: null });
 
 const kin = computed(() => p.value && kinship(idx.value, store.me?.person_id, p.value.id));
 const missing = computed(() => (p.value ? missingFields(p.value, idx.value) : []));
@@ -73,9 +78,33 @@ function bond(m) {
 const siblings = computed(() => (p.value ? siblingsOf(idx.value, p.value.id).map((id) => idx.value.persons.get(id)).filter(Boolean) : []));
 
 const scrollTo = (x, y) => window.scrollTo(x, y);
-function startEdit() {
-  Object.assign(form, Object.fromEntries([...FIELDS.map(([k]) => [k, p.value[k]]), ['sex', p.value.sex], ['living', p.value.living]]));
+// «Дописать в карточку» из ответа на вопрос родным: ответ — над полями, нужное поле — сразу в фокусе.
+const answer = ref(null);
+function startEdit(askId = null) {
+  Object.assign(form, Object.fromEntries([...FIELDS.map(([k]) => [k, p.value[k]]), ...ALT.map(([k]) => [k, p.value[k] || '']), ['sex', p.value.sex], ['living', p.value.living]]));
   editing.value = true;
+  answer.value = null;
+  altNote.value = '';
+  if (typeof askId !== 'string') return;
+  api('GET', `/api/asks/${askId}`).then(async (a) => {
+    answer.value = a;
+    await nextTick();
+    const el = a.field && document.querySelector(`[data-field="${a.field}"] input, [data-field="${a.field}"] textarea`);
+    if (el) {
+      el.scrollIntoView({ block: 'center' });
+      el.focus({ preventScroll: true });
+    }
+  }, (e) => toast(e.message));
+}
+
+// «Подсказать, как по-русски»: татарские буквы и отчество — в поля второго написания. Человек проверяет и сохраняет сам.
+const altNote = ref('');
+function suggestAlt() {
+  const s = suggestRussian(form);
+  for (const [k] of ALT) if (s[k]) form[k] = s[k];
+  altNote.value = form.patronymic && !s.alt_patronymic
+    ? `Отчество «${form.patronymic}» по-русски подсказать не получилось — впишите, как в документах.`
+    : 'Проверьте по документам и нажмите «Сохранить».';
 }
 
 async function save() {
@@ -86,6 +115,11 @@ async function save() {
     await loadTree();
     editing.value = false;
     toast('Сохранено');
+    const a = answer.value;
+    answer.value = null;
+    if (a?.status === 'answered' && await ask({ text: 'Закрыть вопрос?', note: `«${a.question}» — ответ перенесён в карточку.`, yes: 'Закрыть вопрос', no: 'Оставить открытым' })) {
+      await api('POST', `/api/asks/${a.id}/close`).then(() => toast('Сохранено, вопрос закрыт'), (e) => toast(e.message));
+    }
   } catch (e) {
     error.value = e.message;
     if (e.status === 409) await loadTree();
@@ -132,6 +166,8 @@ const tabs = computed(() => {
   return [
     ['photo', `Фото${n(counts.photo)}`], ['family', 'Семья'], ['life', 'Жизнь'], ['stories', `Истории${n(counts.stories)}`],
     ['sources', `Источники${n(sources.value?.sources?.length)}`], ['talk', `Обсуждение${n(counts.talk)}`],
+    // Исследование — только владельцу и участникам; число — сколько вопросов «ищем».
+    ...(canEdit() ? [['research', `Исследование${n(counts.research)}`]] : []),
   ];
 });
 function jump(id) {
@@ -158,7 +194,20 @@ async function loadHistory() {
   if (showHistory.value) await reloadHistory();
 }
 
-watch(() => props.id, () => { editing.value = false; showHistory.value = false; linking.value = false; Object.assign(counts, { photo: null, stories: null, talk: null }); });
+watch(() => props.id, () => { editing.value = false; showHistory.value = false; linking.value = false; Object.assign(counts, { photo: null, stories: null, talk: null, research: null }); });
+// Пришли из проверки дерева: «Исправить» открывает правку (?edit=1) или «Убрать связь» (?links=1).
+watch(() => [props.id, route.query.edit, route.query.links, Boolean(p.value)], () => {
+  if (!p.value || !canEdit() || p.value.hidden) return;
+  if (route.query.edit) startEdit(route.query.ask || null);
+  else if (route.query.links) {
+    linking.value = true;
+    nextTick(() => jump('family'));
+  } else return;
+  router.replace({ query: {} });
+}, { immediate: true });
+// Проверка дерева: вопросы к данным этого человека — только владельцу и участникам.
+const checks = computed(() => (p.value && canEdit() ? findingsOf(p.value.id) : []));
+
 onUnmounted(onLive((events) => {
   if (!events.some((e) => e.kind === 'tree')) return;
   loadSources();
@@ -181,6 +230,7 @@ onUnmounted(onLive((events) => {
         <span v-else>{{ canEdit() ? '+ фото' : (p.given || '?')[0] }}</span>
       </div>
       <h1>{{ fullName(p) }}</h1>
+      <div v-if="altName(p)" class="alt">{{ altLabel(p) }}: {{ altName(p) }}</div>
       <div class="muted">{{ [lifespan(p), kin].filter(Boolean).join(' · ') }}</div>
       <div v-if="p.birth_surname && p.birth_surname !== p.surname" class="muted">{{ p.sex === 'F' ? 'урождённая' : 'урождённый' }} {{ p.birth_surname }}</div>
       <FactBadge v-if="!p.hidden" :info="info('person', p.id, 'name')" :editable="canEdit()" @open="sheet = { fact: fact('person', p.id, 'name') }" />
@@ -190,9 +240,23 @@ onUnmounted(onLive((events) => {
       <button v-for="[id, label] in tabs" :key="id" type="button" class="chip" @click="jump(id)">{{ label }}</button>
     </nav>
 
-    <div v-if="missing.length && canEdit() && !editing" class="banner">Не хватает: {{ missing.join(', ') }}</div>
+    <div v-if="missing.length && canEdit() && !editing" class="banner miss">
+      <span>Не хватает: {{ missing.join(', ') }}</span>
+      <button class="askbtn" @click="openAsk({ person: p.id })">Спросить у родных</button>
+    </div>
+
+    <div v-if="checks.length && !editing" class="check">
+      <div class="check-head">Проверьте</div>
+      <Finding :finding="checks[0]" plain />
+      <router-link v-if="checks.length > 1" to="/checks" class="small check-more">Ещё {{ checks.length - 1 }} — в «Проверке дерева»</router-link>
+    </div>
 
     <form v-if="editing" @submit.prevent="save" class="card">
+      <div v-if="answer" class="hint-answer">
+        <div class="small"><b>Ответ: {{ answer.to_name }}</b> <span>на вопрос «{{ answer.question }}»</span></div>
+        <div class="pre">{{ answer.answer || 'Без текста — фото или запись голоса.' }}</div>
+        <div class="small">Перенесите нужное в поля ниже и нажмите «Сохранить».</div>
+      </div>
       <div class="seg" style="margin-bottom:0.444rem">
         <button type="button" :class="{ on: form.sex === 'M' }" @click="form.sex = 'M'">Мужчина</button>
         <button type="button" :class="{ on: form.sex === 'F' }" @click="form.sex = 'F'">Женщина</button>
@@ -203,14 +267,24 @@ onUnmounted(onLive((events) => {
       </div>
       <template v-for="[k, label] in FIELDS" :key="k">
         <template v-if="form.living ? !['death_date', 'death_place', 'burial_place'].includes(k) : true">
-          <DateInput v-if="k.endsWith('_date')" v-model="form[k]" :label="label" placeholder="например: 12.03.1890, около 1890, до 1917" />
-          <PlaceInput v-else-if="k.endsWith('_place')" v-model="form[k]" :label="label" placeholder="например: д. Горки" />
-          <label v-else class="field">
+          <DateInput v-if="k.endsWith('_date')" v-model="form[k]" :label="label" placeholder="например: 12.03.1890, около 1890, до 1917" :data-field="k" />
+          <PlaceInput v-else-if="k.endsWith('_place')" v-model="form[k]" :label="label" placeholder="например: д. Горки" :data-field="k" />
+          <label v-else class="field" :data-field="k">
             <span>{{ label }}</span>
             <textarea v-if="k === 'notes'" v-model="form[k]" />
             <input v-else v-model="form[k]" />
           </label>
         </template>
+        <fieldset v-if="k === 'birth_surname'" class="altbox" data-field="alt">
+          <legend>Второе написание</legend>
+          <p class="small muted">Как записан в документах, по-русски. Например, «Галиев Рашит Хасанович», если в семейной схеме — «Галиев Рәшит Хәсән улы».</p>
+          <button v-if="isTatarName(form)" type="button" class="block" @click="suggestAlt">Подсказать, как по-русски</button>
+          <p v-if="altNote" class="small note" role="status">{{ altNote }}</p>
+          <label v-for="[a, text] in ALT" :key="a" class="field" :data-field="a">
+            <span>{{ text.replace(' (второе написание)', '') }}</span>
+            <input v-model="form[a]" autocapitalize="words" />
+          </label>
+        </fieldset>
       </template>
       <p class="error" v-if="error">{{ error }}</p>
       <div class="row">
@@ -304,6 +378,8 @@ onUnmounted(onLive((events) => {
 
     <section id="sec-talk" class="sec"><Discussion :person="p" @count="counts.talk = $event" /></section>
 
+    <section v-if="canEdit()" id="sec-research" class="sec"><Research :person="p" @count="counts.research = $event" /></section>
+
     <h2>Ещё</h2>
     <div class="list">
       <router-link :to="`/person/${p.id}/print`">Напечатать карточку</router-link>
@@ -312,6 +388,7 @@ onUnmounted(onLive((events) => {
       <a :href="`/api/print.pdf?root=${p.id}&mode=hourglass`" target="_blank">Распечатать дерево вокруг этого человека</a>
       <router-link :to="{ path: '/print', query: { root: p.id, mode: 'fan' } }">Веер предков</router-link>
       <router-link v-if="marriages.some((m) => m.kids.length)" :to="{ path: '/print', query: { root: p.id, mode: 'rospis' } }">Поколенная роспись</router-link>
+      <a href="#" v-if="canEdit()" @click.prevent="openAsk({ person: p.id })">Спросить у родных</a>
       <a href="#" v-if="canTalk()" @click.prevent="loadHistory">История правок</a>
       <a href="#" v-if="canEdit()" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
     </div>
@@ -328,6 +405,11 @@ onUnmounted(onLive((events) => {
 <style scoped>
 .head { text-align: center; margin: 0.222rem 0 0.889rem; }
 .head h1 { margin: 0.667rem 0 0.222rem; overflow-wrap: anywhere; }
+.head .alt { color: var(--muted); font-size: 0.889rem; margin: -0.111rem 0 0.222rem; overflow-wrap: anywhere; }
+.altbox { border: 1px solid var(--line); border-radius: var(--radius-s); padding: 0.444rem 0.778rem 0.222rem; margin: 0.444rem 0 0.667rem; }
+.altbox legend { font-weight: 700; padding: 0 0.333rem; }
+.altbox > p { margin: 0 0 0.444rem; }
+.altbox .note { color: var(--accent-text); font-weight: 700; }
 .photo { width: 8rem; height: 8rem; border-radius: 1.556rem; margin: 0 auto; overflow: hidden; display: grid; place-items: center; background: var(--line); color: var(--muted); font-size: 1rem; cursor: pointer; }
 .photo.M { background: var(--male-soft); color: var(--male); }
 .photo.F { background: var(--female-soft); color: var(--female); }
@@ -349,4 +431,12 @@ onUnmounted(onLive((events) => {
 .add > button { flex: 1 1 auto; }
 .add > .wide, .add > p { flex-basis: 100%; margin: 0; }
 .danger-link { color: var(--danger) !important; }
+.miss { display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; }
+.miss > span { flex: 1 1 12rem; }
+.miss .askbtn { min-height: 2.667rem; font-size: 0.889rem; padding: 0.25rem 0.778rem; border-color: var(--warn-text); color: var(--warn-text); background: transparent; }
+/* Ответ родных остаётся перед глазами, пока листаешь поля. */
+.hint-answer { position: sticky; top: calc(var(--safe-t) + 0.444rem); z-index: 2; max-height: 34vh; overflow-y: auto; background: var(--accent-soft); color: var(--accent-soft-text); border-radius: var(--radius-s); padding: 0.556rem 0.778rem; margin-bottom: 0.667rem; display: grid; gap: 0.222rem; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+.check { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 0.556rem 0.889rem 0.778rem; margin-bottom: 0.667rem; }
+.check-head { font-size: 0.889rem; font-weight: 700; color: var(--muted); }
+.check-more { display: inline-block; margin-top: 0.444rem; color: var(--accent-text); }
 </style>

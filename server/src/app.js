@@ -22,6 +22,10 @@ import surveyRoutes from './routes/surveys.js';
 import cardRoutes from './routes/cards.js';
 import importRoutes from './routes/import.js';
 import rospisRoutes from './routes/rospis.js';
+import researchRoutes from './routes/research.js';
+import checkRoutes from './routes/checks.js';
+import askRoutes from './routes/asks.js';
+import interviewRoutes from './routes/interviews.js';
 import { closePool } from './pdfpool.js';
 import { eventsPlugin } from './events.js';
 import { pushPlugin } from './push.js';
@@ -56,6 +60,10 @@ export async function buildApp(opts = {}) {
   await app.register(cardRoutes);
   await app.register(importRoutes);
   await app.register(rospisRoutes);
+  await app.register(researchRoutes);
+  await app.register(checkRoutes);
+  await app.register(askRoutes);
+  await app.register(interviewRoutes);
   app.addHook('onClose', closePool);
   eventsPlugin(app, { ping: opts.eventsPing });
 

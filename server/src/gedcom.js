@@ -278,7 +278,7 @@ export function parseGedcom(buf) {
   const persons = [];
   for (const r of byTag('INDI')) {
     const p = {
-      ref: r.xref, sex: 'U', surname: '', given: '', patronymic: '', birth_surname: '', living: true, birth_date: '', birth_place: '',
+      ref: r.xref, sex: 'U', surname: '', given: '', patronymic: '', birth_surname: '', alt_surname: '', alt_given: '', alt_patronymic: '', living: true, birth_date: '', birth_place: '',
       death_date: '', death_place: '', burial_place: '', occupation: '', notes: '',
     };
     const notes = [];
@@ -287,7 +287,15 @@ export function parseGedcom(buf) {
     let birthDone = false;
     let deathDone = false;
     const names = kids(r, 'NAME').map((n) => ({ n, x: nameOf(n) }));
-    const first = names.find((x) => !['birth', 'maiden'].includes(x.x.type)) || names[0];
+    // Второе написание: имя с TYPE aka, запись _AKA (Family Tree Maker) или ROMN / FONE (латиницей, как слышится) под именем.
+    const isAka = (x) => ['aka', 'also known as'].includes(x.x.type);
+    const first = names.find((x) => !['birth', 'maiden'].includes(x.x.type) && !isAka(x)) || names[0];
+    const alts = [
+      ...names.filter((x) => x !== first && isAka(x)),
+      ...kids(r, '_AKA').map((n) => ({ n, x: nameOf(n) })),
+      ...names.flatMap((x) => [...kids(x.n, 'ROMN'), ...kids(x.n, 'FONE')]).map((n) => ({ n, x: nameOf(n) })),
+    ].filter((x) => x.x.given || x.x.surname);
+    const alt = alts[0];
     if (first) {
       Object.assign(p, { given: first.x.given, surname: first.x.surname, patronymic: first.x.patronymic });
       const married = names.find((x) => x !== first && x.x.type === 'married');
@@ -296,7 +304,9 @@ export function parseGedcom(buf) {
       if (married?.x.surname) [p.surname, p.birth_surname] = [married.x.surname, first.x.surname];
       if (birth?.x.surname) p.birth_surname = birth.x.surname;
       if (!p.given && !p.patronymic) Object.assign(p, { given: (birth || married)?.x.given || '', patronymic: (birth || married)?.x.patronymic || '' });
-      for (const x of names) if (x !== first && x !== married && x !== birth && x.x.text) notes.push(`Другое имя: ${x.x.text}`);
+      // То, что во втором написании так же, как в основном, не повторяем (Древо пишет второе имя целиком).
+      if (alt) for (const k of ['surname', 'given', 'patronymic']) p[`alt_${k}`] = alt.x[k] === p[k] ? '' : alt.x[k];
+      for (const x of [...names, ...alts]) if (x !== first && x !== married && x !== birth && x !== alt && x.x.text) notes.push(`Другое имя: ${x.x.text}`);
       for (const x of names) {
         citesOf(x.n, 'person', p.ref, 'name');
         notes.push(...notesOf(x.n));
@@ -306,7 +316,7 @@ export function parseGedcom(buf) {
     if (p.birth_surname === p.surname) p.birth_surname = '';
     for (const c of r.children) {
       const tag = c.tag;
-      if (tag === 'NAME') continue;
+      if (tag === 'NAME' || tag === '_AKA') continue;
       if (tag === 'SEX') { p.sex = ['M', 'F'].includes(c.value.trim().toUpperCase()) ? c.value.trim().toUpperCase() : 'U'; continue; }
       if (tag === 'NOTE') { notes.push(noteText(c)); continue; }
       if (tag === 'SOUR') continue;
@@ -404,7 +414,7 @@ export function parseGedcom(buf) {
     for (const j of plain) citesOf(j.node, 'person', p.ref, 'occupation');
     citesOf(r, 'person', p.ref, 'other');
     p.notes = cut(notes.filter(Boolean).join('\n\n'), 20000);
-    for (const k of ['surname', 'given', 'patronymic', 'birth_surname']) p[k] = cut(p[k], 300);
+    for (const k of ['surname', 'given', 'patronymic', 'birth_surname', 'alt_surname', 'alt_given', 'alt_patronymic']) p[k] = cut(p[k], 300);
     if (p.sex === 'U' && p.patronymic) p.sex = guessSex(p.given, p.patronymic);
     const born = parseDate(p.birth_date)?.year;
     p.living = !dead && !(born && new Date().getFullYear() - born > LIVE_YEARS);

@@ -1,7 +1,7 @@
 // Поколенная роспись: потомки родоначальника по коленам, у каждого сквозной номер и ссылка на номер отца или матери,
 // браки, дети со ссылками на номера в следующем колене, в конце — алфавитный указатель. Одна сборка для экрана
 // (предпросмотр текстом) и PDF (server/src/rospis.js): запись — абзацы из кусочков текста, у ссылки на номер — ref.
-import { dateText, fullName, isPrivate, lifespan, nameGenitive, parentsOf, parsePeriod, shortGenitive, spousesOf, surnameGenitive, todayText } from './names.js';
+import { altLabel, altName, altPerson, dateText, fullName, isPrivate, lifespan, nameGenitive, parentsOf, parsePeriod, shortGenitive, spousesOf, surnameGenitive, todayText } from './names.js';
 import { lifeItems } from './life.js';
 import { sourceLine } from './sources.js';
 
@@ -76,6 +76,8 @@ export function buildRospis(idx, rootId, o, extras = {}) {
   const hid = (p) => Boolean(p && (p.hidden || (o.hideLiving && isPrivate(p))));
   // Фамилия при рождении у живого скрыта, как в privacy.js.
   const name = (p) => bookName(hid(p) ? { ...p, birth_surname: '' } : p);
+  // Второе написание — в скобках после имени: «(в документах: Галиев Рашит Хасанович)».
+  const alt = (p) => (altName(p) ? ` (${altLabel(p).toLowerCase()}: ${bookName({ ...altPerson(p), birth_surname: '' })})` : '');
   const famHidden = (f) => hid(get(f.partner1)) || hid(get(f.partner2));
   const key = (d) => parsePeriod(d)?.key ?? Infinity;
   const pkey = (p) => (hid(p) ? Infinity : key(p.birth_date));
@@ -145,6 +147,7 @@ export function buildRospis(idx, rootId, o, extras = {}) {
     const n = num.get(id);
     const paras = [];
     const head = [{ t: `${n}. ${name(p)}`, b: true }];
+    if (alt(p)) head.push({ t: alt(p) });
     const ps = parentsOf(idx, id).filter((x) => x !== id && num.has(x) && continues(x)).sort((a, b) => num.get(a) - num.get(b));
     if (id === rootId) head.push({ t: p.sex === 'F' ? ' — родоначальница' : ' — родоначальник' });
     else if (ps.length) {
@@ -180,7 +183,7 @@ export function buildRospis(idx, rootId, o, extras = {}) {
         if (f.kind !== 'unknown') k++;
         const parts = [{ t: spouseLabel(f, spouse, many && f.kind !== 'unknown' ? k : 0), b: true }];
         if (bond(f)) parts.push({ t: ` (${bond(f)})` });
-        parts.push({ t: `: ${name(spouse)}` });
+        parts.push({ t: `: ${name(spouse)}${alt(spouse)}` });
         const life = hid(spouse) ? '' : nb(lifespan(spouse));
         if (life) parts.push({ t: `, ${life}` });
         if (num.has(spouse.id)) parts.push({ t: ', см. ' }, ref(num.get(spouse.id)));
@@ -218,10 +221,16 @@ export function buildRospis(idx, rootId, o, extras = {}) {
 
   const out = gens.map((ids, i) => ({ n: i + 1, title: `${roman(i + 1)} колено`, entries: ids.map(entry) }));
 
-  // Указатель: потомки и их мужья и жёны по алфавиту, с номерами записей.
+  // Указатель: потомки и их мужья и жёны по алфавиту, с номерами записей. Второе написание — ещё одной строкой с теми же номерами:
+  // «Галиев Рашит Хасанович» найдётся и на «Г… Рашит», и на «Г… Рәшит».
   const index = [...num.keys()].map((id) => ({ id, nums: [num.get(id)], own: true }))
     .concat([...mentioned].map(([id, nums]) => ({ id, nums: [...new Set(nums)].sort((a, b) => a - b), own: false })))
-    .map((x) => ({ ...x, name: name(get(x.id)), life: hid(get(x.id)) ? '' : nb(lifespan(get(x.id))) }))
+    .flatMap((x) => {
+      const p = get(x.id);
+      const main = { ...x, name: name(p), life: hid(p) ? '' : nb(lifespan(p)) };
+      const second = altName(p) && bookName({ ...altPerson(p), birth_surname: '' });
+      return second && second !== bookName({ ...p, birth_surname: '' }) ? [main, { ...main, name: second, alt: true }] : [main];
+    })
     .sort((a, b) => a.name.localeCompare(b.name, 'ru') || a.nums[0] - b.nums[0]);
   for (const x of index) {
     x.letter = x.name.charAt(0).toUpperCase();
@@ -230,7 +239,7 @@ export function buildRospis(idx, rootId, o, extras = {}) {
   }
 
   const desc = num.size;
-  const total = index.length;
+  const total = new Set(index.map((x) => x.id)).size;
   const female = root.sex === 'F' || (root.sex !== 'M' && /(вна|чна)$/.test(root.patronymic || ''));
   const intro = [];
   const life = hid(root) ? '' : nb(lifespan(root));

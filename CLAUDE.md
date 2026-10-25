@@ -15,6 +15,8 @@
   - `src/privacy.js` — что скрывать от гостей.
   - `src/push.js` — уведомления на телефон (Web Push): кому что слать, расписание раз в минуту, отметки «уже отправлено».
   - `src/events.js` — поток обновлений `/api/events` из PostgreSQL `NOTIFY`.
+  - `src/asks.js`, `src/routes/asks.js` — «Спросить у родных»: вопросы родственникам (в приложении и страничкой по ссылке без входа), ответ — в дерево.
+  - `src/auth.js`, `src/password.js`, `routes/users.js` — вход по ссылке, сессии (`pending` — ждёт пароль), пароль владельца и участников, входы (`logins`). Памятка — `docs/zashchita.md`.
 
 ## Правила
 
@@ -31,11 +33,11 @@
 ```sh
 service postgresql start
 su postgres -c "psql -c \"create user drevo with password 'drevo' superuser;\" -c \"create database drevo owner drevo;\""
-cd server && npm ci && npm test        # тесты очищают базу drevo
+cd server && npm ci && npm test        # тесты очищают базу drevo; вход в тестах — signIn() из test/helpers.js
 cd ../web && npm ci && npm run build
 ```
 
-Изменения интерфейса проверять в браузере: Chromium и Playwright установлены (`require('playwright')` из `/opt/node22/lib/node_modules/`). Данные для проверки: `node server/bin/demo.js` (очищает базу и печатает ссылку входа владельца), сервер: `cd server && SECURE_COOKIES=false PUBLIC_URL=http://localhost:8095 npm start`, интерфейс собирается в `web/dist` и раздаётся тем же сервером.
+Изменения интерфейса проверять в браузере: Chromium и Playwright установлены (`require('playwright')` из `/opt/node22/lib/node_modules/`). Данные для проверки: `node server/bin/demo.js` (очищает базу и печатает ссылку входа владельца и пароль демо `drevo-demo`), сервер: `cd server && SECURE_COOKIES=false PUBLIC_URL=http://localhost:8095 npm start`, интерфейс собирается в `web/dist` и раздаётся тем же сервером.
 
 ## Git и выкладка
 

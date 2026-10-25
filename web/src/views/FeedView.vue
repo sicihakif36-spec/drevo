@@ -1,11 +1,40 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { store, canEdit, onLive } from '../store.js';
+import { store, canEdit, canTalk, onLive, toast } from '../store.js';
 import { api, thumbUrl } from '../api.js';
 import { namer, opLines, moreText } from '../history.js';
 import { fullName, missingFields, upcomingDates, yearsText } from '@shared/names.js';
+import { lastText } from '@shared/archive.js';
+import { findings } from '../checks.js';
+import Finding from '../components/Finding.vue';
+import { when as day } from '../asks.js';
+import { ask } from '../components/ask.js';
 
 const items = ref([]);
+const asked = ref([]); // «Вас спросили»: вопросы мне без ответа
+// Владельцу: «Пора сохранить семейный архив» — { last } или null.
+const archive = ref(null);
+async function later() {
+  await api('POST', '/api/archive/later').then(() => { archive.value = null; toast('Напомним через неделю'); }, (e) => toast(e.message));
+}
+// Свои интервью, брошенные больше суток назад: сами не удаляются — спрашиваем.
+const left = ref([]);
+const DAY = 24 * 3600 * 1000;
+async function loadLeft() {
+  if (!canTalk()) return;
+  const list = await api('GET', '/api/interviews').catch(() => []);
+  left.value = list.filter((x) => !x.saved && x.created_by === store.me?.id && Date.now() - new Date(x.updated_at) > DAY);
+}
+loadLeft();
+const leftName = (x) => {
+  const p = store.idx?.persons.get(x.person_id);
+  return p ? [p.given, p.patronymic].filter(Boolean).join(' ') || fullName(p) : x.about;
+};
+async function dropLeft(x) {
+  if (!await ask({ text: 'Удалить незаконченное интервью?', note: `${leftName(x)}: ${x.answered} из ${x.total} ответов. Записанные ответы пропадут.`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
+  await api('DELETE', `/api/interviews/${x.id}`).then(() => toast('Интервью удалено'), (e) => toast(e.message));
+  await loadLeft();
+}
 const open = ref(new Set()); // раскрытые «Ещё N изменений»
 const loaded = ref(false);
 const error = ref('');
@@ -14,6 +43,8 @@ async function load() {
   try {
     const feed = await api('GET', '/api/feed');
     items.value = feed.items;
+    asked.value = feed.asked || [];
+    archive.value = feed.archive || null;
     loaded.value = true;
     error.value = '';
     await api('POST', '/api/feed/seen', { at: feed.now });
@@ -51,6 +82,7 @@ const hints = computed(() => {
 
 const name = computed(() => namer(items.value.filter((i) => i.kind === 'op'), store.idx));
 const feed = computed(() => items.value.map((i) => (i.kind === 'op' ? { ...i, lines: opLines(i, name.value) } : i.kind === 'comment' ? { ...i, who: name.value.gen(i.person_id) } : i)));
+const short = (t, n = 160) => (t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t);
 const toggle = (id) => { const s = new Set(open.value); if (s.has(id)) s.delete(id); else s.add(id); open.value = s; };
 const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 </script>
@@ -58,6 +90,37 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 <template>
   <div class="page">
     <h1>Лента</h1>
+
+    <div v-if="archive" class="banner keep">
+      <div><b>Пора сохранить семейный архив.</b>
+        {{ archive.last ? `В последний раз его скачивали ${lastText(archive.last)}.` : 'Вы его ещё не скачивали.' }}
+        Скачайте и сохраните у себя — на случай, если с сервером что-то случится.</div>
+      <div class="row">
+        <router-link class="btn primary grow" to="/more?archive=1">Скачать всё</router-link>
+        <button class="ghost" @click="later">Напомнить позже</button>
+      </div>
+    </div>
+
+    <div v-for="x in left" :key="x.id" class="banner leftiv">
+      <div>У вас есть незаконченное интервью — <b>{{ leftName(x) }}</b>, {{ x.answered }} из {{ x.total }} ответов.</div>
+      <div class="row">
+        <router-link class="btn primary grow" :to="`/interview/${x.id}`">Продолжить</router-link>
+        <button class="ghost danger" @click="dropLeft(x)">Удалить</button>
+      </div>
+    </div>
+
+    <template v-if="asked.length">
+      <h2>Вас спросили</h2>
+      <div class="list asked">
+        <router-link v-for="a in asked" :key="a.id" :to="`/asks/${a.id}`">
+          <div class="grow">
+            <div class="small muted">{{ a.from_name || 'Кто-то' }} · {{ day(a.created_at) }} · о ком: {{ a.about }}</div>
+            <div class="q">{{ short(a.question) }}</div>
+            <span class="btn primary go">Ответить</span>
+          </div>
+        </router-link>
+      </div>
+    </template>
 
     <template v-if="dates.length">
       <h2>Ближайшие даты</h2>
@@ -83,6 +146,17 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
       </div>
     </template>
 
+    <template v-if="canEdit() && findings.length">
+      <h2>Помогите уточнить</h2>
+      <div class="list">
+        <Finding v-for="x in findings.slice(0, 3)" :key="x.key" :finding="x" />
+        <router-link v-if="findings.length > 3" to="/checks">
+          <div class="grow">Все вопросы к данным ({{ findings.length }})</div>
+          <span class="muted" aria-hidden="true">›</span>
+        </router-link>
+      </div>
+    </template>
+
     <h2>Что нового</h2>
     <div v-if="error" class="error">{{ error }}</div>
     <div v-else-if="!loaded" class="muted">Загрузка…</div>
@@ -93,6 +167,15 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
             <div class="small muted">{{ when(it.at) }}<span v-if="it.fresh" class="badge">новое</span></div>
             <div><b>{{ it.user_name || 'Кто-то' }}:</b> в обсуждении у {{ it.who }}</div>
             <div class="quote">{{ it.body }}</div>
+          </div>
+          <span class="muted" aria-hidden="true">›</span>
+        </router-link>
+        <router-link v-else-if="it.kind === 'answer'" :to="`/asks/${it.id}`" :class="{ fresh: it.fresh }">
+          <div class="grow">
+            <div class="small muted">{{ when(it.at) }}<span v-if="it.fresh" class="badge">новое</span></div>
+            <div><b>{{ it.who || 'Родственник' }}</b> — ответ на ваш вопрос</div>
+            <div class="small muted">{{ it.about }}</div>
+            <div class="quote">{{ it.answer || 'Фото или запись голоса' }}</div>
           </div>
           <span class="muted" aria-hidden="true">›</span>
         </router-link>
@@ -125,6 +208,8 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 </template>
 
 <style scoped>
+.leftiv, .keep { display: grid; gap: 0.444rem; font-size: 1rem; }
+.keep .btn { white-space: nowrap; }
 .date { color: var(--muted); }
 .date.today { color: var(--accent-text); font-weight: 700; }
 .name { overflow-wrap: anywhere; }
@@ -132,6 +217,9 @@ const when = (t) => new Date(t).toLocaleString('ru-RU', { day: 'numeric', month:
 .round .muted, .round .date { color: var(--accent-soft-text); }
 .accent { color: var(--accent-soft-text); font-weight: 700; }
 .fresh { box-shadow: inset 4px 0 var(--accent); }
+.asked { border: 2px solid var(--accent); }
+.asked .q { font-weight: 700; margin: 0.111rem 0 0.444rem; overflow-wrap: anywhere; }
+.asked .go { width: 100%; min-height: 2.889rem; }
 .list > .op { display: block; }
 .line { overflow-wrap: anywhere; }
 .more-line { margin-top: 0.222rem; padding-left: 0.667rem; border-left: 3px solid var(--line); }
