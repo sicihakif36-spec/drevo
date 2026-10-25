@@ -189,7 +189,7 @@ async function remove() {
 </template>
 
 <style scoped>
-.story { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; overscroll-behavior: contain; }
+.story { position: fixed; inset: 0 0 0 var(--side); z-index: 50; background: var(--bg); overflow-y: auto; overscroll-behavior: contain; }
 .story .page { padding-bottom: calc(1.778rem + var(--safe-b)); }
 .top { margin-bottom: 0.444rem; }
 h1 { overflow-wrap: anywhere; }

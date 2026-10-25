@@ -164,12 +164,11 @@ async function unlink(m, kid) {
 
 // Закладки под именем: переход к разделу карточки.
 const tabs = computed(() => {
-  const n = (x) => (x ? ` ${x}` : '');
   return [
-    ['photo', `Фото${n(counts.photo)}`], ['family', 'Семья'], ['life', 'Жизнь'], ['stories', `Истории${n(counts.stories)}`],
-    ['sources', `Источники${n(sources.value?.sources?.length)}`], ['talk', `Обсуждение${n(counts.talk)}`],
+    ['photo', 'Фото', counts.photo], ['family', 'Семья'], ['life', 'Жизнь'], ['stories', 'Истории', counts.stories],
+    ['sources', 'Источники', sources.value?.sources?.length], ['talk', 'Обсуждение', counts.talk],
     // Исследование — только владельцу и участникам; число — сколько вопросов «ищем».
-    ...(canEdit() ? [['research', `Исследование${n(counts.research)}`]] : []),
+    ...(canEdit() ? [['research', 'Исследование', counts.research]] : []),
   ];
 });
 function jump(id) {
@@ -219,7 +218,7 @@ onUnmounted(onLive((events) => {
 
 <template>
   <div class="page" v-if="!p"><p class="muted">{{ store.tree ? 'Человек не найден или удалён.' : 'Загрузка…' }}</p><router-link to="/tree">К дереву</router-link></div>
-  <div class="page" v-else>
+  <div class="page wide person" v-else>
     <div class="row" style="margin-bottom:0.444rem">
       <button class="ghost" @click="router.back()" aria-label="Назад">‹ Назад</button>
       <span class="grow" />
@@ -231,29 +230,34 @@ onUnmounted(onLive((events) => {
         <img v-if="p.photo_id" :src="photoUrl(p.photo_id)" alt="" />
         <span v-else>{{ canEdit() ? '+ фото' : (p.given || '?')[0] }}</span>
       </div>
-      <h1>{{ fullName(p) }}</h1>
-      <div v-if="altName(p)" class="alt">{{ altLabel(p) }}: {{ altName(p) }}</div>
-      <div class="muted">{{ [lifespan(p), kin].filter(Boolean).join(' · ') }}</div>
-      <div v-if="p.birth_surname && p.birth_surname !== p.surname" class="muted">{{ p.sex === 'F' ? 'урождённая' : 'урождённый' }} {{ p.birth_surname }}</div>
-      <FactBadge v-if="!p.hidden" :info="info('person', p.id, 'name')" :editable="canEdit()" @open="sheet = { fact: fact('person', p.id, 'name') }" />
+      <div class="who">
+        <h1>{{ fullName(p) }}</h1>
+        <div v-if="altName(p)" class="alt">{{ altLabel(p) }}: {{ altName(p) }}</div>
+        <div class="muted meta">{{ [lifespan(p), kin].filter(Boolean).join(' · ') }}</div>
+        <div v-if="p.birth_surname && p.birth_surname !== p.surname" class="muted">{{ p.sex === 'F' ? 'урождённая' : 'урождённый' }} {{ p.birth_surname }}</div>
+        <FactBadge v-if="!p.hidden" :info="info('person', p.id, 'name')" :editable="canEdit()" @open="sheet = { fact: fact('person', p.id, 'name') }" />
+      </div>
+      <nav v-if="!p.hidden && !editing" class="tabs" aria-label="Разделы карточки">
+        <button v-for="[id, label, n] in tabs" :key="id" type="button" class="chip" @click="jump(id)">{{ label }}<b v-if="n" class="n">{{ n }}</b></button>
+      </nav>
     </div>
 
-    <nav v-if="!p.hidden && !editing" class="tabs" aria-label="Разделы карточки">
-      <button v-for="[id, label] in tabs" :key="id" type="button" class="chip" @click="jump(id)">{{ label }}</button>
-    </nav>
+    <!-- На телефоне — одной колонкой (порядок задают order-*), на компьютере семья и «Ещё» — справа. -->
+    <div class="cols">
+    <div class="col-main">
 
-    <div v-if="missing.length && canEdit() && !editing" class="banner miss">
+    <div v-if="missing.length && canEdit() && !editing" class="banner miss o1">
       <span>Не хватает: {{ missing.join(', ') }}</span>
       <button class="askbtn" @click="openAsk({ person: p.id })">Спросить у родных</button>
     </div>
 
-    <div v-if="checks.length && !editing" class="check">
+    <div v-if="checks.length && !editing" class="check o1">
       <div class="check-head">Проверьте</div>
       <Finding :finding="checks[0]" plain />
       <router-link v-if="checks.length > 1" to="/checks" class="small check-more">Ещё {{ checks.length - 1 }} — в «Проверке дерева»</router-link>
     </div>
 
-    <form v-if="editing" @submit.prevent="save" class="card">
+    <form v-if="editing" @submit.prevent="save" class="card o1">
       <div v-if="answer" class="hint-answer">
         <div class="small"><b>Ответ: {{ answer.to_name }}</b> <span>на вопрос «{{ answer.question }}»</span></div>
         <div class="pre">{{ answer.answer || 'Без текста — фото или запись голоса.' }}</div>
@@ -295,7 +299,7 @@ onUnmounted(onLive((events) => {
       </div>
     </form>
 
-    <div v-else class="list">
+    <div v-else class="list facts o1">
       <template v-for="[k, label] in FIELDS" :key="k">
         <div v-if="p[k] && !['surname', 'given', 'patronymic', 'birth_surname'].includes(k)" class="fact">
           <div class="label">{{ label }}</div>
@@ -309,9 +313,22 @@ onUnmounted(onLive((events) => {
       <div v-else-if="!FIELDS.some(([k]) => p[k] && !['surname', 'given', 'patronymic'].includes(k))" class="muted">Подробностей пока нет.</div>
     </div>
 
-    <section id="sec-photo" class="sec"><Album ref="album" :person="p" @count="counts.photo = $event" /></section>
+    <section id="sec-photo" class="sec o1"><Album ref="album" :person="p" @count="counts.photo = $event" /></section>
 
-    <section id="sec-family" class="sec">
+    <section id="sec-life" class="sec o3"><Life :person="p" :sources="sources" @edit="startEdit(); scrollTo(0, 0)" @changed="loadSources" /></section>
+
+    <section id="sec-stories" class="sec o3"><Stories :person="p" @count="counts.stories = $event" /></section>
+
+    <section id="sec-sources" class="sec o3"><Sources :person="p" :data="sources" @cite="sheet = { fact: null }" @changed="loadSources" /></section>
+
+    <section id="sec-talk" class="sec o3"><Discussion :person="p" @count="counts.talk = $event" /></section>
+
+    <section v-if="canEdit()" id="sec-research" class="sec o3"><Research :person="p" @count="counts.research = $event" /></section>
+
+    </div>
+
+    <aside class="col-side">
+    <section id="sec-family" class="sec o2">
       <h2>Родители</h2>
       <div class="list">
         <router-link v-for="x in parents" :key="x.id" :to="`/person/${x.id}`">
@@ -372,28 +389,22 @@ onUnmounted(onLive((events) => {
       </div>
     </section>
 
-    <section id="sec-life" class="sec"><Life :person="p" :sources="sources" @edit="startEdit(); scrollTo(0, 0)" @changed="loadSources" /></section>
-
-    <section id="sec-stories" class="sec"><Stories :person="p" @count="counts.stories = $event" /></section>
-
-    <section id="sec-sources" class="sec"><Sources :person="p" :data="sources" @cite="sheet = { fact: null }" @changed="loadSources" /></section>
-
-    <section id="sec-talk" class="sec"><Discussion :person="p" @count="counts.talk = $event" /></section>
-
-    <section v-if="canEdit()" id="sec-research" class="sec"><Research :person="p" @count="counts.research = $event" /></section>
-
-    <h2>Ещё</h2>
-    <div class="list">
-      <router-link :to="`/person/${p.id}/print`">Напечатать карточку</router-link>
-      <a href="#" @click.prevent="showOnTree">Показать на дереве</a>
-      <a href="#" v-if="store.me?.person_id !== p.id" @click.prevent="setMe">Это я</a>
-      <a :href="`/api/print.pdf?root=${p.id}&mode=hourglass`" target="_blank">Распечатать дерево вокруг этого человека</a>
-      <router-link :to="{ path: '/print', query: { root: p.id, mode: 'fan' } }">Веер предков</router-link>
-      <router-link v-if="marriages.some((m) => m.kids.length)" :to="{ path: '/print', query: { root: p.id, mode: 'rospis' } }">Поколенная роспись</router-link>
-      <a href="#" v-if="canEdit()" @click.prevent="openAsk({ person: p.id })">Спросить у родных</a>
-      <a href="#" v-if="canTalk()" @click.prevent="loadHistory">История правок</a>
-      <a href="#" v-if="mayDelete" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
-      <p v-else-if="canEdit()" class="muted small no-delete">Удалить из дерева может владелец дерева или тот, кто добавил этого человека.</p>
+    <section class="sec more o4">
+      <h2>Ещё</h2>
+      <div class="list">
+        <router-link :to="`/person/${p.id}/print`">Напечатать карточку</router-link>
+        <a href="#" @click.prevent="showOnTree">Показать на дереве</a>
+        <a href="#" v-if="store.me?.person_id !== p.id" @click.prevent="setMe">Это я</a>
+        <a :href="`/api/print.pdf?root=${p.id}&mode=hourglass`" target="_blank">Распечатать дерево вокруг этого человека</a>
+        <router-link :to="{ path: '/print', query: { root: p.id, mode: 'fan' } }">Веер предков</router-link>
+        <router-link v-if="marriages.some((m) => m.kids.length)" :to="{ path: '/print', query: { root: p.id, mode: 'rospis' } }">Поколенная роспись</router-link>
+        <a href="#" v-if="canEdit()" @click.prevent="openAsk({ person: p.id })">Спросить у родных</a>
+        <a href="#" v-if="canTalk()" @click.prevent="loadHistory">История правок</a>
+        <a href="#" v-if="mayDelete" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
+        <p v-else-if="canEdit()" class="muted small no-delete">Удалить из дерева может владелец дерева или тот, кто добавил этого человека.</p>
+      </div>
+    </section>
+    </aside>
     </div>
 
     <FactSheet v-if="sheet" :key="sheet.fact ? sheet.fact.subject + sheet.fact.id + sheet.fact.fact : 'pick'" :fact="sheet.fact" :facts="facts"
@@ -406,19 +417,44 @@ onUnmounted(onLive((events) => {
 </template>
 
 <style scoped>
-.head { text-align: center; margin: 0.222rem 0 0.889rem; }
-.head h1 { margin: 0.667rem 0 0.222rem; overflow-wrap: anywhere; }
+/* Шапка: фото слева, имя справа, закладки разделов ниже. На компьютере — карточкой во всю ширину. */
+.head { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "photo who" "tabs tabs"; gap: 0.889rem; align-items: center; margin: 0.222rem 0 1rem; }
+.who { grid-area: who; min-width: 0; }
+.head h1 { font-size: 1.444rem; margin: 0 0 0.222rem; line-height: 1.2; overflow-wrap: anywhere; }
 .head .alt { color: var(--muted); font-size: 0.889rem; margin: -0.111rem 0 0.222rem; overflow-wrap: anywhere; }
 .altbox { border: 1px solid var(--line); border-radius: var(--radius-s); padding: 0.444rem 0.778rem 0.222rem; margin: 0.444rem 0 0.667rem; }
 .altbox legend { font-weight: 700; padding: 0 0.333rem; }
 .altbox > p { margin: 0 0 0.444rem; }
 .altbox .note { color: var(--accent-text); font-weight: 700; }
-.photo { width: 8rem; height: 8rem; border-radius: 1.556rem; margin: 0 auto; overflow: hidden; display: grid; place-items: center; background: var(--line); color: var(--muted); font-size: 1rem; cursor: pointer; }
+.photo { grid-area: photo; width: 5.333rem; height: 5.333rem; border-radius: 1.222rem; overflow: hidden; display: grid; place-items: center; background: var(--line); color: var(--muted); font-size: 1rem; cursor: pointer; }
 .photo.M { background: var(--male-soft); color: var(--male); }
 .photo.F { background: var(--female-soft); color: var(--female); }
 .photo img { width: 100%; height: 100%; object-fit: cover; }
-.tabs { display: flex; flex-wrap: wrap; gap: 0.444rem; margin: 0 0 1rem; }
-.tabs .chip { flex: 1 1 auto; font-size: 1rem; font-weight: 700; color: var(--accent-text); }
+.tabs { grid-area: tabs; display: flex; flex-wrap: wrap; gap: 0.389rem; }
+/* Закладки — тихие: это переход по странице, а не действие. */
+.tabs .chip { min-height: 2.444rem; padding: 0.222rem 0.778rem; border-color: var(--line); color: var(--text); }
+.tabs .n { margin-left: 0.333rem; color: var(--accent-text); }
+/* Телефон: одна колонка, порядок разделов — order-*. Компьютер: справа семья и «Ещё». */
+.cols { display: flex; flex-direction: column; }
+.col-main, .col-side { display: contents; }
+.o1 { order: 1; } .o2 { order: 2; } .o3 { order: 3; } .o4 { order: 4; }
+@media (min-width: 64em) {
+  .head { grid-template-areas: "photo who" "photo tabs"; column-gap: 1.778rem; row-gap: 1rem; align-items: start; background: var(--card); border: 1px solid var(--line); border-radius: 1.111rem; padding: 1.556rem; margin: 0.444rem 0 1.556rem; }
+  .photo { width: 9.333rem; height: 9.333rem; border-radius: 1.556rem; }
+  .head h1 { font-size: 1.889rem; margin-top: 0.222rem; }
+  .meta { font-size: 1.111rem; }
+  .tabs .chip { background: var(--bg); }
+}
+/* Широкий экран: семья и «Ещё» — справа, сведения — в две колонки. */
+@media (min-width: 80em) {
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) clamp(18rem, 30%, 22rem); column-gap: 2rem; align-items: start; }
+  .col-main, .col-side { display: block; min-width: 0; }
+  .col-side > .sec:first-child > h2:first-child { margin-top: 0; }
+  /* Сведения — в две колонки; линии между клетками — просветом сетки. */
+  .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); }
+  .facts > * { border-top: 0; background: var(--card); }
+  .facts > :last-child:nth-child(odd), .facts > .muted { grid-column: 1 / -1; }
+}
 .sec { scroll-margin-top: 0.5rem; }
 .list > .fact { display: block; }
 .fact .label { font-size: 0.889rem; font-weight: 700; }
