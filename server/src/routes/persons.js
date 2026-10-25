@@ -132,7 +132,7 @@ export default async function personRoutes(app) {
   });
 
   app.delete('/api/persons/:id', { preHandler: need('editor') }, async (req) => {
-    const changeId = await tx((db) => deletePerson(db, req.user.id, req.params.id));
+    const changeId = await tx((db) => deletePerson(db, req.user.id, req.params.id, { by: req.user }));
     return { ok: true, changeId };
   });
 
@@ -180,9 +180,10 @@ export default async function personRoutes(app) {
 
   app.get('/api/changes', { preHandler: need('relative') }, async (req) => listOps({ limit: 50, op: req.query.op || null, research: canResearch(req.user) }));
 
-  // Отменить действие, в которое входит правка :id.
+  // Отменить действие, в которое входит правка :id. Если отмена убрала бы человека, его правило удаления то же:
+  // участник — только тех, кого добавил сам.
   app.post('/api/changes/:id/revert', { preHandler: need('editor') }, async (req) => {
-    await tx((db) => revertOp(db, req.user.id, req.params.id));
+    await tx((db) => revertOp(db, req.user.id, req.params.id, req.user));
     return { ok: true };
   });
 

@@ -100,9 +100,14 @@ export async function dropEmpty(db, userId, familyIds) {
   }
 }
 
-export async function deletePerson(db, userId, id) {
+// Удалить человека: владелец — любого, участник — только того, кого добавил сам (ошибся — убрал).
+export const mayDelete = (person, user) => user.role === 'owner' || (Boolean(person.created_by) && person.created_by === user.id);
+
+// by — кто удаляет (вошедший): тогда проверяется, можно ли ему. Без by — часть другого действия (объединение дублей).
+export async function deletePerson(db, userId, id, { by = null, denied = 'Удалить можно только тех, кого вы добавили сами. Других удаляет владелец дерева.' } = {}) {
   const cur = (await db.q('select * from persons where id = $1 and deleted_at is null for update', [id]))[0];
   if (!cur) throw new HttpError(404, 'Человек не найден');
+  if (by && !mayDelete(cur, by)) throw new HttpError(403, denied);
   const partnerIn = await db.q(
     `select id as family_id, case when partner1 = $1 then 'partner1' else 'partner2' end as slot from families where partner1 = $1 or partner2 = $1`, [id]);
   const childIn = await db.q('select family_id, kind from family_children where child_id = $1', [id]);
