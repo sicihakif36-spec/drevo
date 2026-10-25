@@ -2,9 +2,11 @@
 import { computed, nextTick, onDeactivated, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { store, canEdit, loadTree, toast } from '../store.js';
-import { layoutTree } from '@shared/layout.js';
+import { layoutTree, fatherMother } from '@shared/layout.js';
 import { homePerson, treeParts, centralPerson } from '@shared/wholetree.js';
-import { fullName, lifespan, kinship, personHas, altName, dateText, parentsOf, spousesOf } from '@shared/names.js';
+import { kinLines } from '@shared/kin.js';
+import { fullName, lifespan, kinship, personHas, altName, dateText, parentsOf, spousesOf, shortGenitive } from '@shared/names.js';
+import { plural } from '@shared/rospis.js';
 import { wide } from '../wide.js';
 import TreeCanvas from '../components/TreeCanvas.vue';
 import { openAdd } from '../components/addState.js';
@@ -15,12 +17,15 @@ defineOptions({ name: 'TreeView' });
 const router = useRouter();
 
 const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.view') || '{}'); } catch { return {}; } })();
-// Вид: ветка выбранного человека — его предки и потомки (hourglass, по умолчанию), только предки, только потомки
-// или всё дерево — все ветки сразу.
-const MODES = ['hourglass', 'ancestors', 'descendants', 'all'];
+// Вид: ветка выбранного человека — его предки и потомки (hourglass, по умолчанию), его родня по одной линии (kin),
+// только предки, только потомки или всё дерево — все ветки сразу.
+const MODES = ['hourglass', 'kin', 'ancestors', 'descendants', 'all'];
 const mode = ref(MODES.includes(saved.mode) ? saved.mode : 'hourglass');
 const up = ref(saved.up ?? 4);
 const down = ref(saved.down ?? 3);
+// Родня: по какой линии (shared/kin.js) и сколько поколений вверх до общих предков (null — как принято у линии).
+const line = ref(saved.line || 'father');
+const kinUp = ref(Number.isFinite(saved.kinUp) ? saved.kinUp : null);
 const rootId = ref(saved.root || null);
 const selected = ref(null);
 const searching = ref(false);
@@ -42,7 +47,9 @@ const root = computed(() => {
 });
 // Во «всём дереве» раскладка начинается от своего (home): выбор другого человека той же части её не перестраивает.
 const layout = computed(() => (idx.value && root.value
-  ? layoutTree(idx.value, root.value, { mode: mode.value, up: up.value, down: down.value, placeholders: canEdit(), anchor: home.value })
+  ? layoutTree(idx.value, root.value, {
+    mode: mode.value, up: mode.value === 'kin' ? kinUp.value : up.value, down: down.value, placeholders: canEdit(), anchor: home.value, line: line.value,
+  })
   : { nodes: [], edges: [], bounds: { w: 0 } }));
 // Кто не связан с показанной частью: переход к самой большой из остальных.
 const others = computed(() => (mode.value === 'all' ? layout.value.others || 0 : 0));
@@ -52,8 +59,8 @@ function toOthers() {
   if (ids) makeRoot(centralPerson(idx.value, ids));
 }
 
-watch([mode, up, down, rootId], () => {
-  try { localStorage.setItem('drevo.view', JSON.stringify({ mode: mode.value, up: up.value, down: down.value, root: rootId.value })); } catch {}
+watch([mode, up, down, rootId, line, kinUp], () => {
+  try { localStorage.setItem('drevo.view', JSON.stringify({ mode: mode.value, up: up.value, down: down.value, root: rootId.value, line: line.value, kinUp: kinUp.value })); } catch {}
 });
 watch(selected, (id) => (store.selectedId = id));
 
@@ -84,6 +91,18 @@ const selFamily = computed(() => {
   }
   return rows;
 });
+
+// Сколько места сверху и снизу дерева занимают кнопки: «Показать целиком» не прячет под ними крайние ряды.
+const page = ref(null);
+const topBar = ref(null);
+const toolsBar = ref(null);
+function insets() {
+  const box = page.value?.getBoundingClientRect();
+  if (!box) return undefined;
+  const top = topBar.value ? topBar.value.getBoundingClientRect().bottom - box.top : 0;
+  const bottom = toolsBar.value ? box.bottom - toolsBar.value.getBoundingClientRect().top : 0;
+  return { top: top + 12, bottom: bottom + 12 };
+}
 
 function makeRoot(id) {
   rootId.value = id;
@@ -117,6 +136,36 @@ function toMe() {
   rootId.value = id;
   setTimeout(() => canvas.value?.centerOn(id, 0.95), 0);
 }
+
+// Родня: что показано (null — у человека не указаны родители), какие линии есть, выбор линии.
+const kin = computed(() => (mode.value === 'kin' ? layout.value.kin : null));
+const lines = computed(() => (mode.value === 'kin' && idx.value && root.value ? kinLines(idx.value, root.value) : []));
+const rootP = computed(() => (root.value ? idx.value?.persons.get(root.value) : null));
+const whose = computed(() => (root.value === meId.value ? 'Ваша родня' : `Родня ${shortGenitive(rootP.value)}`));
+const kinCount = computed(() => {
+  const n = kin.value ? kin.value.blood.size - 1 : 0;
+  return `${n} ${plural(n, 'человек', 'человека', 'человек')}`;
+});
+const choosing = ref(false);
+onDeactivated(() => { choosing.value = false; });
+const lineGroups = computed(() => {
+  if (!choosing.value || !rootP.value) return [];
+  const [father, mother] = fatherMother(idx.value, root.value);
+  return [
+    { title: 'Со стороны отца', lines: lines.value.filter((l) => l.path[0] === 'M'), missing: !father && 'Отец в дереве не указан.' },
+    { title: 'Со стороны матери', lines: lines.value.filter((l) => l.path[0] === 'F'), missing: !mother && 'Мать в дереве не указана.' },
+  ];
+});
+function pickLine(l) {
+  line.value = l.key;
+  kinUp.value = null;
+  choosing.value = false;
+}
+// Другая линия или число поколений: вся родня на экране, если её можно прочесть, иначе — человек в середине.
+watch([mode, line, kinUp], () => {
+  if (mode.value === 'kin') setTimeout(() => canvas.value?.fitAll(insets(), 0.45) || canvas.value?.centerOn(root.value), 0);
+});
+
 // «Найдите себя»: у вошедшего нет себя в дереве — родство не считается. Плашку можно убрать.
 const findHidden = ref((() => { try { return localStorage.getItem('drevo.findme') === 'hide'; } catch { return false; } })());
 const showFind = computed(() => Boolean(store.me && idx.value?.persons.size) && !meId.value && !findHidden.value);
@@ -151,18 +200,23 @@ async function itsMe(id, confirm = false) {
   setTimeout(() => canvas.value?.centerOn(id, 0.95), 0);
 }
 
-const gensLabel = computed(() => (mode.value === 'ancestors' ? `${up.value} вверх` : mode.value === 'descendants' ? `${down.value} вниз` : `${up.value} вверх, ${down.value} вниз`));
+const gensLabel = computed(() => (mode.value === 'kin' ? `${kin.value?.up} вверх` : mode.value === 'ancestors' ? `${up.value} вверх` : mode.value === 'descendants' ? `${down.value} вниз` : `${up.value} вверх, ${down.value} вниз`));
 function gens(delta) {
+  if (mode.value === 'kin') {
+    if (kin.value) kinUp.value = Math.min(kin.value.max, Math.max(kin.value.min, kin.value.up + delta));
+    return;
+  }
   if (mode.value !== 'descendants') up.value = Math.min(12, Math.max(1, up.value + delta));
   if (mode.value !== 'ancestors') down.value = Math.min(12, Math.max(1, down.value + delta));
 }
 </script>
 
 <template>
-  <div class="tree-page" :class="{ 'has-sel': sel }">
-    <div class="top">
+  <div ref="page" class="tree-page" :class="{ 'has-sel': sel }">
+    <div ref="topBar" class="top">
       <div class="seg">
         <button :class="{ on: mode === 'hourglass' }" @click="mode = 'hourglass'">Ветка</button>
+        <button :class="{ on: mode === 'kin' }" @click="mode = 'kin'">Родня</button>
         <button :class="{ on: mode === 'ancestors' }" @click="mode = 'ancestors'">Предки</button>
         <button :class="{ on: mode === 'descendants' }" @click="mode = 'descendants'">Потомки</button>
         <button :class="{ on: mode === 'all' }" @click="mode = 'all'">Всё дерево</button>
@@ -176,6 +230,16 @@ function gens(delta) {
         <span class="grow">Найдите себя — родство будет считаться от вас</span>
         <button class="primary" @click="finding = true">Найти себя</button>
         <button class="ghost x" @click="hideFind" aria-label="Убрать подсказку">✕</button>
+      </div>
+      <div class="note" v-if="mode === 'kin' && rootP && (!sel || wide)">
+        <template v-if="kin">
+          <span class="grow"><b>{{ whose }} {{ kin.text }}</b>: {{ kinCount }}</span>
+          <button @click="choosing = true">Другая линия</button>
+        </template>
+        <template v-else>
+          <span class="grow">{{ root === meId ? 'Ваши родители' : `Родители ${shortGenitive(rootP)}` }} в дереве не указаны — родню не от кого показать</span>
+          <button v-if="canEdit()" @click="openAdd({ to: root, type: null })">Добавить родителей</button>
+        </template>
       </div>
       <div class="note" v-if="others && !sel">
         <span class="grow">Ещё {{ others }} {{ others % 10 === 1 && others % 100 !== 11 ? 'человек не связан' : 'человек не связаны' }} с этой веткой</span>
@@ -193,10 +257,10 @@ function gens(delta) {
     <TreeCanvas v-else ref="canvas" :layout="layout" :idx="idx" :selected-id="selected" :focus-id="root"
       @select="selected = $event" @placeholder="onPlaceholder" @open="router.push(`/person/${$event}`)" />
 
-    <div class="tools" v-if="store.tree?.persons.length && (!sel || wide)">
+    <div ref="toolsBar" class="tools" v-if="store.tree?.persons.length && (!sel || wide)">
       <div class="row tools-top">
         <div class="views">
-          <button @click="canvas.fitAll()">Показать целиком</button>
+          <button @click="canvas.fitAll(insets())">Показать целиком</button>
           <button @click="toMe">{{ meId ? 'Ко мне' : 'К началу' }}</button>
         </div>
         <div class="zoom">
@@ -204,10 +268,10 @@ function gens(delta) {
           <button @click="canvas.zoomAt(1 / 1.35)" aria-label="Мельче">−</button>
         </div>
       </div>
-      <div class="gens" v-if="mode !== 'all'">
-        <button @click="gens(-1)" aria-label="Меньше поколений">−</button>
+      <div class="gens" v-if="mode === 'kin' ? kin && kin.max > kin.min : mode !== 'all'">
+        <button @click="gens(-1)" :disabled="mode === 'kin' && kin.up <= kin.min" aria-label="Меньше поколений">−</button>
         <span class="grow">Поколений: <b class="nowrap">{{ gensLabel }}</b></span>
-        <button @click="gens(1)" aria-label="Больше поколений">+</button>
+        <button @click="gens(1)" :disabled="mode === 'kin' && kin.up >= kin.max" aria-label="Больше поколений">+</button>
       </div>
     </div>
 
@@ -231,7 +295,8 @@ function gens(delta) {
       <div class="grid2 actions">
         <button class="primary" :class="{ wide: !canEdit() }" @click="router.push(`/person/${sel.id}`)">Открыть карточку</button>
         <button v-if="canEdit()" @click="add(null)">Добавить родственника</button>
-        <button v-if="sel.id !== root || mode === 'all'" class="wide" @click="branchOf(sel.id)">Ветка этого человека</button>
+        <button v-if="mode === 'kin' ? sel.id !== root : sel.id !== root || mode === 'all'" class="wide" @click="mode === 'kin' ? makeRoot(sel.id) : branchOf(sel.id)">
+          {{ mode === 'kin' ? 'Родня этого человека' : 'Ветка этого человека' }}</button>
         <button v-if="!meId && store.me" class="wide" @click="itsMe(sel.id, true)">Это я</button>
       </div>
     </div>
@@ -248,6 +313,25 @@ function gens(delta) {
           </a>
         </div>
         <p class="muted" v-else-if="query.trim()">Никого не нашлось. Попробуйте только фамилию.</p>
+      </div>
+    </Teleport>
+
+    <Teleport to="body" v-if="choosing">
+      <div class="sheet-backdrop" @click="choosing = false" />
+      <div class="sheet" role="dialog" aria-modal="true" aria-label="Чья родня">
+        <div class="row"><h2 class="grow" style="margin:0">{{ whose }}</h2><button class="ghost" @click="choosing = false" aria-label="Закрыть">✕</button></div>
+        <p class="muted small" style="margin:4px 0 0">Кровные родственники по одной линии. Сверху — общие предки, под ними все их дети, внуки и правнуки с мужьями и жёнами. Больше поколений вверх — больше родни.</p>
+        <template v-for="g in lineGroups" :key="g.title">
+          <h3 class="side">{{ g.title }}</h3>
+          <div class="list" v-if="g.lines.length">
+            <button v-for="l in g.lines" :key="l.key" :aria-pressed="kin?.key === l.key" @click="pickLine(l)">
+              <div class="grow"><div :class="{ b: kin?.key === l.key }">{{ l.title }}</div><div class="muted small">{{ fullName(idx.persons.get(l.via)) }}, {{ l.who }}</div></div>
+              <span v-if="kin?.key === l.key" class="tick" aria-hidden="true">✓</span>
+            </button>
+          </div>
+          <p class="muted small" v-if="g.missing">{{ g.missing }}</p>
+          <p class="muted small" v-else-if="g.lines.length === 1">Родня по деду и по бабушке появится, когда в дереве будут их родители.</p>
+        </template>
       </div>
     </Teleport>
 
@@ -283,6 +367,9 @@ function gens(delta) {
 .note .x { width: 2.222rem; padding: 0; color: var(--muted); }
 .me-row { display: flex; align-items: center; gap: 0.5rem; }
 .me-row button { flex: none; }
+.side { margin: 1rem 0 0.444rem; font-size: 1rem; }
+.b { font-weight: 700; }
+.tick { flex: none; color: var(--accent-text); font-weight: 700; }
 .nowrap { white-space: nowrap; }
 .empty { padding-top: calc(7.5rem + var(--safe-t)); }
 .tools { position: absolute; z-index: 5; left: 0.667rem; right: 0.667rem; bottom: 0.667rem; display: flex; flex-direction: column; gap: 0.444rem; pointer-events: none; }

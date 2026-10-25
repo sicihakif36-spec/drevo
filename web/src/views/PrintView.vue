@@ -7,13 +7,14 @@ import { layoutTree, BOX } from '@shared/layout.js';
 import { homePerson } from '@shared/wholetree.js';
 import { planPages, PAPER, MM } from '@shared/printplan.js';
 import { layoutFan, sectorPath, FAN } from '@shared/fan.js';
-import { fullName } from '@shared/names.js';
+import { fullName, shortGenitive } from '@shared/names.js';
+import { kinLines } from '@shared/kin.js';
 import { buildRospis, parseRospisOptions } from '@shared/rospis.js';
 import RospisText from '../components/RospisText.vue';
 
 const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.print') || '{}'); } catch { return {}; } })();
 const o = reactive({
-  root: '', mode: 'hourglass', up: 4, down: 3, paper: 'A4', orient: 'auto', fit: 'page', scale: 100,
+  root: '', mode: 'hourglass', up: 4, down: 3, line: 'father', kinUp: null, paper: 'A4', orient: 'auto', fit: 'page', scale: 100,
   photos: true, hideLiving: false, theme: 'classic', title: '', gens: 5, shape: 180, colors: 'branch', empty: true, ...saved,
 });
 // Из карточки: «Веер предков» с этим человеком в центре.
@@ -32,7 +33,17 @@ const home = computed(() => (store.idx ? homePerson(store.idx, store.me?.person_
 const rootId = computed(() => (store.idx?.persons.has(o.root) ? o.root : home.value));
 const isFan = computed(() => o.mode === 'fan');
 const isRospis = computed(() => o.mode === 'rospis');
-const layout = computed(() => (store.idx && rootId.value && !isFan.value && !isRospis.value ? layoutTree(store.idx, rootId.value, { mode: o.mode, up: o.up, down: o.down, anchor: home.value }) : null));
+const layout = computed(() => (store.idx && rootId.value && !isFan.value && !isRospis.value
+  ? layoutTree(store.idx, rootId.value, { mode: o.mode, up: o.mode === 'kin' ? o.kinUp : o.up, down: o.down, anchor: home.value, line: o.line }) : null));
+// Родня: какие линии есть у выбранного, что вышло (null — родители не указаны) и заголовок по умолчанию.
+const isKin = computed(() => o.mode === 'kin');
+const lines = computed(() => (isKin.value && store.idx && rootId.value ? kinLines(store.idx, rootId.value) : []));
+const kin = computed(() => (isKin.value ? layout.value?.kin : null));
+const kinTitle = computed(() => (kin.value ? `Родня ${shortGenitive(store.idx.persons.get(rootId.value))} ${kin.value.text}` : ''));
+function pickLine(l) {
+  o.line = l.key;
+  o.kinUp = null;
+}
 // Веер: та же раскладка, что в PDF (shared/fan.js). Гостю дерево уже пришло без дат и фото живых.
 const fan = computed(() => (store.idx && rootId.value && isFan.value ? layoutFan(store.idx, rootId.value, { ...o, hideLiving: o.hideLiving || !canTalk() }) : null));
 const scheme = computed(() => layout.value || fan.value);
@@ -92,7 +103,7 @@ const rUrl = (download) => `/api/rospis.pdf?${new URLSearchParams({ ...rqs.value
 
 const url = (download) => {
   const qs = new URLSearchParams({
-    root: rootId.value || '', mode: o.mode, up: o.up, down: o.down, paper: o.paper, orient: o.orient, fit: o.fit,
+    root: rootId.value || '', mode: o.mode, up: kin.value ? kin.value.up : o.up, down: o.down, line: o.line, paper: o.paper, orient: o.orient, fit: o.fit,
     scale: o.scale, photos: o.photos ? '1' : '0', hideLiving: o.hideLiving ? '1' : '0', theme: o.theme, title: o.title,
     ...(isFan.value ? { gens: o.gens, shape: o.shape, colors: o.colors, empty: o.empty ? '1' : '0' } : {}),
   });
@@ -187,7 +198,18 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <button :class="{ on: o.mode === 'hourglass' }" @click="o.mode = 'hourglass'">Ветка</button>
         <button :class="{ on: o.mode === 'ancestors' }" @click="o.mode = 'ancestors'">Предки</button>
         <button :class="{ on: o.mode === 'descendants' }" @click="o.mode = 'descendants'">Потомки</button>
+        <button :class="{ on: isKin }" class="span" @click="o.mode = 'kin'">Родня</button>
       </div></div>
+      <template v-if="isKin">
+        <p class="muted small" style="margin-top:0">Кровные родственники по одной линии: сверху — общие предки, под ними все их дети, внуки и правнуки с мужьями и жёнами.</p>
+        <div class="field" v-if="lines.length"><span class="small muted">По какой линии</span>
+          <div class="chips"><button v-for="l in lines" :key="l.key" class="chip" :class="{ on: kin?.key === l.key }" @click="pickLine(l)">{{ l.text[0].toUpperCase() + l.text.slice(1) }}</button></div>
+        </div>
+        <p v-else class="banner">У этого человека в дереве не указаны родители — родню не от кого показать. Выберите другого.</p>
+        <div class="field" v-if="kin && kin.max > kin.min"><span class="small muted">Поколений вверх</span>
+          <div class="chips"><button v-for="g in Math.min(kin.max, 12) - kin.min + 1" :key="g" class="chip" :class="{ on: kin.up === g + kin.min - 1 }" @click="o.kinUp = g + kin.min - 1">{{ g + kin.min - 1 }}</button></div>
+        </div>
+      </template>
       <template v-if="isFan">
         <div class="field"><span class="small muted">Поколений</span>
           <div class="chips"><button v-for="g in FAN.gens[1] - FAN.gens[0] + 1" :key="g" class="chip" :class="{ on: o.gens === g + FAN.gens[0] - 1 }" @click="o.gens = g + FAN.gens[0] - 1">{{ g + FAN.gens[0] - 1 }}</button></div>
@@ -203,7 +225,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         </div></div>
         <label class="row field check"><input type="checkbox" v-model="o.empty" /> Показывать пустые места — вписать неизвестных от руки</label>
       </template>
-      <div class="grid2" v-else-if="!isRospis && o.mode !== 'all'">
+      <div class="grid2" v-else-if="!isRospis && o.mode !== 'all' && !isKin">
         <label class="field" v-if="o.mode !== 'descendants'"><span>Поколений вверх</span><input type="number" min="1" max="12" v-model.number="o.up" /></label>
         <label class="field" v-if="o.mode !== 'ancestors'"><span>Поколений вниз</span><input type="number" min="1" max="12" v-model.number="o.down" /></label>
       </div>
@@ -234,7 +256,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <button class="chip" :class="{ on: o.theme === 'bw' }" @click="o.theme = 'bw'">Чёрно-белое</button>
       </div>
       <label v-if="isRospis" class="field"><span>Заголовок</span><input v-model="ro.title" placeholder="Поколенная роспись" /></label>
-      <label v-else class="field"><span>Заголовок</span><input v-model="o.title" :placeholder="store.title" /></label>
+      <label v-else class="field"><span>Заголовок</span><input v-model="o.title" :placeholder="kinTitle || store.title" /></label>
       <label v-if="!isRospis" class="row field check"><input type="checkbox" v-model="o.photos" /> {{ isFan ? 'Фото в середине' : 'Фотографии' }}</label>
       <label v-if="canTalk()" class="row field"><input type="checkbox" v-model="o.hideLiving" /> Скрыть даты и фото живых — для печати не для семьи</label>
       <p v-else class="muted small">Даты и фото живых родственников на печати не показываются.</p>
@@ -252,6 +274,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
 .fan text { text-anchor: middle; dominant-baseline: central; fill: #1d1d1d; }
 .num { font-size: 120px; fill: rgba(0,0,0,.18); text-anchor: middle; dominant-baseline: middle; font-weight: 700; }
 .seg.two { display: grid; grid-template-columns: 1fr 1fr; }
+.seg.two .span { grid-column: 1 / -1; }
 .check { align-items: flex-start; min-height: 2.667rem; }
 .check input { flex: none; margin: 0.111rem 0 0; }
 </style>
