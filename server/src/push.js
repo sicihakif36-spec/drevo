@@ -1,6 +1,7 @@
 // Уведомления на телефон через Web Push (VAPID): приходят и при закрытом приложении.
 // Три вида, у каждого свой переключатель: новый комментарий (и вопрос родным — адресату, ответ — спросившему) — сразу; правки в дереве — одной сводкой по автору,
 // когда он 10 минут ничего не правил; дни рождения и памятные даты — в 9:00 по Москве.
+// Владельцу — ещё напоминание о семейном архиве: месяц не скачивали «Скачать всё» — днём, не чаще раза в неделю.
 // Расписание — раз в минуту внутри процесса. Что уже отправлено, отмечается в базе до отправки (migrations/006_push.sql):
 // одно и то же не уйдёт дважды и после перезапуска. Содержимое шифруется для телефона, сервис браузера его не видит.
 import webpush from 'web-push';
@@ -13,13 +14,17 @@ import { isGuest, hideLiving } from './privacy.js';
 import { fullName, isPrivate, upcomingDates, yearsText } from '../../shared/names.js';
 import { deviceName } from '../../shared/device.js';
 import { about } from '../../shared/asks.js';
+import { lastText } from '../../shared/archive.js';
+import { ARCHIVE_DUE, lastDownload } from './archive.js';
 
 const TICK = 60000;
 const QUIET = 10; // минут тишины после последней правки автора
 const HOUR = 9; // во сколько по Москве присылать даты
 const MSK = 3 * 3600000; // Москва без перехода на летнее время
 const CATCH_UP = 15; // минут: комментарии, которые не успели разослать (сервер перезапускался)
-const FLAGS = { comments: 'notify_comments', edits: 'notify_edits', dates: 'notify_dates' };
+const FLAGS = { comments: 'notify_comments', edits: 'notify_edits', dates: 'notify_dates', archive: 'notify_archive' };
+const ARCHIVE_HOURS = [11, 20]; // напоминание об архиве — днём по Москве, не ночью и не с утра пораньше
+const ARCHIVE_EVERY = 7; // дней между напоминаниями, пока не скачает
 // Адреса подписок — только сервисы уведомлений браузеров: сервер не должен ходить куда попало по чужой указке.
 const SERVICES = /(^|\.)(googleapis\.com|mozilla\.com|push\.apple\.com|notify\.windows\.com)$/;
 
@@ -391,11 +396,34 @@ export function pushPlugin(app, opts = {}) {
     }
   }
 
+  // Напоминание об архиве — каждому владельцу, кому пора (ARCHIVE_DUE) и у кого есть телефон с уведомлениями.
+  // Отметка archive_reminded_at ставится до отправки: второй проход в ту же неделю не напомнит.
+  async function archive(now) {
+    const { hour } = moscow(now);
+    if (hour < ARCHIVE_HOURS[0] || hour >= ARCHIVE_HOURS[1]) return;
+    const due = await q(
+      `update users u set archive_reminded_at = $1 where ${ARCHIVE_DUE} and u.notify_archive
+         and (u.archive_reminded_at is null or u.archive_reminded_at <= $1::timestamptz - make_interval(days => ${ARCHIVE_EVERY}))
+         and exists (select 1 from push_subs s where s.user_id = u.id)
+       returning u.id`,
+      [now],
+    );
+    if (!due.length) return;
+    const last = await lastDownload();
+    const subs = await q('select endpoint, p256dh, auth from push_subs where user_id = any($1::uuid[])', [due.map((u) => u.id)]);
+    await deliver(subs, {
+      title: 'Пора сохранить семейный архив',
+      body: last ? `Последний раз — ${lastText(last.at, now)}. Откройте «Ещё → Скачать всё».` : 'Вы его ещё не скачивали. Откройте «Ещё → Скачать всё».',
+      url: '/#/more?archive=1',
+      tag: 'archive',
+    });
+  }
+
   // Один проход расписания; если предыдущий ещё идёт — ждём его, а не запускаем второй.
   function tick() {
     busy ??= (async () => {
       const now = clock();
-      for (const step of [missedComments, digests, dates]) {
+      for (const step of [missedComments, digests, dates, archive]) {
         try {
           await step(now);
         } catch (err) {
@@ -449,20 +477,22 @@ export function pushPlugin(app, opts = {}) {
     return { ok: true };
   });
 
-  const settings = async (userId) => {
-    const u = (await q('select notify_comments, notify_edits, notify_dates from users where id = $1', [userId]))[0];
-    return Object.fromEntries(Object.entries(FLAGS).map(([k, col]) => [k, u[col]]));
+  // Об архиве — только владельцу: остальные «Скачать всё» не видят.
+  const flags = (user) => Object.entries(FLAGS).filter(([k]) => k !== 'archive' || user.role === 'owner');
+  const settings = async (user) => {
+    const u = (await q('select notify_comments, notify_edits, notify_dates, notify_archive from users where id = $1', [user.id]))[0];
+    return Object.fromEntries(flags(user).map(([k, col]) => [k, u[col]]));
   };
 
-  app.get('/api/push/settings', { preHandler: need('viewer') }, async (req) => settings(req.user.id));
+  app.get('/api/push/settings', { preHandler: need('viewer') }, async (req) => settings(req.user));
 
   app.patch('/api/push/settings', { preHandler: need('viewer') }, async (req) => {
-    const set = Object.entries(FLAGS).filter(([k]) => typeof req.body?.[k] === 'boolean');
+    const set = flags(req.user).filter(([k]) => typeof req.body?.[k] === 'boolean');
     if (set.length) {
       await q(`update users set ${set.map(([, col], i) => `${col} = $${i + 2}`).join(', ')} where id = $1`,
         [req.user.id, ...set.map(([k]) => req.body[k])]);
     }
-    return settings(req.user.id);
+    return settings(req.user);
   });
 
   // Проверочное — на этот телефон (endpoint), а если он не указан — на все телефоны человека.

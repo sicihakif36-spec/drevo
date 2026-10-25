@@ -51,6 +51,8 @@ before(async () => {
   elena = await login(app, 'editor', 'Елена');
   guest = await login(app, 'viewer', 'Гость');
   for (const [c, n] of [[owner, 'owner'], [elena, 'elena'], [guest, 'guest']]) await subscribe(c, n);
+  // Напоминание об архиве проверяется в napominanie.test.js.
+  await q('update users set notify_archive = false');
 });
 after(async () => { await app.close(); await pool.end(); });
 

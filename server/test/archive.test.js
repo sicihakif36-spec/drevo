@@ -254,7 +254,7 @@ test('журнал поиска в архиве: вопросы и записи 
 
 // Тысячи файлов по 128 КБ — жёсткие ссылки на один файл, чтобы не занимать диск. Архив — около 380 МБ;
 // память растёт от длины списка файлов (на 1000 файлов — около 50 МБ, на 6000 — около 75), а не от их веса.
-test('большое дерево собирается потоком: память не растёт вместе с архивом; прерванное скачивание не ломает сервер', async () => {
+test('большое дерево собирается потоком: память не растёт вместе с архивом; прерванное скачивание не ломает сервер и не считается скачанным', async () => {
   const N = 3000;
   const seed = mediaPath('seed-archive-test');
   fs.writeFileSync(seed, Buffer.alloc(128 * 1024, 7));
@@ -278,6 +278,8 @@ test('большое дерево собирается потоком: памя�
       req.on('error', (err) => (err.message === 'прервано' ? resolve({ aborted: true }) : reject(err)));
     });
 
+    const downloads = async () => (await q('select count(*)::int as n from archive_downloads'))[0].n;
+    const before = await downloads();
     global.gc?.();
     const base = process.memoryUsage().rss;
     let peak = base;
@@ -294,6 +296,9 @@ test('большое дерево собирается потоком: памя�
     // Ушли на середине: сервер бросает чтение и дальше работает.
     const cut = await get((got, req) => { if (got > 20 * 1024 * 1024) req.destroy(new Error('прервано')); });
     assert.ok(cut.aborted);
+    // Отметка о скачивании — только о дошедшем до конца: полное считается, прерванное — нет.
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(await downloads(), before + 1);
     const info = await json(owner, 'GET', '/api/archive');
     assert.equal(info.photos, 7 + N);
   } finally {
