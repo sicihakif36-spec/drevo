@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue';
 import { api } from '../api.js';
 
 // Ссылка «Завести своё дерево» (server/src/routes/tenants.js): кто её открыл — владелец новой пустой семьи на этом сервере.
-// Если телефон уже в других семьях, они остаются: переключаться — в «Ещё → Мои семьи».
+// Если телефон уже в других семьях, они остаются: переключаться — в «Профиль → Мои семьи».
 const props = defineProps({ token: String });
 const name = ref('');
 const title = ref('');
@@ -53,7 +53,7 @@ async function create() {
       <label class="field"><span>Как назвать дерево?</span><input v-model="title" placeholder="Например: Род Галиевых" /></label>
       <p class="error" v-if="error">{{ error }}</p>
       <button class="primary block" :disabled="busy || !name.trim() || !title.trim()" @click="create">{{ busy ? 'Завожу…' : 'Завести дерево' }}</button>
-      <p class="muted small">Ссылка срабатывает один раз. Если вы уже пользуетесь Древом в другой семье, она останется — переключаться можно в «Ещё».</p>
+      <p class="muted small">Ссылка срабатывает один раз. Если вы уже пользуетесь Древом в другой семье, она останется — переключаться можно в «Профиле».</p>
     </div>
   </div>
 </template>

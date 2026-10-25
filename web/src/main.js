@@ -3,10 +3,11 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import App from './App.vue';
 import './fonts.css';
 import './style.css';
+import HomeView from './views/HomeView.vue';
 import TreeView from './views/TreeView.vue';
 import PersonView from './views/PersonView.vue';
 import PeopleView from './views/PeopleView.vue';
-import MoreView from './views/MoreView.vue';
+import ProfileView from './views/ProfileView.vue';
 import PrintView from './views/PrintView.vue';
 import CardPrintView from './views/CardPrintView.vue';
 import FamilyView from './views/FamilyView.vue';
@@ -34,17 +35,24 @@ import InterviewsView from './views/InterviewsView.vue';
 import InterviewFillView from './views/InterviewFillView.vue';
 import TenantsView from './views/TenantsView.vue';
 import NewFamilyView from './views/NewFamilyView.vue';
+import HelpView from './views/HelpView.vue';
+import ArchiveView from './views/ArchiveView.vue';
 import { store } from './store.js';
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/', component: TreeView },
+    // «Главная» — с неё открывается приложение (что требует участия, даты, что нового, все разделы).
+    { path: '/', component: HomeView },
+    { path: '/tree', component: TreeView },
     { path: '/person/:id', component: PersonView, props: true },
     { path: '/person/:id/print', component: CardPrintView, props: true },
     { path: '/people', component: PeopleView },
     { path: '/feed', component: FeedView },
-    { path: '/more', component: MoreView },
+    { path: '/profile', component: ProfileView },
+    // Бывшее «Ещё»: старые ссылки (и «Скачать всё» из уведомлений, /more?archive=1) ведут на новые места.
+    { path: '/more', redirect: (to) => (to.query.archive ? { path: '/archive', query: {} } : { path: '/profile', query: {} }) },
+    { path: '/archive', component: ArchiveView },
     { path: '/print', component: PrintView },
     { path: '/family', component: FamilyView },
     { path: '/changes', component: ChangesView },
@@ -65,6 +73,7 @@ const router = createRouter({
     { path: '/interview/:id', component: InterviewView, props: (r) => ({ id: r.params.id, person: r.query.person }) },
     { path: '/password', component: PasswordView, props: () => ({ mode: store.me?.has_password ? 'change' : 'create' }) },
     { path: '/tenants', component: TenantsView },
+    { path: '/help', component: HelpView },
     { path: '/invite/:token', component: InviteView, props: true, meta: { public: true } },
     // Анкета для родственника: без входа и без дерева.
     { path: '/survey/:token', component: SurveyFillView, props: true, meta: { public: true } },

@@ -18,7 +18,7 @@ const a = ref(null);
 const error = ref('');
 const busy = ref(false);
 const link = ref(null);
-const UNDO = 'Отменить можно в «Ещё → Последние правки».';
+const UNDO = 'Отменить можно в «Главная → Последние правки».';
 
 async function load() {
   try {

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { store, loadTree, canEdit, canTalk, toast, onLive } from '../store.js';
+import { store, loadTree, canEdit, canTalk, isOwner, toast, onLive } from '../store.js';
 import { api, photoUrl } from '../api.js';
 import { openAdd } from '../components/addState.js';
 import ChangeList from '../components/ChangeList.vue';
@@ -134,12 +134,14 @@ function headPhoto() {
   else if (canEdit()) album.value.add();
 }
 
-const UNDO = 'Вернуть можно в «Ещё → Последние правки».';
+const UNDO = 'Вернуть можно в «Главная → Последние правки».';
+// Удалить: владелец — любого, участник — только того, кого добавил сам (server/src/tree.js, mayDelete).
+const mayDelete = computed(() => canEdit() && (isOwner() || p.value?.created_by === store.me?.id));
 async function removePerson() {
   if (!await ask({ text: `Удалить ${nameAccusative(p.value)} из дерева?`, note: `${fullName(p.value)}. ${UNDO}`, yes: 'Удалить', no: 'Не удалять', danger: true })) return;
   await api('DELETE', `/api/persons/${p.value.id}`);
   await loadTree();
-  toast('Удалено. Отменить можно в «Ещё → Последние правки».');
+  toast('Удалено. Отменить можно в «Главная → Последние правки».');
   router.replace('/');
 }
 
@@ -183,7 +185,7 @@ async function setMe() {
 
 function showOnTree() {
   store.treeRoot = p.value.id;
-  router.push('/');
+  router.push('/tree');
 }
 
 async function reloadHistory() {
@@ -216,7 +218,7 @@ onUnmounted(onLive((events) => {
 </script>
 
 <template>
-  <div class="page" v-if="!p"><p class="muted">{{ store.tree ? 'Человек не найден или удалён.' : 'Загрузка…' }}</p><router-link to="/">К дереву</router-link></div>
+  <div class="page" v-if="!p"><p class="muted">{{ store.tree ? 'Человек не найден или удалён.' : 'Загрузка…' }}</p><router-link to="/tree">К дереву</router-link></div>
   <div class="page" v-else>
     <div class="row" style="margin-bottom:0.444rem">
       <button class="ghost" @click="router.back()" aria-label="Назад">‹ Назад</button>
@@ -390,7 +392,8 @@ onUnmounted(onLive((events) => {
       <router-link v-if="marriages.some((m) => m.kids.length)" :to="{ path: '/print', query: { root: p.id, mode: 'rospis' } }">Поколенная роспись</router-link>
       <a href="#" v-if="canEdit()" @click.prevent="openAsk({ person: p.id })">Спросить у родных</a>
       <a href="#" v-if="canTalk()" @click.prevent="loadHistory">История правок</a>
-      <a href="#" v-if="canEdit()" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
+      <a href="#" v-if="mayDelete" class="danger-link" @click.prevent="removePerson">Удалить из дерева</a>
+      <p v-else-if="canEdit()" class="muted small no-delete">Удалить из дерева может владелец дерева или тот, кто добавил этого человека.</p>
     </div>
 
     <FactSheet v-if="sheet" :key="sheet.fact ? sheet.fact.subject + sheet.fact.id + sheet.fact.fact : 'pick'" :fact="sheet.fact" :facts="facts"
@@ -431,6 +434,7 @@ onUnmounted(onLive((events) => {
 .add > button { flex: 1 1 auto; }
 .add > .wide, .add > p { flex-basis: 100%; margin: 0; }
 .danger-link { color: var(--danger) !important; }
+.no-delete { margin: 0; }
 .miss { display: flex; flex-wrap: wrap; align-items: center; gap: 0.333rem 0.667rem; }
 .miss > span { flex: 1 1 12rem; }
 .miss .askbtn { min-height: 2.667rem; font-size: 0.889rem; padding: 0.25rem 0.778rem; border-color: var(--warn-text); color: var(--warn-text); background: transparent; }

@@ -105,7 +105,7 @@ async function save(answered) {
   const n = answered;
   if (!await ask({
     text: 'Сохранить в истории?',
-    note: `Ответы станут историями в карточке ${p.value ? nameGenitive(p.value) : called.value} — ${n} ${n % 10 === 1 && n % 100 !== 11 ? 'история' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'истории' : 'историй'}. Пропущенные вопросы не сохраняются. Отменить можно в «Ещё → Последние правки».`,
+    note: `Ответы станут историями в карточке ${p.value ? nameGenitive(p.value) : called.value} — ${n} ${n % 10 === 1 && n % 100 !== 11 ? 'история' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'истории' : 'историй'}. Пропущенные вопросы не сохраняются. Отменить можно в «Главная → Последние правки».`,
     yes: 'Сохранить', no: 'Ещё не сохранять',
   })) return;
   saving.value = true;
@@ -182,7 +182,7 @@ const until = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', m
       <div v-if="iv.saved" class="card saved">
         <p><b>Интервью сохранено в истории.</b> Ответы — в карточке, в разделе «Истории».</p>
         <router-link class="btn primary block" :to="{ path: `/person/${iv.person_id}`, hash: '#sec-stories' }">Открыть истории</router-link>
-        <p class="muted small">Отменить сохранение можно в «Ещё → Последние правки» — тогда интервью снова можно дописать.</p>
+        <p class="muted small">Отменить сохранение можно в «Главная → Последние правки» — тогда интервью снова можно дописать.</p>
       </div>
 
       <template v-else>
@@ -220,7 +220,7 @@ const until = (t) => new Date(t).toLocaleDateString('ru-RU', { day: 'numeric', m
                 <button class="primary block huge" :disabled="saving || !answered" @click="save(answered)">{{ saving ? 'Сохраняю…' : 'Готово — сохранить в истории' }}</button>
                 <p class="muted small">Каждый ответ станет историей с записью голоса. Пропущенные вопросы историй не создают.</p>
               </template>
-              <p v-else class="muted">Всё записано. Сохранить ответы в дерево сможет участник или владелец — они видят это интервью в «Ещё → Интервью».</p>
+              <p v-else class="muted">Всё записано. Сохранить ответы в дерево сможет участник или владелец — они видят это интервью в «Главная → Интервью».</p>
             </div>
           </template>
         </InterviewRunner>

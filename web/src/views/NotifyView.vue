@@ -109,7 +109,7 @@ async function toggle(key, on) {
           <input type="checkbox" :checked="prefs[key]" @change="toggle(key, $event.target.checked)" />
         </label>
       </div>
-      <p class="small muted">Эти настройки действуют на всех ваших телефонах.<template v-if="store.tenants.length > 1"> В другой семье они свои: перейдите в неё в «Ещё».</template></p>
+      <p class="small muted">Эти настройки действуют на всех ваших телефонах.<template v-if="store.tenants.length > 1"> В другой семье они свои: перейдите в неё в «Профиле».</template></p>
     </template>
   </div>
 </template>

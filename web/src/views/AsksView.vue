@@ -4,7 +4,7 @@ import { canEdit, onLive } from '../store.js';
 import { api } from '../api.js';
 import { STATUS, when } from '../asks.js';
 
-// «Ещё → Вопросы родным»: кого о чём спросили и ответили ли. У того, кого спросили, — «Вас спросили» до ответа.
+// «Главная → Вопросы родным»: кого о чём спросили и ответили ли. У того, кого спросили, — «Вас спросили» до ответа.
 const mine = ref(null);
 const all = ref(null);
 const error = ref('');

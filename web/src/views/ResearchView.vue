@@ -6,7 +6,7 @@ import { api } from '../api.js';
 import { STATUSES, QUESTION_MAX } from '@shared/research.js';
 import { fullName, lifespan, personHas, textHas } from '@shared/names.js';
 
-// «Ещё → Исследование» (владелец и участники): все вопросы поиска по дереву, сначала «ищем».
+// «Главная → Исследование» (владелец и участники): все вопросы поиска по дереву, сначала «ищем».
 // Нажатие — карточка человека с раскрытым вопросом; «Новый вопрос» — выбрать человека и написать, что хотим узнать.
 const router = useRouter();
 const items = ref([]);
@@ -79,7 +79,7 @@ async function saveAdd() {
 
 <template>
   <div class="page">
-    <router-link to="/more" class="small">‹ Ещё</router-link>
+    <router-link to="/" class="small">‹ Главная</router-link>
     <h1>Исследование</h1>
     <p v-if="!canEdit()" class="muted">Этот раздел — для владельца и участников дерева.</p>
     <template v-else>

@@ -10,7 +10,7 @@ import ImportPerson from '../components/ImportPerson.vue';
 import { ask } from '../components/ask.js';
 import { findings } from '../checks.js';
 
-// «Ещё → Загрузить дерево из файла» (владелец и участники). Файл GEDCOM из другой программы или переписанная от руки родословная:
+// «Главная → Загрузить из файла» (владелец и участники). Файл GEDCOM из другой программы или переписанная от руки родословная:
 // сначала предпросмотр — сколько людей и кто из них, возможно, уже есть в дереве; для каждого «это он», «новый» или «пропустить».
 // У найденного в дереве дописываются только пустые поля. Загрузка — одно действие: его можно отменить целиком.
 // ?q=<вопрос> — «Загрузить результат» из «Исследования»: вместо файла вставляется ответ ИИ-помощника,
@@ -167,7 +167,7 @@ async function reverted() {
 <template>
   <div class="page">
     <router-link v-if="qid && question?.person_id" :to="{ path: `/person/${question.person_id}`, query: { q: qid } }" class="small">‹ К вопросу</router-link>
-    <router-link v-else to="/more" class="small">‹ Ещё</router-link>
+    <router-link v-else to="/" class="small">‹ Главная</router-link>
     <h1>{{ qid ? 'Загрузить результат поиска' : 'Загрузить дерево из файла' }}</h1>
     <p v-if="!allowed" class="muted">Загружать {{ qid ? 'результат поиска' : 'дерево из файла' }} могут владелец и участники.</p>
 
@@ -273,7 +273,7 @@ async function reverted() {
       </router-link>
       <p v-if="result.note" class="small">В журнал вопроса записано, что загружено, вместе с отчётом помощника.</p>
       <div class="grid2" style="margin-top:0.667rem">
-        <router-link class="btn primary" to="/">Открыть дерево</router-link>
+        <router-link class="btn primary" to="/tree">Открыть дерево</router-link>
         <router-link v-if="qid && question?.person_id" class="btn" :to="{ path: `/person/${question.person_id}`, query: { q: qid } }">К вопросу</router-link>
         <router-link v-else class="btn" to="/people">Люди</router-link>
       </div>

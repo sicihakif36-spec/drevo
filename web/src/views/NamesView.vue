@@ -5,7 +5,7 @@ import { store, canEdit, loadTree, toast } from '../store.js';
 import { api } from '../api.js';
 import { fullName, lifespan, altName, isTatarName, suggestRussian } from '@shared/names.js';
 
-// «Ещё → Написание имён»: кто записан по-татарски (татарские буквы или отчество «… улы» / «… кызы»), а второго написания нет.
+// «Главная → Написание имён»: кто записан по-татарски (татарские буквы или отчество «… улы» / «… кызы»), а второго написания нет.
 // Рядом — подсказка, как по-русски; сохранить по одному или всех отмеченных одним действием (отменяется одной кнопкой).
 const router = useRouter();
 const PAGE = 50;
@@ -32,8 +32,8 @@ async function save(list) {
   try {
     const r = await api('POST', '/api/persons/alt-names', { items: list.map((x) => ({ id: x.p.id, ...x.s })) });
     await loadTree();
-    toast(list.length === 1 ? 'Сохранено. Отменить можно в «Ещё → Последние правки».'
-      : `Сохранено: ${r.saved}. Отменить все сразу можно в «Ещё → Последние правки».`);
+    toast(list.length === 1 ? 'Сохранено. Отменить можно в «Главная → Последние правки».'
+      : `Сохранено: ${r.saved}. Отменить все сразу можно в «Главная → Последние правки».`);
   } catch (e) { toast(e.message); } finally { busy.value = false; }
 }
 const edit = (x) => router.push({ path: `/person/${x.p.id}`, query: { edit: 1 } });

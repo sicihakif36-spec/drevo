@@ -12,6 +12,7 @@ import { deleteSource, restoreSource, updateSource, cite, uncite, updateCitation
 import { EVENT_FIELDS } from '../../shared/events.js';
 import { deleteEvent, restoreEvent, updateEvent, addParticipant, removeParticipant } from './timeline.js';
 import { PLACE_FIELDS } from '../../shared/places.js';
+import { fullName } from '../../shared/names.js';
 import { deletePlace, restorePlace, updatePlace } from './places.js';
 import {
   QUESTION_FIELDS, NOTE_FIELDS, deleteQuestion, restoreQuestion, updateQuestion, deleteNote, restoreNote, updateNote,
@@ -25,7 +26,7 @@ const SOURCE_GONE = 'Этот источник удалён. Сначала ве
 const EVENT_GONE = 'Это событие удалено. Сначала верните его.';
 const pick = (o, cols) => Object.fromEntries(cols.map((c) => [c, o[c]]));
 
-async function undoPerson(db, userId, e) {
+async function undoPerson(db, userId, e, by) {
   const before = e.before || {};
   const after = e.after || {};
   const cur = (await db.q('select * from persons where id = $1 for update', [e.entity_id]))[0];
@@ -49,7 +50,10 @@ async function undoPerson(db, userId, e) {
     case 'create':
     case 'restore':
       if (cur.deleted_at) throw new HttpError(409, 'Этот человек уже удалён');
-      return deletePerson(db, userId, cur.id);
+      return deletePerson(db, userId, cur.id, {
+        by,
+        denied: `Отменить это может только владелец дерева: отмена удалит «${fullName(cur)}», а эту карточку добавил другой участник.`,
+      });
     case 'delete':
       return restorePerson(db, userId, cur.id, before);
     case 'merge':
@@ -340,7 +344,8 @@ async function undoImport(db, userId, e) {
   return logChange(db, userId, 'import', e.entity_id, 'load', null, e.before, []);
 }
 
-export async function revertOp(db, userId, changeId) {
+// by — кто отменяет (вошедший): от него зависит, можно ли убрать человека (deletePerson).
+export async function revertOp(db, userId, changeId, by = null) {
   const head = (await db.q('select op from changes where id = $1', [changeId]))[0];
   if (!head) throw new HttpError(404, 'Правка не найдена');
   const entries = await db.q('select * from changes where op = $1 order by id desc for update', [head.op]);
@@ -354,7 +359,7 @@ export async function revertOp(db, userId, changeId) {
       event: undoEvent, place: undoPlace, import: undoImport, research: undoResearch, research_note: undoResearchNote,
       interview: undoInterview,
     }[e.entity];
-    const id = await undo(db, userId, e);
+    const id = await undo(db, userId, e, by);
     first ??= id;
   }
   // Пустые семьи убираем в конце: по ходу отката они ещё нужны.

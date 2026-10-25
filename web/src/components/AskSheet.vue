@@ -61,7 +61,7 @@ const close = () => { askSheet.open = false; };
     <template v-if="link">
       <h2 id="ask-title" class="top">Ссылка для: {{ link.name }}</h2>
       <p class="small">Отправьте её в любом мессенджере. По ссылке откроется только ваш вопрос — без входа и без дерева.
-        Работает 30 дней. Ответ придёт вам уведомлением и в «Ещё → Вопросы родным».</p>
+        Работает 30 дней. Ответ придёт вам уведомлением и в «Главная → Вопросы родным».</p>
       <p class="small url">{{ link.url }}</p>
       <div class="grid2">
         <button class="primary" @click="shareAsk(link, 'share')">Поделиться</button>

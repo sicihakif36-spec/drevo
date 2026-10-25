@@ -7,7 +7,7 @@ import { findings, marked, unmark } from '../checks.js';
 import { fullName } from '@shared/names.js';
 import Finding from '../components/Finding.vue';
 
-// «Ещё → Проверка дерева»: что приложение нашло в данных — сначала ошибки, потом «стоит проверить», дубли, люди без связей.
+// «Главная → Проверка дерева»: что приложение нашло в данных — сначала ошибки, потом «стоит проверить», дубли, люди без связей.
 const router = useRouter();
 const PAGE = 30; // длинный список показываем по частям
 const shown = reactive({});

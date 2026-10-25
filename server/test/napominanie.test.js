@@ -91,7 +91,7 @@ test('ни разу не скачивали — напоминаем владе�
   assert.deepEqual(sent.map((s) => s.to).sort(), ['owner', 'owner2']);
   assert.equal(to('owner')[0].title, 'Пора сохранить семейный архив');
   assert.match(to('owner')[0].body, /ещё не скачивали/);
-  assert.equal(to('owner')[0].url, '/#/more?archive=1');
+  assert.equal(to('owner')[0].url, '/#/archive');
   await tick('2026-10-24T12:00:00+03:00');
   assert.equal(sent.length, 0, 'второй раз в тот же день — нет');
   await tick('2026-10-30T12:00:00+03:00');
@@ -126,7 +126,7 @@ test('скачали — месяц тишины; через 30 дней — с�
   assert.equal(sent.length, 0, '26 дней — рано');
   await tick('2026-10-25T14:00:00+03:00');
   assert.equal(sent.length, 2);
-  assert.equal(to('owner')[0].body, 'Последний раз — 24 сентября (31 день назад). Откройте «Ещё → Скачать всё».');
+  assert.equal(to('owner')[0].body, 'Последний раз — 24 сентября (31 день назад). Откройте «Главная → Скачать всё».');
 });
 
 test('«Напомнить позже» — неделя без плашки и уведомлений; выключатель — только у владельца', async () => {

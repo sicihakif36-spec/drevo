@@ -257,7 +257,7 @@ export default async function askRoutes(app) {
   app.get('/api/asks/people', { preHandler: need('editor') }, async (req) => q(
     `select id, name, person_id, role from users where not disabled and role <> 'viewer' and id <> $1 order by name`, [req.user.id]));
 
-  // «Ещё → Вопросы родным»: все вопросы, новые сверху.
+  // «Главная → Вопросы родным»: все вопросы, новые сверху.
   app.get('/api/asks', { preHandler: need('editor') }, async (req) => rows(await q(`${LIST} order by a.created_at desc limit 300`), req.user));
 
   app.post('/api/asks', { preHandler: need('editor') }, async (req) => {

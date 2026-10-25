@@ -7,6 +7,7 @@ import AskDialog from './components/AskDialog.vue';
 import AskSheet from './components/AskSheet.vue';
 import { askSheet } from './asks.js';
 import PasswordView from './views/PasswordView.vue';
+import Icon from './components/Icon.vue';
 import { addState, openAdd } from './components/addState.js';
 import { syncPush } from './push.js';
 
@@ -61,17 +62,28 @@ function added(id) {
   <PasswordView v-else-if="!store.me && store.pending" mode="enter" />
   <PasswordView v-else-if="askPassword" mode="create" later @later="putOff" />
   <template v-else-if="!store.me">
-    <div class="page">
+    <!-- Ещё не вошли: что это за приложение и как войти. -->
+    <div class="page welcome">
+      <img src="/icon.svg" class="logo" alt="" />
       <h1>Древо</h1>
+      <p class="lead">Закрытое семейное дерево. Вся семья вместе записывает родных, фотографии и воспоминания — чтобы память о семье не потерялась.</p>
       <div class="card" v-if="store.offline">Нет связи с сервером. Если вы уже входили, откройте приложение, когда появится интернет.</div>
       <div class="card" v-else-if="store.tenant?.closed">
         <p>Вход в дерево «{{ store.tenant.title }}» сейчас закрыт.</p>
         <p class="muted small">Его закрыл тот, кто держит сервер. Узнайте у владельца дерева, что случилось. Само дерево никуда не делось.</p>
       </div>
-      <div class="card" v-else>
-        <p>Это закрытое семейное дерево. Войти можно только по ссылке-приглашению.</p>
-        <p class="muted small">Попросите ссылку у того, кто ведёт дерево. Если ссылка уже открыта на другом телефоне, попросите новую: она срабатывает один раз.</p>
-      </div>
+      <template v-else>
+        <ul class="points">
+          <li><span class="ico"><Icon name="tree" /></span><span><b>Дерево всей семьи</b> — от прадедов до внуков, с братьями, сёстрами и двоюродными.</span></li>
+          <li><span class="ico"><Icon name="mic" /></span><span><b>Фото, документы и голоса родных</b> — в одном месте, на телефоне у каждого.</span></li>
+          <li><span class="ico"><Icon name="print" /></span><span><b>На память</b> — плакат с деревом, родословная роспись и семейный архив.</span></li>
+        </ul>
+        <div class="card">
+          <b>Как войти</b>
+          <p>Войти можно только по личной ссылке-приглашению. Попросите её у того, кто ведёт ваше семейное дерево, и откройте на этом телефоне.</p>
+          <p class="muted small">Ссылка срабатывает один раз. Если её уже открыли на другом телефоне, попросите новую. Дерево видят только приглашённые.</p>
+        </div>
+      </template>
       <template v-if="others.length">
         <h2>Другие ваши семьи</h2>
         <div class="list">
@@ -84,23 +96,24 @@ function added(id) {
     <router-view v-slot="{ Component }">
       <keep-alive include="TreeView"><component :is="Component" /></keep-alive>
     </router-view>
+    <!-- Нижняя панель: «Главная» (все разделы, что нового), дерево, добавить, люди, профиль. -->
     <nav class="nav">
       <router-link to="/">
-        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="12" cy="5" r="2.5"/><circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="17" r="2.5"/><path d="M12 7.5V12M6 14.5V12h12v2.5"/></svg></span>
+        <span class="icon"><Icon name="home" /><i v-if="store.tree?.feed_new || store.tree?.asks_waiting" class="dot" aria-label="Есть новое"></i></span>
+        Главная
+      </router-link>
+      <router-link to="/tree">
+        <span class="icon"><Icon name="tree" /></span>
         Дерево
       </router-link>
+      <a class="plus" href="#" v-if="canEdit()" @click.prevent="plus" aria-label="Добавить человека"><span class="icon" aria-hidden="true">+</span>Добавить</a>
       <router-link to="/people">
-        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.8a3.4 3.4 0 0 1 0 6.4M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/></svg></span>
+        <span class="icon"><Icon name="people" /></span>
         Люди
       </router-link>
-      <a class="plus" href="#" v-if="canEdit()" @click.prevent="plus" aria-label="Добавить человека"><span class="icon" aria-hidden="true">+</span>Добавить</a>
-      <router-link to="/feed">
-        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3.5" width="16" height="17" rx="2.5"/><path d="M8 8.5h8M8 12.5h8M8 16.5h5"/></svg><i v-if="store.tree?.feed_new" class="dot" aria-label="Есть новое"></i></span>
-        Лента
-      </router-link>
-      <router-link to="/more">
-        <span class="icon"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></span>
-        Ещё
+      <router-link to="/profile">
+        <span class="icon"><Icon name="user" /></span>
+        Профиль
       </router-link>
     </nav>
     <AddPersonSheet v-if="addState.open" @done="added" />
@@ -109,3 +122,14 @@ function added(id) {
   <div class="toast" v-if="store.toast">{{ store.toast }}</div>
   <AskDialog />
 </template>
+
+<style scoped>
+.welcome { text-align: left; }
+.logo { display: block; width: 4.444rem; height: 4.444rem; margin: 0.667rem 0 0.444rem; border-radius: 1.111rem; }
+.lead { font-size: 1.111rem; margin: 0 0 1rem; }
+.points { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.778rem; }
+.points li { display: flex; gap: 0.778rem; align-items: flex-start; }
+.points .ico { flex: none; display: grid; place-items: center; width: 2.444rem; height: 2.444rem; border-radius: 0.778rem; background: var(--accent-soft); color: var(--accent-soft-text); }
+.points svg { width: 1.444rem; height: 1.444rem; }
+.welcome .card p { margin: 0.333rem 0 0; }
+</style>

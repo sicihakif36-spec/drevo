@@ -396,3 +396,43 @@ test('с кого начинать дерево: человек владельц
   const pdf = await call(guest, 'GET', '/api/print.pdf?mode=all');
   assert.equal(pdf.statusCode, 200);
 });
+
+test('удалить человека: участник — только добавленного им, владелец — любого; так же и отмена чужого добавления', async () => {
+  const lena = await signIn(app, 'editor', { name: 'Лена' });
+  const pavel = await signIn(app, 'editor', { name: 'Павел' });
+  const mine = async (cookie, person) => {
+    const r = await call(cookie, 'POST', '/api/persons', { person });
+    assert.equal(r.statusCode, 200, r.body);
+    return r.json();
+  };
+  const byOwner = await mine(ownerCookie, { given: 'Дед', sex: 'M' });
+  const byLena = await mine(lena, { given: 'Ошибка', sex: 'U' });
+  const added = (await call(lena, 'GET', '/api/changes')).json()[0];
+  const has = async (id) => (await call(ownerCookie, 'GET', '/api/tree')).json().persons.some((p) => p.id === id);
+
+  // Чужого участник не удаляет — ни добавленного владельцем, ни другим участником.
+  for (const [cookie, id] of [[lena, byOwner.id], [pavel, byOwner.id], [pavel, byLena.id]]) {
+    const r = await call(cookie, 'DELETE', `/api/persons/${id}`);
+    assert.equal(r.statusCode, 403);
+    assert.match(r.json().error, /только тех, кого вы добавили сами/);
+  }
+  // И отменой чужого добавления — тоже нет: это то же удаление.
+  const undo = await call(pavel, 'POST', `/api/changes/${added.id}/revert`);
+  assert.equal(undo.statusCode, 403);
+  assert.match(undo.json().error, /только владелец дерева: отмена удалит «Ошибка»/);
+  assert.ok(await has(byLena.id));
+
+  // Своего — можно, и удалением, и отменой своего же добавления; вернуть удалённого может любой, кто правит.
+  const del = (await call(lena, 'DELETE', `/api/persons/${byLena.id}`)).json();
+  assert.ok(!(await has(byLena.id)));
+  assert.equal((await call(pavel, 'POST', `/api/changes/${del.changeId}/revert`)).statusCode, 200);
+  assert.ok(await has(byLena.id));
+  assert.equal((await call(lena, 'POST', `/api/changes/${added.id}/revert`)).statusCode, 200);
+  assert.ok(!(await has(byLena.id)));
+
+  // Владелец удаляет любого — и того, у кого автор неизвестен (добавлен до того, как это запоминалось).
+  await pool.query('update persons set created_by = null where id = $1', [byOwner.id]);
+  assert.equal((await call(lena, 'DELETE', `/api/persons/${byOwner.id}`)).statusCode, 403);
+  assert.equal((await call(ownerCookie, 'DELETE', `/api/persons/${byOwner.id}`)).statusCode, 200);
+  assert.ok(!(await has(byOwner.id)));
+});

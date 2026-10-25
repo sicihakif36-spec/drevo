@@ -1,4 +1,4 @@
-// «Ещё → Исследование» и раздел «Исследование» в карточке: вопросы поиска и записи по ходу (src/research.js).
+// «Главная → Исследование» и раздел «Исследование» в карточке: вопросы поиска и записи по ходу (src/research.js).
 // Только владелец и участники: в записях бывают сведения о живых, поэтому родственнику и гостю — 403 на всё.
 // «Загрузить результат» — ответ ИИ-помощника текстом: из него вырезается GEDCOM и идёт в обычную загрузку из файла
 // (routes/import.js) — тот же предпросмотр, загрузка одним действием и отмена.
@@ -48,7 +48,7 @@ async function withNotes(rows) {
 }
 
 export default async function researchRoutes(app) {
-  // Все вопросы по дереву: для «Ещё → Исследование».
+  // Все вопросы по дереву: для «Главная → Исследование».
   app.get('/api/research', { preHandler: need('editor') }, async () => q(`${QUESTIONS} ${ORDER}`));
 
   app.get('/api/persons/:id/research', { preHandler: need('editor') }, async (req) => withNotes(await q(`${QUESTIONS} and x.person_id = $1 ${ORDER}`, [req.params.id])));
