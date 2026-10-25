@@ -208,8 +208,10 @@ const sorted = (a) => [...a].sort();
 
 test('родня: линии по отцу, по матери, по деду и бабушке — только кровные с мужьями и жёнами', () => {
   const idx = kinFamily();
-  // линия деда — есть его родители; у бабушек и деда по матери родителей нет — их линий нет
-  assert.deepEqual(kinLines(idx, 'я').map((l) => [l.key, l.via, l.min, l.up, l.max]), [['father', 'отец', 1, 2, 3], ['ff', 'дед', 2, 3, 3], ['mother', 'мать', 1, 2, 2]]);
+  // линия деда — есть его родители; у бабушек и деда по матери родителей нет — их линий нет; общие — с обеих сторон
+  assert.deepEqual(kinLines(idx, 'я').map((l) => [l.key, l.vias.join(), l.min, l.up, l.max]), [
+    ['father', 'отец', 1, 2, 3], ['ff', 'дед', 2, 3, 3], ['mother', 'мать', 1, 2, 2],
+    ['parents', 'отец,мать', 1, 2, 3], ['grand', 'дед,бабка,дед2,бабка2', 2, 3, 3]]);
 
   // по отцу: от деда и бабушки — и сын бабушки от второго мужа; родни матери и её сына от первого брака нет
   let k = kinOf(idx, 'я', 'father');
@@ -242,6 +244,20 @@ test('родня: линии по отцу, по матери, по деду и 
   assert.ok(k.ids.includes('отец') && k.ids.includes('первый муж') && !k.ids.includes('тётя'));
   check(idx, layoutTree(idx, 'я', { mode: 'kin', line: 'mother' }), k.ids);
 
+  // по отцу и матери — обе стороны сразу; по дедушкам и бабушкам — то же поколением выше: и брат деда с сыном
+  k = kinOf(idx, 'я', 'parents');
+  assert.deepEqual(sorted(k.blood), sorted(new Set([...kinOf(idx, 'я', 'father').blood, ...kinOf(idx, 'я', 'mother').blood])));
+  assert.ok(k.ids.includes('отчим отца') && k.ids.includes('первый муж'));
+  check(idx, layoutTree(idx, 'я', { mode: 'kin', line: 'parents' }), k.ids);
+  k = kinOf(idx, 'я', 'grand');
+  assert.deepEqual(sorted(k.blood), sorted(kinOf(idx, 'я', 'parents', 3).blood));
+  assert.ok(k.blood.has('брат деда') && k.blood.has('двоюродная2') && k.blood.has('полубрат'));
+  check(idx, layoutTree(idx, 'я', { mode: 'kin', line: 'grand' }), k.ids);
+  assert.equal(kinOf(idx, 'я', 'grand', 1).up, 2);
+  // один родитель — общих линий нет: они совпали бы с его стороной
+  const one = buildIndex(tiny([['дед', 'M'], ['мать', 'F'], ['сын', 'M']], [['дед', null, ['мать']], [null, 'мать', ['сын']]]));
+  assert.deepEqual(kinLines(one, 'сын').map((l) => l.key), ['mother']);
+
   // нет такой линии — первая из тех, что есть; родители не указаны — родни нет, на дереве только сам человек
   assert.equal(kinOf(idx, 'я', 'mm').key, 'father');
   assert.equal(kinOf(idx, 'жена', 'father'), null);
@@ -259,7 +275,7 @@ test('родня в больших деревьях: у каждого по вс
       for (const up of [l.min, l.up, l.max]) {
         const L = layoutTree(idx, p.id, { mode: 'kin', line: l.key, up });
         check(idx, L, L.kin.ids);
-        assert.ok(L.kin.blood.has(p.id) && L.kin.blood.has(l.via));
+        assert.ok(L.kin.blood.has(p.id) && l.vias.every((v) => L.kin.blood.has(v)));
         lines++;
       }
     }
@@ -280,12 +296,14 @@ test('родня в больших деревьях: у каждого по вс
 
 test('печать родни: линия из адреса, заголовок «Родня … по отцу», если свой не задан', async () => {
   assert.equal(parsePrintOptions({ mode: 'kin', line: 'mf' }).line, 'mf');
+  assert.equal(parsePrintOptions({ mode: 'kin', line: 'grand' }).line, 'grand');
   assert.equal(parsePrintOptions({ mode: 'kin', line: 'чужая' }).line, 'father');
   const data = clans();
   const idx = buildIndex(data);
-  const root = data.persons.find((p) => kinLines(idx, p.id).length === 6).id;
-  for (const [title, expect] of [['', `Родня ${shortGenitive(idx.persons.get(root))} по деду — отцу матери`], ['Наша родня', 'Наша родня']]) {
-    const o = { ...parsePrintOptions({ mode: 'kin', line: 'mf', root, title }), kinTitle: !title };
+  const root = data.persons.find((p) => kinLines(idx, p.id).some((l) => l.key === 'mf')).id;
+  const who = shortGenitive(idx.persons.get(root));
+  for (const [line, title, expect] of [['mf', '', `Родня ${who} по деду — отцу матери`], ['parents', '', `Родня ${who} по отцу и матери`], ['mf', 'Наша родня', 'Наша родня']]) {
+    const o = { ...parsePrintOptions({ mode: 'kin', line, root, title }), kinTitle: !title };
     if (!o.title) o.title = 'Семейное древо';
     const out = new PassThrough();
     const chunks = [];
