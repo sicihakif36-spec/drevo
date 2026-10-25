@@ -78,13 +78,18 @@ function centerOn(id, k = view.k) {
   view.y = size.h * 0.45 - (n.y + BOX.h / 2) * k;
 }
 
-function fitAll() {
+// Уместить всё дерево. top и bottom — сколько сверху и снизу закрыто кнопками;
+// minK — мельче не делать: тогда ничего не меняется и возвращается false.
+function fitAll({ top = 90, bottom = 50 } = {}, minK = 0) {
   const b = props.layout.bounds;
-  if (!b.w) return;
-  const k = Math.min(1.2, fitK());
+  if (!b.w) return false;
+  const h = Math.max(size.h - top - bottom, size.h / 3);
+  const k = Math.min(1.2, (size.w - 32) / b.w, h / b.h);
+  if (k < minK) return false;
   view.k = k;
   view.x = (size.w - b.w * k) / 2 - b.x * k;
-  view.y = (size.h - b.h * k) / 2 - b.y * k + 20;
+  view.y = top + (h - b.h * k) / 2 - b.y * k;
+  return true;
 }
 
 function zoomAt(factor, cx = size.w / 2, cy = size.h / 2) {

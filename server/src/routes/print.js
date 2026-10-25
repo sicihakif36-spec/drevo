@@ -6,9 +6,10 @@ import { q } from '../db.js';
 import { ownerPerson } from '../tree.js';
 import { need } from '../auth.js';
 import { mediaPath } from './media.js';
-import { buildIndex, fullName, isPrivate, lifespan, shortName } from '../../../shared/names.js';
+import { buildIndex, fullName, isPrivate, lifespan, shortName, shortGenitive } from '../../../shared/names.js';
 import { guestTree, isGuest } from '../privacy.js';
 import { layoutTree, homePerson, BOX } from '../../../shared/layout.js';
+import { KIN_LINES } from '../../../shared/kin.js';
 import { PAPER, planPages } from '../../../shared/printplan.js';
 import { layoutFan, parseFanOptions } from '../../../shared/fan.js';
 import { drawFan } from '../fan.js';
@@ -34,7 +35,8 @@ export function parsePrintOptions(qs) {
   const num = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) && v !== '' && v !== undefined ? Number(v) : d));
   return {
     root: qs.root,
-    mode: ['all', 'ancestors', 'descendants', 'hourglass', 'fan'].includes(qs.mode) ? qs.mode : 'hourglass',
+    mode: ['all', 'kin', 'ancestors', 'descendants', 'hourglass', 'fan'].includes(qs.mode) ? qs.mode : 'hourglass',
+    line: KIN_LINES.some((l) => l.key === qs.line) ? qs.line : 'father',
     up: num(qs.up, 4, 0, 12),
     down: num(qs.down, 3, 0, 12),
     paper: PAPER[qs.paper] ? qs.paper : 'A4',
@@ -104,7 +106,9 @@ export function renderPdf(stream, data, o) {
     fan.center.file = file;
     return sheets(stream, fan.plan, fan.bounds, o, (doc) => drawFan(doc, fan, o));
   }
-  const layout = layoutTree(idx, root, { mode: o.mode, up: o.up, down: o.down, anchor: homePerson(idx, o.home) });
+  const layout = layoutTree(idx, root, { mode: o.mode, up: o.up, down: o.down, anchor: homePerson(idx, o.home), line: o.line });
+  // Родня без своего заголовка: «Родня Сергея Смирнова по отцу» (линия — та, что вышла: нет отца — по матери).
+  if (o.kinTitle && layout.kin) o.title = `Родня ${shortGenitive(idx.persons.get(root))} ${layout.kin.text}`;
   return sheets(stream, planPages(layout, o), layout.bounds, o, (doc) => drawTree(doc, idx, layout, o, o.theme));
 }
 
@@ -175,6 +179,7 @@ export default async function printRoutes(app) {
     const o = parsePrintOptions(req.query);
     if (isGuest(req.user)) o.hideLiving = true;
     const data = await loadTreeData(req.user, o.hideLiving);
+    o.kinTitle = o.mode === 'kin' && !o.title;
     if (!o.title) o.title = data.title || 'Семейное древо';
     o.home = req.user.person_id || await ownerPerson({ q });
     const center = o.mode === 'fan' && data.persons.find((p) => p.id === (o.root || o.home));

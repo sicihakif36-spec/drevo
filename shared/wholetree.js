@@ -87,6 +87,12 @@ export function layoutWhole(idx, rootId, { anchor } = {}) {
   return { ...res, nodes: res.nodes.map((n) => (n.id === rootId ? { ...n, root: true } : n)), others: idx.persons.size - list[part].length };
 }
 
+// Раскладка выбранных людей тем же способом — например, родни по одной линии (shared/kin.js).
+// Люди должны быть связаны между собой; start — чья линия главная (кто окажется слева).
+export function layoutPeople(idx, ids, start) {
+  return compute(idx, ids, start);
+}
+
 function compute(idx, ids, start) {
   const inPart = new Set(ids);
 

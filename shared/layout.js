@@ -1,6 +1,7 @@
 // Раскладка дерева: одна и та же для экрана телефона и для печати.
 import { parentsOf, spousesOf } from './names.js';
 import { layoutWhole } from './wholetree.js';
+import { layoutKin } from './kin.js';
 
 export const BOX = { w: 168, h: 76, hgap: 22, vgap: 64 };
 
@@ -132,13 +133,17 @@ function placeDesc(u, left, depth, out) {
 // ---------- Общая точка входа ----------
 
 /**
- * mode: 'all' (всё дерево, shared/wholetree.js) | 'ancestors' | 'descendants' | 'hourglass' (прямая линия: предки и потомки)
+ * mode: 'all' (всё дерево, shared/wholetree.js) | 'kin' (родня по линии line, shared/kin.js)
+ *   | 'ancestors' | 'descendants' | 'hourglass' (прямая линия: предки и потомки)
  * Возвращает узлы (x, y — левый верхний угол), линии и границы.
  */
-export function layoutTree(idx, rootId, { mode = 'hourglass', up = 4, down = 3, placeholders = false, anchor } = {}) {
+export function layoutTree(idx, rootId, opts = {}) {
+  const { mode = 'hourglass', up = 4, down = 3, placeholders = false, anchor, line } = opts;
   const out = { nodes: [], edges: [] };
   if (!rootId || !idx.persons.has(rootId)) return { ...out, bounds: { x: 0, y: 0, w: 0, h: 0 } };
   if (mode === 'all') return layoutWhole(idx, rootId, { anchor });
+  // у родни своё число поколений по умолчанию: от родителей отца (деда)
+  if (mode === 'kin') return layoutKin(idx, rootId, { line, up: opts.up });
 
   let rootCx = 0;
   if (mode !== 'ancestors') {
