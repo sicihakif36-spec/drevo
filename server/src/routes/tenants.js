@@ -51,13 +51,14 @@ function mainOnly(req) {
 }
 
 // Семья для списка: только сводка, ничего из самого дерева, кроме названия.
+// Гости в сводку не входят: что гость заходил, знает только владелец его семьи («Входы»).
 async function summary(t) {
   const [r] = await withTenant(t, () => q(
     `select (select value #>> '{}' from settings where key = 'title') as title,
        (select count(*)::int from persons where deleted_at is null) as persons,
-       (select count(*)::int from users where not disabled) as users,
+       (select count(*)::int from users where not disabled and role <> 'viewer') as users,
        (select coalesce(string_agg(name, ', ' order by created_at), '') from users where role = 'owner' and not disabled) as owners,
-       (select max(last_seen_at) from sessions) as last_seen_at,
+       (select max(s.last_seen_at) from sessions s join users u on u.id = s.user_id where u.role <> 'viewer') as last_seen_at,
        ${USED} as used`,
   ));
   return {
