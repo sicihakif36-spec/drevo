@@ -12,6 +12,7 @@ import { kinLines, kinOf } from '../../shared/kin.js';
 import { clans, randomTree } from './fixtures/clans.js';
 import { PassThrough } from 'node:stream';
 import { parsePrintOptions, renderPdf } from '../src/routes/print.js';
+import { MM, PAPER, READ_PT, TREE_TEXT, legibility, planPages, posters } from '../../shared/printplan.js';
 
 // Проверки раскладки: возвращает узлы по id.
 function check(idx, L, ids) {
@@ -177,7 +178,8 @@ test('прежние режимы не изменились: предки, по�
 
 test('печать всего дерева: на одном листе и плакатом — ровно столько листов, сколько в плане', async () => {
   const data = clans();
-  for (const qs of [{ fit: 'page', paper: 'A1' }, { fit: 'tiles', paper: 'A4' }, { fit: 'tiles', paper: 'A3', scale: '60' }]) {
+  for (const qs of [{ fit: 'page', paper: 'A1' }, { fit: 'tiles', paper: 'A4' }, { fit: 'tiles', paper: 'A3', scale: '60' },
+    { fit: 'tiles', paper: 'A4', size: 'read' }, { fit: 'tiles', paper: 'A4', size: 'A1' }]) {
     const o = parsePrintOptions({ mode: 'all', ...qs });
     const out = new PassThrough();
     const chunks = [];
@@ -189,6 +191,42 @@ test('печать всего дерева: на одном листе и пла
     assert.equal((pdf.match(/\/Type \/Page\b/g) || []).length, plan.cols * plan.rows, JSON.stringify(qs));
     if (qs.fit === 'tiles') assert.ok(plan.cols > 1);
   }
+});
+
+test('склейка «Читаемо» и плакат A3…A0 из листов A4; на одном листе — подсказка, что мелко', async () => {
+  const idx = buildIndex(clans());
+  const L = layoutWhole(idx, homePerson(idx));
+  const P = (qs) => planPages(L, parsePrintOptions({ mode: 'all', ...qs }));
+  // «Читаемо»: годы жизни не мельче READ_PT, листов ровно столько, чтобы дерево поместилось.
+  const read = P({ fit: 'tiles', size: 'read', paper: 'A4' });
+  assert.ok(TREE_TEXT * read.s >= READ_PT - 1e-9);
+  assert.ok(read.cols * read.rows > 1);
+  const cover = (pl) => [pl.cols * (pl.pw - 2 * pl.margin - pl.overlap) + pl.overlap, pl.rows * (pl.ph - 2 * pl.margin - pl.head - pl.overlap) + pl.overlap];
+  const [w, h] = cover(read);
+  assert.ok(read.cw * read.s <= w + 1e-6 && read.ch * read.s <= h + 1e-6, 'дерево помещается на листы');
+  // Плакат: дерево размером с формат (не больше его), листов A4 больше, чем у плаката поменьше.
+  let prev = 0;
+  for (const poster of ['A3', 'A2', 'A1', 'A0']) {
+    const pl = P({ fit: 'tiles', size: poster, paper: 'A4' });
+    const [pw, ph] = PAPER[poster].map((v) => v * MM);
+    const [tw, th] = [pl.cw * pl.s, pl.ch * pl.s];
+    assert.ok(Math.max(tw, th) <= Math.max(pw, ph) && Math.min(tw, th) <= Math.min(pw, ph), poster);
+    assert.ok(Math.max(tw / Math.max(pw, ph), th / Math.min(pw, ph), tw / Math.min(pw, ph)) > 0.8, `${poster}: дерево растянуто на плакат`);
+    assert.ok(pl.cols * pl.rows > prev, `${poster}: ${pl.cols * pl.rows} листов`);
+    prev = pl.cols * pl.rows;
+  }
+  // Плакат не меньше листа: A3 на листах A3 — как своя крупность; в списке только A2 и крупнее.
+  assert.deepEqual(posters('A3'), ['A2', 'A1', 'A0']);
+  assert.equal(P({ fit: 'tiles', size: 'A3', paper: 'A3', scale: '100' }).s, P({ fit: 'tiles', size: 'scale', paper: 'A3' }).s);
+  // Старые ссылки без size — прежняя крупность.
+  assert.equal(parsePrintOptions({ fit: 'tiles' }).size, 'scale');
+  assert.equal(parsePrintOptions({ size: 'A9' }).size, 'scale');
+  // Всё дерево (189 человек в ширину) на A4 — не прочитать; ветка (20 человек) на A4 — мелко, на A2 — читается.
+  assert.equal(legibility(TREE_TEXT * P({ fit: 'page', paper: 'A4' }).s).level, 'bad');
+  const B = layoutTree(idx, homePerson(idx), { mode: 'hourglass', up: 3, down: 1 });
+  const pt = (paper) => TREE_TEXT * planPages(B, parsePrintOptions({ fit: 'page', paper })).s;
+  assert.match(legibility(pt('A4')).level, /bad|warn/, `A4: ${pt('A4')}`);
+  assert.match(legibility(pt('A2')).level, /ok|good/, `A2: ${pt('A2')}`);
 });
 
 // «Родня»: прадеды -> дед и его брат; бабка -> отец и тётя от деда, сын от второго мужа; отец + мать -> я и сестра;

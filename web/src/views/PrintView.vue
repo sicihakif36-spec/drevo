@@ -5,7 +5,7 @@ import { store, canTalk } from '../store.js';
 import { api, thumbUrl } from '../api.js';
 import { layoutTree, BOX } from '@shared/layout.js';
 import { homePerson } from '@shared/wholetree.js';
-import { planPages, PAPER, MM } from '@shared/printplan.js';
+import { planPages, legibility, posters, PAPER, MM, TREE_TEXT } from '@shared/printplan.js';
 import { layoutFan, sectorPath, FAN } from '@shared/fan.js';
 import { fullName, shortGenitive } from '@shared/names.js';
 import { kinLines } from '@shared/kin.js';
@@ -15,7 +15,9 @@ import RospisText from '../components/RospisText.vue';
 const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.print') || '{}'); } catch { return {}; } })();
 const o = reactive({
   root: '', mode: 'hourglass', up: 4, down: 3, line: 'father', kinUp: null, paper: 'A4', orient: 'auto', fit: 'page', scale: 100,
-  photos: true, hideLiving: false, theme: 'classic', title: '', gens: 5, shape: 180, colors: 'branch', empty: true, ...saved,
+  photos: true, hideLiving: false, theme: 'classic', title: '', gens: 5, shape: 180, colors: 'branch', empty: true,
+  // Склейка: «Читаемо», плакат A3…A0 или своя крупность. Кто склеивал раньше, у того остаётся его крупность.
+  size: saved.fit === 'tiles' ? 'scale' : 'read', ...saved,
 });
 // Из карточки: «Веер предков» с этим человеком в центре.
 const route = useRoute();
@@ -49,6 +51,34 @@ const fan = computed(() => (store.idx && rootId.value && isFan.value ? layoutFan
 const scheme = computed(() => layout.value || fan.value);
 const plan = computed(() => (fan.value ? fan.value.plan : layout.value?.nodes.length ? planPages(layout.value, o) : null));
 const pages = computed(() => (plan.value ? plan.value.cols * plan.value.rows : 0));
+
+// Склейка — на листах принтера (A4 или A3); плакат — только крупнее листа.
+const SHEETS = ['A4', 'A3'];
+const tiles = computed(() => o.fit === 'tiles');
+function toTiles() {
+  o.fit = 'tiles';
+  if (!SHEETS.includes(o.paper)) o.paper = 'A4';
+}
+watch(() => [o.fit, o.paper], () => {
+  if (tiles.value && PAPER[o.size] && !posters(o.paper).includes(o.size)) o.size = 'read';
+});
+// Как читается: самый мелкий текст на бумаге (годы жизни у дерева, дальние кольца у веера).
+const smallPt = computed(() => (layout.value && plan.value ? TREE_TEXT * plan.value.s : fan.value ? fan.value.minPt : 0));
+const legible = computed(() => (plan.value && smallPt.value ? legibility(smallPt.value) : null));
+// Мелко — что посоветовать: лист крупнее (у дерева) или склейку «Читаемо» из листов A4.
+const advice = computed(() => {
+  if (!legible.value || ['ok', 'good'].includes(legible.value.level) || (tiles.value && o.size === 'read')) return null;
+  if (!layout.value) return { read: null };
+  const ok = (pl) => TREE_TEXT * pl.s >= 6.5;
+  const sheet = tiles.value ? o.paper : 'A4';
+  const read = planPages(layout.value, { ...o, fit: 'tiles', paper: sheet, size: 'read' });
+  const paper = tiles.value ? null : Object.keys(PAPER).filter((p) => PAPER[p][0] > PAPER[o.paper][0]).find((p) => ok(planPages(layout.value, { ...o, paper: p })));
+  return { paper, read: read.cols * read.rows, sheet };
+});
+function readable() {
+  if (!tiles.value) toTiles();
+  o.size = 'read';
+}
 
 // Листы в координатах дерева — для рамок на предпросмотре.
 const sheets = computed(() => {
@@ -104,7 +134,7 @@ const rUrl = (download) => `/api/rospis.pdf?${new URLSearchParams({ ...rqs.value
 const url = (download) => {
   const qs = new URLSearchParams({
     root: rootId.value || '', mode: o.mode, up: kin.value ? kin.value.up : o.up, down: o.down, line: o.line, paper: o.paper, orient: o.orient, fit: o.fit,
-    scale: o.scale, photos: o.photos ? '1' : '0', hideLiving: o.hideLiving ? '1' : '0', theme: o.theme, title: o.title,
+    size: o.size, scale: o.scale, photos: o.photos ? '1' : '0', hideLiving: o.hideLiving ? '1' : '0', theme: o.theme, title: o.title,
     ...(isFan.value ? { gens: o.gens, shape: o.shape, colors: o.colors, empty: o.empty ? '1' : '0' } : {}),
   });
   if (download) qs.set('download', '1');
@@ -158,6 +188,20 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <div class="small" style="margin-top:6px">
           <b>{{ pages }} {{ pages === 1 ? 'лист' : pages < 5 ? 'листа' : 'листов' }} {{ o.paper }}</b>,
           {{ plan.orient === 'landscape' ? 'альбомная' : 'книжная' }} · {{ layout ? layout.nodes.length : fan.people }} чел. <span class="muted">{{ sizeMm }}</span>
+        </div>
+        <div v-if="legible" class="small" style="margin-top:2px">
+          Текст: <span :class="['leg', legible.level]">{{ legible.text }}</span>
+          <span class="muted"> ({{ layout ? 'имена' : 'самое мелкое' }} {{ Math.round(layout ? smallPt * 1.25 : smallPt) }} пт)</span>
+        </div>
+        <div v-if="advice" class="banner" style="margin:6px 0 0">
+          <template v-if="advice.read">Чтобы читалось:
+            <template v-if="advice.paper">лист {{ advice.paper }} или </template>склеить из {{ advice.read }} {{ plural(advice.read, 'листа', 'листов', 'листов') }} {{ advice.sheet }}.
+          </template>
+          <template v-else>Чтобы читалось, склейте плакат из листов — размер подберётся сам.</template>
+          <div class="row" style="margin-top:6px">
+            <button v-if="advice.paper" class="grow" @click="o.paper = advice.paper">Лист {{ advice.paper }}</button>
+            <button class="grow" @click="readable">Склеить — читаемо</button>
+          </div>
         </div>
         <p v-if="fan?.crowded" class="banner" style="margin:6px 0 0">
           {{ fan.crowded }} {{ plural(fan.crowded, 'имя не помещается', 'имени не помещаются', 'имён не помещаются') }} даже мелким шрифтом —
@@ -232,21 +276,42 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
 
       <p class="muted small" v-if="o.mode === 'all'" style="margin-top:0">Все, кто связан с выбранным человеком родством и браками, — каждый один раз. Большое дерево удобнее «Склеить из листов».</p>
       <template v-if="!isRospis">
-      <h2>Бумага</h2>
-      <div class="chips"><button v-for="p in Object.keys(PAPER)" :key="p" class="chip" :class="{ on: o.paper === p }" @click="o.paper = p">{{ p }}</button></div>
+      <h2>Как напечатать</h2>
       <div class="field"><div class="seg">
+        <button :class="{ on: !tiles }" @click="o.fit = 'page'">На одном листе</button>
+        <button :class="{ on: tiles }" @click="toTiles">Склеить из листов</button>
+      </div></div>
+      <template v-if="!tiles">
+        <div class="field"><span class="small muted">Размер листа</span>
+          <div class="chips"><button v-for="p in Object.keys(PAPER)" :key="p" class="chip" :class="{ on: o.paper === p }" @click="o.paper = p">{{ p }}</button></div>
+        </div>
+        <p class="muted small" style="margin-top:0">{{ o.paper }} — {{ PAPER[o.paper][0] / 10 }} × {{ PAPER[o.paper][1] / 10 }} см.
+          {{ SHEETS.includes(o.paper) ? 'Напечатать на домашнем или офисном принтере.' : 'Такой лист печатают в копицентре или типографии: скачайте PDF и отнесите им.' }}</p>
+      </template>
+      <template v-else>
+        <div class="field"><span class="small muted">Лист принтера</span>
+          <div class="chips"><button v-for="p in SHEETS" :key="p" class="chip" :class="{ on: o.paper === p }" @click="o.paper = p">{{ p }}</button></div>
+        </div>
+        <div class="field"><span class="small muted">Размер плаката</span>
+          <div class="chips">
+            <button class="chip" :class="{ on: o.size === 'read' }" @click="o.size = 'read'">Читаемо</button>
+            <button v-for="p in posters(o.paper)" :key="p" class="chip" :class="{ on: o.size === p }" @click="o.size = p">{{ p }}</button>
+            <button class="chip" :class="{ on: o.size === 'scale' }" @click="o.size = 'scale'">Своя крупность</button>
+          </div>
+        </div>
+        <p class="muted small" style="margin-top:0" v-if="o.size === 'read'">Буквы крупные, как в книге; листов — сколько понадобится.</p>
+        <p class="muted small" style="margin-top:0" v-else-if="PAPER[o.size]">{{ isFan ? 'Веер' : 'Дерево' }} растянется на плакат {{ o.size }} ({{ PAPER[o.size][0] / 10 }} × {{ PAPER[o.size][1] / 10 }} см), склеенный из листов {{ o.paper }}.</p>
+        <label class="field" v-else><span>Крупность: {{ o.scale }}%<template v-if="!isFan"> (карточка около {{ Math.round(42 * o.scale / 100) }} мм)</template></span>
+          <input type="range" min="40" max="250" step="10" v-model.number="o.scale" />
+        </label>
+        <p class="muted small">Печатайте в натуральную величину: в окне печати — масштаб 100 % («Фактический размер»), не «Уместить на странице».
+          Пунктир показывает, где накладывать соседний лист (1 см); в углу каждого листа — его место на плакате.</p>
+      </template>
+      <div class="field"><span v-if="tiles" class="small muted">Как класть лист</span><div class="seg">
         <button :class="{ on: o.orient === 'auto' }" @click="o.orient = 'auto'">Сама</button>
         <button :class="{ on: o.orient === 'portrait' }" @click="o.orient = 'portrait'">Книжная</button>
         <button :class="{ on: o.orient === 'landscape' }" @click="o.orient = 'landscape'">Альбомная</button>
       </div></div>
-      <div class="field"><div class="seg">
-        <button :class="{ on: o.fit === 'page' }" @click="o.fit = 'page'">Уместить на лист</button>
-        <button :class="{ on: o.fit === 'tiles' }" @click="o.fit = 'tiles'">Склеить из листов</button>
-      </div></div>
-      <label class="field" v-if="o.fit === 'tiles'"><span>Крупность: {{ o.scale }}%<template v-if="!isFan"> (карточка около {{ Math.round(42 * o.scale / 100) }} мм)</template></span>
-        <input type="range" min="40" max="250" step="10" v-model.number="o.scale" />
-      </label>
-      <p class="muted small" v-if="o.fit === 'tiles'">Пунктир на листах показывает, где накладывать соседний лист при склейке (1 см).</p>
       </template>
 
       <h2>Оформление</h2>
@@ -277,4 +342,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
 .seg.two .span { grid-column: 1 / -1; }
 .check { align-items: flex-start; min-height: 2.667rem; }
 .check input { flex: none; margin: 0.111rem 0 0; }
+.leg.bad { color: var(--danger); font-weight: 600; }
+.leg.warn { color: var(--oral); font-weight: 600; }
+.leg.good, .leg.ok { color: var(--accent-text); }
 </style>

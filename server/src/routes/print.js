@@ -10,7 +10,7 @@ import { buildIndex, fullName, isPrivate, lifespan, shortName, shortGenitive } f
 import { guestTree, isGuest } from '../privacy.js';
 import { layoutTree, homePerson, BOX } from '../../../shared/layout.js';
 import { KIN_LINES } from '../../../shared/kin.js';
-import { PAPER, planPages } from '../../../shared/printplan.js';
+import { MM, PAPER, SIZES, planPages } from '../../../shared/printplan.js';
 import { layoutFan, parseFanOptions } from '../../../shared/fan.js';
 import { drawFan } from '../fan.js';
 import { disposition } from '../pdf.js';
@@ -42,6 +42,7 @@ export function parsePrintOptions(qs) {
     paper: PAPER[qs.paper] ? qs.paper : 'A4',
     orient: ['portrait', 'landscape', 'auto'].includes(qs.orient) ? qs.orient : 'auto',
     fit: qs.fit === 'tiles' ? 'tiles' : 'page',
+    size: SIZES.includes(qs.size) ? qs.size : 'scale', // склейка: «Читаемо», плакат A3…A0 или своя крупность
     scale: num(qs.scale, 100, 20, 400),
     photos: qs.photos !== '0',
     hideLiving: qs.hideLiving === '1',
@@ -129,9 +130,21 @@ function sheets(stream, plan, bounds, o, draw) {
       const ay = plan.margin + plan.head;
       // заголовок
       doc.font(t.bold).fontSize(total === 1 ? 16 : 11).fillColor(t.title)
-        .text(o.title || 'Семейное древо', ax, plan.margin, { width: aw * 0.7, lineBreak: false, ellipsis: true });
+        .text(o.title || 'Семейное древо', ax, plan.margin, { width: total > 1 ? aw * 0.45 : aw * 0.7, lineBreak: false, ellipsis: true });
+      // Схема склейки: клетка на каждый лист, этот — закрашен; справа в шапке.
+      const cell = total > 1 ? Math.min((plan.head - 4 * MM) / plan.rows, (14 * MM) / plan.cols, 4 * MM) : 0;
+      const gw = cell * plan.cols;
+      if (total > 1) {
+        for (let i = 0; i < plan.rows; i++) {
+          for (let j = 0; j < plan.cols; j++) {
+            doc.rect(ax + aw - gw + j * cell, plan.margin + i * cell, cell, cell).lineWidth(0.4)
+              .fillAndStroke(i === r && j === c ? t.title : '#ffffff', '#999999');
+          }
+        }
+      }
       doc.font(t.font).fontSize(8).fillColor('#777777')
-        .text(total > 1 ? `Лист ${r * plan.cols + c + 1} из ${total} · ряд ${r + 1}, колонка ${c + 1}` : `Составлено ${date}`, ax + aw * 0.6, plan.margin + 3, { width: aw * 0.4, align: 'right', lineBreak: false });
+        .text(total > 1 ? `Лист ${r * plan.cols + c + 1} из ${total} · ряд ${r + 1}, колонка ${c + 1}` : `Составлено ${date}`,
+          ax + aw * 0.5, plan.margin + 3, { width: aw * 0.5 - gw - (gw ? 2 * MM : 0), align: 'right', lineBreak: false });
       // содержимое листа
       doc.save();
       doc.rect(ax, ay, aw, ah).clip();

@@ -3,7 +3,7 @@
 // Единицы — как у раскладки дерева (100 % при склейке — 0,25 мм), размеры шрифта подбираются уже под бумагу.
 import { isPrivate, lifespan } from './names.js';
 import { fatherMother } from './layout.js';
-import { planPages } from './printplan.js';
+import { planPages, SCALE100 } from './printplan.js';
 
 export const FAN = {
   gens: [3, 8],
@@ -14,6 +14,7 @@ export const FAN = {
   padPt: 1.2, // поля подписи в секторе, пунктов на бумаге
   minPt: 6, // мельче на бумаге не читается: такой текст сокращается
   maxPt: [20, 16, 14, 12, 11, 10, 10, 10, 10], // по поколениям, 0 — середина
+  readPt: 7, // «Читаемо» на склейке: самая мелкая подпись (годы в дальних кольцах) не мельче
 };
 
 const LH = 1.2; // шаг строк от размера шрифта
@@ -339,9 +340,22 @@ export function fanGeometry(idx, root, opts) {
 
 // Полная раскладка под бумагу: секторы с цветами, подписи с подобранным размером, листы.
 // o — настройки печати (бумага, крупность, оформление, скрыть живых, фото) и веера (gens, shape, colors, empty).
+// minPt — самая мелкая подпись на бумаге, пунктов.
 export function layoutFan(idx, root, o) {
+  if (o.fit !== 'tiles' || o.size !== 'read') return fanAt(idx, root, o, null);
+  // «Читаемо»: крупнее, пока все подписи не поместятся и самая мелкая не станет readPt. Дальние кольца мельчают
+  // сильнее всего: 5 поколений читаются уже при 100–130 %, 8 — только около 250 %.
+  let fan;
+  for (const k of [1, 1.3, 1.6, 2, 2.5]) {
+    fan = fanAt(idx, root, o, k * SCALE100);
+    if (!fan.crowded && fan.minPt >= FAN.readPt) break;
+  }
+  return fan;
+}
+
+function fanAt(idx, root, o, scale) {
   const geo = fanGeometry(idx, root, o);
-  const plan = planPages(geo, o);
+  const plan = planPages(geo, o, scale);
   const s = plan.s; // пунктов на единицу
   const pal = fanColors(o.theme);
   const years = (p) => (p.hidden || (o.hideLiving && isPrivate(p)) ? '' : lifespan(p));
@@ -373,5 +387,6 @@ export function layoutFan(idx, root, o) {
   const photo = Boolean(o.photos && p.photo_id && !p.hidden && !(o.hideLiving && isPrivate(p)));
   const [lo, hi] = size(0);
   Object.assign(geo.center, { id: root, fill: pal.center }, placeCenter(geo.center, p, years(p), lo, hi, photo, geo.shape === 180));
-  return { ...geo, plan, line: pal.line, crowded };
+  const sizes = [...known, geo.center].flatMap((x) => x.lines.map((l) => l.size));
+  return { ...geo, plan, line: pal.line, crowded, minPt: sizes.length ? Math.min(...sizes) * s : 0 };
 }

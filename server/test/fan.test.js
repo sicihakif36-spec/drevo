@@ -130,6 +130,16 @@ test('подписи: внутри своих секторов, не мельч�
   // На A2 все восемь колец подписаны; на A4 дальние не помещаются — это видно в подсказке.
   assert.equal(layoutFan(idx, 'p1', O({ gens: 8, paper: 'A2' })).crowded, 0);
   assert.ok(layoutFan(idx, 'p1', O({ gens: 8, paper: 'A4' })).crowded > 0);
+  // «Читаемо» на склейке: все подписи на месте и не мельче FAN.readPt; 8 поколений — крупнее и на большем числе листов, чем 5.
+  const r5 = layoutFan(idx, 'p1', O({ gens: 5, fit: 'tiles', size: 'read' }));
+  const r8 = layoutFan(idx, 'p1', O({ gens: 8, fit: 'tiles', size: 'read' }));
+  for (const f of [r5, r8]) {
+    assert.equal(f.crowded, 0);
+    assert.ok(f.minPt >= FAN.readPt, `${f.gens} поколений: ${f.minPt.toFixed(1)} пт`);
+  }
+  assert.ok(r8.plan.cols * r8.plan.rows > r5.plan.cols * r5.plan.rows);
+  // Плакат A1 из A4: 8 поколений подписаны все.
+  assert.equal(layoutFan(idx, 'p1', O({ gens: 8, fit: 'tiles', size: 'A1' })).crowded, 0);
   // Пять поколений на A4 — полностью, с годами.
   const five = layoutFan(idx, 'p1', O({ gens: 5 }));
   assert.equal(five.crowded, 0);
