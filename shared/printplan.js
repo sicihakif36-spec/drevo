@@ -16,6 +16,13 @@ export const TREE_TEXT = 10;
 // «Читаемо»: годы жизни 9 пт, имена — 11 пт, как в книге с крупным шрифтом.
 export const READ_PT = 9;
 
+// Оформления печати: шрифт (имя шрифта в PDF), цвета рамок (заливка, обводка) по полу, линии, заголовок.
+export const THEMES = {
+  classic: { font: 'serif', bold: 'serifBold', M: ['#eef3fa', '#5b7db1'], F: ['#fbeef2', '#b15b7d'], U: ['#f2f2f2', '#888888'], line: '#6b5a45', title: '#4a3826' },
+  modern: { font: 'regular', bold: 'bold', M: ['#e3f0ff', '#2f6fd6'], F: ['#ffe6ef', '#d63f78'], U: ['#eeeeee', '#777777'], line: '#555555', title: '#222222' },
+  bw: { font: 'regular', bold: 'bold', M: ['#ffffff', '#000000'], F: ['#ffffff', '#000000'], U: ['#ffffff', '#000000'], line: '#000000', title: '#000000' },
+};
+
 const MARGIN = 10 * MM;
 const HEAD = 14 * MM;
 const OVERLAP = 10 * MM;

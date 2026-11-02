@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onDeactivated, ref, watch } from 'vue';
+import { computed, nextTick, onDeactivated, ref, toRefs, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { store, canEdit, loadTree, toast } from '../store.js';
 import { layoutTree, fatherMother } from '@shared/layout.js';
@@ -10,23 +10,15 @@ import { plural } from '@shared/rospis.js';
 import { wide } from '../wide.js';
 import TreeCanvas from '../components/TreeCanvas.vue';
 import { openAdd } from '../components/addState.js';
+import { view } from '../treeview.js';
 import { ask } from '../components/ask.js';
 import { api, photoUrl } from '../api.js';
 
 defineOptions({ name: 'TreeView' });
 const router = useRouter();
 
-const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.view') || '{}'); } catch { return {}; } })();
-// Вид: ветка выбранного человека — его предки и потомки (hourglass, по умолчанию), его родня по одной линии (kin),
-// только предки, только потомки или всё дерево — все ветки сразу.
-const MODES = ['hourglass', 'kin', 'ancestors', 'descendants', 'all'];
-const mode = ref(MODES.includes(saved.mode) ? saved.mode : 'hourglass');
-const up = ref(saved.up ?? 4);
-const down = ref(saved.down ?? 3);
-// Родня: по какой линии (shared/kin.js) и сколько поколений вверх до общих предков (null — как принято у линии).
-const line = ref(saved.line || 'father');
-const kinUp = ref(Number.isFinite(saved.kinUp) ? saved.kinUp : null);
-const rootId = ref(saved.root || null);
+// Вид, с кого начато, поколения и линия родни — общие с печатью (treeview.js): печатается то, что на экране.
+const { mode, up, down, line, kinUp, root: rootId } = toRefs(view);
 const selected = ref(null);
 const searching = ref(false);
 const query = ref('');
@@ -59,9 +51,6 @@ function toOthers() {
   if (ids) makeRoot(centralPerson(idx.value, ids));
 }
 
-watch([mode, up, down, rootId, line, kinUp], () => {
-  try { localStorage.setItem('drevo.view', JSON.stringify({ mode: mode.value, up: up.value, down: down.value, root: rootId.value, line: line.value, kinUp: kinUp.value })); } catch {}
-});
 watch(selected, (id) => (store.selectedId = id));
 
 const sel = computed(() => (selected.value ? idx.value?.persons.get(selected.value) : null));
@@ -277,6 +266,7 @@ function gens(delta) {
         <div class="views">
           <button @click="canvas.fitAll(insets())">Показать целиком</button>
           <button @click="toMe">{{ meId ? 'Ко мне' : 'К началу' }}</button>
+          <button @click="router.push({ path: '/print', query: { mode: 'tree' } })">Напечатать</button>
         </div>
         <div class="zoom">
           <button @click="canvas.zoomAt(1.35)" aria-label="Крупнее">+</button>

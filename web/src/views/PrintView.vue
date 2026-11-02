@@ -1,11 +1,13 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { store, canTalk } from '../store.js';
 import { api, thumbUrl } from '../api.js';
 import { layoutTree, BOX } from '@shared/layout.js';
 import { homePerson } from '@shared/wholetree.js';
-import { planPages, legibility, posters, PAPER, MM, TREE_TEXT } from '@shared/printplan.js';
+import { planPages, legibility, posters, PAPER, MM, THEMES, TREE_TEXT } from '@shared/printplan.js';
+import { treeCard } from '@shared/treecard.js';
+import { view, MODES } from '../treeview.js';
 import { layoutFan, sectorPath, FAN } from '@shared/fan.js';
 import { fullName, shortGenitive } from '@shared/names.js';
 import { kinLines } from '@shared/kin.js';
@@ -13,16 +15,20 @@ import { buildRospis, parseRospisOptions } from '@shared/rospis.js';
 import RospisText from '../components/RospisText.vue';
 
 const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.print') || '{}'); } catch { return {}; } })();
+// Что печатать (mode): дерево (tree) — ровно как на экране «Дерево» (вид, человек, поколения, линия — в treeview.js),
+// веер предков (fan) или роспись (rospis); у веера и росписи свой человек в центре (root, пусто — тот же, что на дереве).
 const o = reactive({
-  root: '', mode: 'hourglass', up: 4, down: 3, line: 'father', kinUp: null, paper: 'A4', orient: 'auto', fit: 'page', scale: 100,
+  root: '', mode: 'tree', paper: 'A4', orient: 'auto', fit: 'page', scale: 100,
   photos: true, hideLiving: false, theme: 'classic', title: '', gens: 5, shape: 180, colors: 'branch', empty: true,
   // Склейка: «Читаемо», плакат A3…A0 или своя крупность. Кто склеивал раньше, у того остаётся его крупность.
   size: saved.fit === 'tiles' ? 'scale' : 'read', ...saved,
 });
+if (!['tree', 'fan', 'rospis'].includes(o.mode)) o.mode = 'tree';
+for (const k of ['up', 'down', 'line', 'kinUp']) delete o[k]; // раньше у печати был свой вид дерева
 // Из карточки: «Веер предков» с этим человеком в центре.
 const route = useRoute();
 if (route.query.root) o.root = String(route.query.root);
-if (['fan', 'rospis'].includes(route.query.mode)) o.mode = String(route.query.mode);
+if (['tree', 'fan', 'rospis'].includes(route.query.mode)) o.mode = String(route.query.mode);
 watch(o, () => { try { localStorage.setItem('drevo.print', JSON.stringify(o)); } catch {} });
 // Роспись: свои настройки; оформление, заголовок и «скрыть живых» — общие.
 const savedR = (() => { try { return JSON.parse(localStorage.getItem('drevo.rospis') || '{}'); } catch { return {}; } })();
@@ -32,19 +38,32 @@ watch(ro, () => { try { localStorage.setItem('drevo.rospis', JSON.stringify(ro))
 const people = computed(() => [...(store.idx?.persons.values() || [])].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru')));
 // Кто в центре: выбранный, иначе сам вошедший или человек владельца, иначе — из самой большой части (как на сервере).
 const home = computed(() => (store.idx ? homePerson(store.idx, store.me?.person_id, store.tree?.owner_person_id) : null));
-const rootId = computed(() => (store.idx?.persons.has(o.root) ? o.root : home.value));
+// С кого начато дерево на экране «Дерево».
+const treeRoot = computed(() => (store.idx?.persons.has(view.root) ? view.root : home.value));
 const isFan = computed(() => o.mode === 'fan');
 const isRospis = computed(() => o.mode === 'rospis');
-const layout = computed(() => (store.idx && rootId.value && !isFan.value && !isRospis.value
-  ? layoutTree(store.idx, rootId.value, { mode: o.mode, up: o.mode === 'kin' ? o.kinUp : o.up, down: o.down, anchor: home.value, line: o.line }) : null));
+const isTree = computed(() => !isFan.value && !isRospis.value);
+const rootId = computed(() => (isTree.value ? treeRoot.value : store.idx?.persons.has(o.root) ? o.root : treeRoot.value));
+// «Кто в центре»: у дерева — тот же, что на экране «Дерево» (поменяется и там), у веера и росписи — свой.
+const rootSel = computed({
+  get: () => (isTree.value ? (store.idx?.persons.has(view.root) ? view.root : '') : o.root),
+  set: (v) => { if (isTree.value) view.root = v || null; else o.root = v; },
+});
+function treeMode(m) {
+  o.mode = 'tree';
+  if (MODES.includes(m)) view.mode = m;
+}
+// Та же раскладка, что на экране «Дерево» (без пустых мест «добавить родителя»).
+const layout = computed(() => (store.idx && rootId.value && isTree.value
+  ? layoutTree(store.idx, rootId.value, { mode: view.mode, up: view.mode === 'kin' ? view.kinUp : view.up, down: view.down, anchor: home.value, line: view.line }) : null));
 // Родня: какие линии есть у выбранного, что вышло (null — родители не указаны) и заголовок по умолчанию.
-const isKin = computed(() => o.mode === 'kin');
+const isKin = computed(() => isTree.value && view.mode === 'kin');
 const lines = computed(() => (isKin.value && store.idx && rootId.value ? kinLines(store.idx, rootId.value) : []));
 const kin = computed(() => (isKin.value ? layout.value?.kin : null));
 const kinTitle = computed(() => (kin.value ? `Родня ${shortGenitive(store.idx.persons.get(rootId.value))} ${kin.value.text}` : ''));
 function pickLine(l) {
-  o.line = l.key;
-  o.kinUp = null;
+  view.line = l.key;
+  view.kinUp = null;
 }
 // Веер: та же раскладка, что в PDF (shared/fan.js). Гостю дерево уже пришло без дат и фото живых.
 const fan = computed(() => (store.idx && rootId.value && isFan.value ? layoutFan(store.idx, rootId.value, { ...o, hideLiving: o.hideLiving || !canTalk() }) : null));
@@ -96,14 +115,56 @@ const sheets = computed(() => {
   }
   return out;
 });
-const viewBox = computed(() => {
-  const all = sheets.value;
-  if (!all.length) return '0 0 1 1';
+// Один лист — целиком, с полями и шапкой: заголовок и дата, как в PDF.
+const title = computed(() => o.title || kinTitle.value || store.title || 'Семейное древо');
+const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+const paper = computed(() => {
+  const p = plan.value;
+  if (!p || pages.value !== 1 || !sheets.value.length) return null;
+  const a = sheets.value[0];
+  const x = a.x - p.margin / p.s;
+  const y = a.y - (p.margin + p.head) / p.s;
+  const w = p.pw / p.s;
+  return { x, y, w, h: p.ph / p.s, ax: a.x, ty: y + p.margin / p.s, k: 1 / p.s, right: x + w - p.margin / p.s };
+});
+const box = computed(() => {
+  const all = paper.value ? [paper.value] : sheets.value;
+  if (!all.length) return { x: 0, y: 0, w: 1, h: 1 };
   const x = Math.min(...all.map((s) => s.x)); const y = Math.min(...all.map((s) => s.y));
   const x2 = Math.max(...all.map((s) => s.x + s.w)); const y2 = Math.max(...all.map((s) => s.y + s.h));
   const m = (x2 - x) * 0.02;
-  return `${x - m} ${y - m} ${x2 - x + 2 * m} ${y2 - y + 2 * m}`;
+  return { x: x - m, y: y - m, w: x2 - x + 2 * m, h: y2 - y + 2 * m };
 });
+const viewBox = computed(() => `${box.value.x} ${box.value.y} ${box.value.w} ${box.value.h}`);
+
+// Дерево на предпросмотре — как на бумаге: цвета оформления, имена и годы (shared/treecard.js — то же, что в PDF), фото.
+const theme = computed(() => THEMES[o.theme] || THEMES.classic);
+const font = computed(() => (o.theme === 'classic' ? '"DejaVu Serif", "PT Serif", serif' : '"DejaVu Sans", "PT Sans", sans-serif'));
+const edgesPath = computed(() => (layout.value ? layout.value.edges.filter((e) => !e.dashed)
+  .map((e) => e.points.map((p, j) => (j ? 'L' : 'M') + p[0] + ',' + p[1]).join('')).join('') : ''));
+const cards = computed(() => {
+  if (!layout.value) return [];
+  const opts = { photos: o.photos, hideLiving: o.hideLiving || !canTalk() };
+  const many = layout.value.nodes.length > 1500; // очень большое дерево — без подписей, чтобы телефон не тормозил
+  return layout.value.nodes.filter((n) => n.id && store.idx.persons.has(n.id)).map((n) => {
+    const p = store.idx.persons.get(n.id);
+    const [fill, stroke] = theme.value[p.sex] || theme.value.U;
+    const c = many ? { photo: false, tx: 8, lines: [] } : treeCard(p, opts);
+    return { n, fill, stroke, photo: c.photo ? thumbUrl(p.photo_id) : null, tx: c.tx, lines: c.lines };
+  });
+});
+
+// «Посмотреть крупно»: предпросмотр на весь экран, крупнее и мельче кнопками.
+const big = ref(false);
+const zoom = ref(1);
+function openBig() {
+  zoom.value = 1;
+  big.value = true;
+}
+const onKey = (e) => { if (e.key === 'Escape') big.value = false; };
+watch(big, (on) => (on ? window.addEventListener('keydown', onKey) : window.removeEventListener('keydown', onKey)));
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
+const svgStyle = computed(() => (big.value ? { width: `${zoom.value * 100}%`, height: 'auto', aspectRatio: `${box.value.w} / ${box.value.h}` } : {}));
 
 // Роспись на экране — та же сборка, что в PDF (shared/rospis.js); события и источники — с сервера, по правилам приватности.
 const hideR = computed(() => o.hideLiving || !canTalk());
@@ -133,7 +194,7 @@ const rUrl = (download) => `/api/rospis.pdf?${new URLSearchParams({ ...rqs.value
 
 const url = (download) => {
   const qs = new URLSearchParams({
-    root: rootId.value || '', mode: o.mode, up: kin.value ? kin.value.up : o.up, down: o.down, line: o.line, paper: o.paper, orient: o.orient, fit: o.fit,
+    root: rootId.value || '', mode: isTree.value ? view.mode : o.mode, up: kin.value ? kin.value.up : view.up, down: view.down, line: view.line, paper: o.paper, orient: o.orient, fit: o.fit,
     size: o.size, scale: o.scale, photos: o.photos ? '1' : '0', hideLiving: o.hideLiving ? '1' : '0', theme: o.theme, title: o.title,
     ...(isFan.value ? { gens: o.gens, shape: o.shape, colors: o.colors, empty: o.empty ? '1' : '0' } : {}),
   });
@@ -170,12 +231,31 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         </div>
       </template>
       <div v-if="plan" class="preview card">
-        <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
-          <rect v-for="(s, i) in sheets" :key="'s' + i" :x="s.x" :y="s.y" :width="s.w" :height="s.h" class="sheet-r" />
-          <template v-if="layout">
-            <path v-for="(e, i) in layout.edges" :key="'e' + i" :d="e.points.map((p, j) => (j ? 'L' : 'M') + p[0] + ',' + p[1]).join('')" class="ln" />
-            <rect v-for="(n, i) in layout.nodes" :key="'n' + i" :x="n.x" :y="n.y" :width="BOX.w" :height="BOX.h" rx="10" :class="['nd', store.idx.persons.get(n.id)?.sex]" />
+        <Teleport to="body" :disabled="!big">
+        <div :class="{ 'big-view': big }" role="dialog" :aria-modal="big" :aria-label="big ? 'Как будет на бумаге' : undefined">
+        <div v-if="big" class="big-bar">
+          <b class="grow">Как будет на бумаге</b>
+          <button @click="zoom = Math.max(1, zoom / 1.5)" :disabled="zoom <= 1" aria-label="Мельче">−</button>
+          <button @click="zoom = Math.min(12, zoom * 1.5)" aria-label="Крупнее">+</button>
+          <button @click="big = false">Закрыть</button>
+        </div>
+        <div :class="{ 'big-scroll': big }">
+        <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet" :style="svgStyle" @click="big || openBig()">
+          <defs><clipPath id="pv-ph" clipPathUnits="userSpaceOnUse"><rect x="6" y="6" :width="BOX.h - 12" :height="BOX.h - 12" rx="6" /></clipPath></defs>
+          <template v-if="paper">
+            <rect :x="paper.x" :y="paper.y" :width="paper.w" :height="paper.h" class="sheet-r" />
+            <text :x="paper.ax" :y="paper.ty + 15 * paper.k" :font-size="16 * paper.k" font-weight="700" :fill="theme.title" :font-family="font">{{ title }}</text>
+            <text :x="paper.right" :y="paper.ty + 10 * paper.k" :font-size="8 * paper.k" fill="#777777" text-anchor="end" :font-family="font">Составлено {{ today }}</text>
           </template>
+          <rect v-for="(s, i) in paper ? [] : sheets" :key="'s' + i" :x="s.x" :y="s.y" :width="s.w" :height="s.h" class="sheet-r" />
+          <g v-if="layout" :font-family="font">
+            <path :d="edgesPath" fill="none" :stroke="theme.line" stroke-width="1.6" />
+            <g v-for="c in cards" :key="c.n.id" :transform="`translate(${c.n.x},${c.n.y})`">
+              <rect :width="BOX.w" :height="BOX.h" rx="9" :fill="c.fill" :stroke="c.stroke" :stroke-width="c.n.root ? 3 : 1.4" />
+              <image v-if="c.photo" :href="c.photo" x="6" y="6" :width="BOX.h - 12" :height="BOX.h - 12" preserveAspectRatio="xMidYMid slice" clip-path="url(#pv-ph)" />
+              <text v-for="(l, j) in c.lines" :key="j" :x="c.tx" :y="l.y + l.size * 0.93" :font-size="l.size" :font-weight="l.bold ? 700 : 400" :fill="l.color">{{ l.text }}</text>
+            </g>
+          </g>
           <g v-else class="fan">
             <path v-for="s in fan.sectors" :key="'f' + s.k" :d="sectorPath(s)" :fill="s.fill" :stroke="fan.line" :stroke-width="(s.id ? 0.9 : 0.4) / plan.s" />
             <path :d="fan.shape === 180 ? `M${-fan.center.r1},0A${fan.center.r1},${fan.center.r1} 0 0 1 ${fan.center.r1},0Z` : `M${-fan.center.r1},0A${fan.center.r1},${fan.center.r1} 0 1 1 ${fan.center.r1},0A${fan.center.r1},${fan.center.r1} 0 1 1 ${-fan.center.r1},0Z`"
@@ -183,8 +263,12 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
             <image v-if="centerPhoto" :href="centerPhoto" :x="fan.center.photo.x" :y="fan.center.photo.y" :width="fan.center.photo.w" :height="fan.center.photo.h" preserveAspectRatio="xMidYMid slice" />
             <text v-for="(l, i) in [...fan.sectors.flatMap((s) => s.lines), ...fan.center.lines]" :key="'l' + i" :x="l.x" :y="l.y" :transform="`rotate(${l.rot} ${l.x} ${l.y})`" :style="fanFont(l)">{{ l.text }}</text>
           </g>
-          <text v-for="(s, i) in sheets.length > 1 ? sheets : []" :key="'t' + i" :x="s.x + s.w / 2" :y="s.y + s.h / 2" class="num">{{ s.n }}</text>
+          <text v-for="(s, i) in sheets.length > 1 ? sheets : []" :key="'t' + i" :x="s.x + s.w / 2" :y="s.y + s.h / 2" class="num" :font-size="Math.min(s.w, s.h) / 3">{{ s.n }}</text>
         </svg>
+        </div>
+        </div>
+        </Teleport>
+        <button class="ghost more" @click="openBig">Посмотреть крупно</button>
         <div class="small" style="margin-top:6px">
           <b>{{ pages }} {{ pages === 1 ? 'лист' : pages < 5 ? 'листа' : 'листов' }} {{ o.paper }}</b>,
           {{ plan.orient === 'landscape' ? 'альбомная' : 'книжная' }} · {{ layout ? layout.nodes.length : fan.people }} чел. <span class="muted">{{ sizeMm }}</span>
@@ -215,10 +299,10 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
       </div>
 
       <label class="field"><span>{{ isRospis ? 'Родоначальник' : 'Кто в центре' }}</span>
-        <select v-model="o.root"><option value="">{{ store.me?.person_id ? 'Я' : home ? `${fullName(store.idx.persons.get(home))} (начало дерева)` : 'Начало дерева' }}</option><option v-for="p in people" :key="p.id" :value="p.id">{{ fullName(p) }}</option></select>
+        <select v-model="rootSel"><option value="">{{ !isTree && treeRoot ? `Как на дереве: ${fullName(store.idx.persons.get(treeRoot))}` : store.me?.person_id ? 'Я' : home ? `${fullName(store.idx.persons.get(home))} (начало дерева)` : 'Начало дерева' }}</option><option v-for="p in people" :key="p.id" :value="p.id">{{ fullName(p) }}</option></select>
       </label>
       <div class="field"><div class="seg">
-        <button :class="{ on: !isFan && !isRospis }" @click="o.mode = isFan || isRospis ? 'hourglass' : o.mode">Дерево</button>
+        <button :class="{ on: isTree }" @click="treeMode()">Дерево</button>
         <button :class="{ on: isFan }" @click="o.mode = 'fan'">Веер предков</button>
         <button :class="{ on: isRospis }" @click="o.mode = 'rospis'">Роспись</button>
       </div></div>
@@ -237,13 +321,17 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <label class="row field check"><input type="checkbox" v-model="ro.sources" /> Источники</label>
         <p class="muted small">Даты и места рождения и смерти, род занятий, браки и дети пишутся всегда.</p>
       </template>
-      <div class="field" v-if="!isFan && !isRospis"><div class="seg two">
-        <button :class="{ on: o.mode === 'all' }" @click="o.mode = 'all'">Всё дерево</button>
-        <button :class="{ on: o.mode === 'hourglass' }" @click="o.mode = 'hourglass'">Ветка</button>
-        <button :class="{ on: o.mode === 'ancestors' }" @click="o.mode = 'ancestors'">Предки</button>
-        <button :class="{ on: o.mode === 'descendants' }" @click="o.mode = 'descendants'">Потомки</button>
-        <button :class="{ on: isKin }" class="span" @click="o.mode = 'kin'">Родня</button>
-      </div></div>
+      <template v-if="isTree">
+        <div class="field"><div class="seg two">
+          <button :class="{ on: view.mode === 'all' }" @click="treeMode('all')">Всё дерево</button>
+          <button :class="{ on: view.mode === 'hourglass' }" @click="treeMode('hourglass')">Ветка</button>
+          <button :class="{ on: view.mode === 'ancestors' }" @click="treeMode('ancestors')">Предки</button>
+          <button :class="{ on: view.mode === 'descendants' }" @click="treeMode('descendants')">Потомки</button>
+          <button :class="{ on: isKin }" class="span" @click="treeMode('kin')">Родня</button>
+        </div></div>
+        <p class="muted small" style="margin-top:0">Печатается то же, что сейчас на экране «Дерево». Поменяете здесь — поменяется и там.
+          <router-link to="/tree">Открыть дерево</router-link></p>
+      </template>
       <template v-if="isKin">
         <p class="muted small" style="margin-top:0">Кровные родственники по одной линии или с обеих сторон: сверху — общие предки, под ними все их дети, внуки и правнуки с мужьями и жёнами.</p>
         <div class="field" v-if="lines.length"><span class="small muted">По какой линии</span>
@@ -251,7 +339,7 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         </div>
         <p v-else class="banner">У этого человека в дереве не указаны родители — родню не от кого показать. Выберите другого.</p>
         <div class="field" v-if="kin && kin.max > kin.min"><span class="small muted">Поколений вверх</span>
-          <div class="chips"><button v-for="g in Math.min(kin.max, 12) - kin.min + 1" :key="g" class="chip" :class="{ on: kin.up === g + kin.min - 1 }" @click="o.kinUp = g + kin.min - 1">{{ g + kin.min - 1 }}</button></div>
+          <div class="chips"><button v-for="g in Math.min(kin.max, 12) - kin.min + 1" :key="g" class="chip" :class="{ on: kin.up === g + kin.min - 1 }" @click="view.kinUp = g + kin.min - 1">{{ g + kin.min - 1 }}</button></div>
         </div>
       </template>
       <template v-if="isFan">
@@ -269,12 +357,12 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         </div></div>
         <label class="row field check"><input type="checkbox" v-model="o.empty" /> Показывать пустые места — вписать неизвестных от руки</label>
       </template>
-      <div class="grid2" v-else-if="!isRospis && o.mode !== 'all' && !isKin">
-        <label class="field" v-if="o.mode !== 'descendants'"><span>Поколений вверх</span><input type="number" min="1" max="12" v-model.number="o.up" /></label>
-        <label class="field" v-if="o.mode !== 'ancestors'"><span>Поколений вниз</span><input type="number" min="1" max="12" v-model.number="o.down" /></label>
+      <div class="grid2" v-else-if="isTree && view.mode !== 'all' && !isKin">
+        <label class="field" v-if="view.mode !== 'descendants'"><span>Поколений вверх</span><input type="number" min="1" max="12" v-model.number="view.up" /></label>
+        <label class="field" v-if="view.mode !== 'ancestors'"><span>Поколений вниз</span><input type="number" min="1" max="12" v-model.number="view.down" /></label>
       </div>
 
-      <p class="muted small" v-if="o.mode === 'all'" style="margin-top:0">Все, кто связан с выбранным человеком родством и браками, — каждый один раз. Большое дерево удобнее «Склеить из листов».</p>
+      <p class="muted small" v-if="isTree && view.mode === 'all'" style="margin-top:0">Все, кто связан с выбранным человеком родством и браками, — каждый один раз. Большое дерево удобнее «Склеить из листов».</p>
       <template v-if="!isRospis">
       <h2>Как напечатать</h2>
       <div class="field"><div class="seg">
@@ -330,14 +418,18 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
 </template>
 
 <style scoped>
-.preview svg { width: 100%; height: 260px; display: block; background: var(--bg); border-radius: 8px; }
-.sheet-r { fill: #fff; stroke: #999; stroke-width: 3; vector-effect: non-scaling-stroke; }
-.ln { fill: none; stroke: #8a7f70; stroke-width: 3; }
-.nd { fill: #eee; stroke: #888; stroke-width: 2; }
-.nd.M { fill: #e3ecf8; stroke: #5b7db1; }
-.nd.F { fill: #f8e3eb; stroke: #b15b7d; }
+.preview svg { width: 100%; height: 260px; display: block; background: var(--bg); border-radius: 8px; cursor: zoom-in; }
+@media (min-width: 64em) { .preview svg { height: 420px; } }
+.sheet-r { fill: #fff; stroke: #999; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.more { margin-top: 4px; padding-left: 0; padding-right: 0; color: var(--accent-text); min-height: 2.444rem; }
+.big-view { position: fixed; inset: 0; z-index: 70; background: var(--bg); display: flex; flex-direction: column; }
+.big-bar { display: flex; align-items: center; gap: 0.444rem; padding: calc(0.556rem + var(--safe-t)) 0.667rem 0.556rem; border-bottom: 1px solid var(--line); background: var(--card); }
+.big-bar button { min-height: 2.667rem; padding: 0.25rem 0.889rem; }
+.big-bar button[aria-label] { width: 3rem; padding: 0; font-size: 1.444rem; font-weight: 400; }
+.big-scroll { flex: 1; overflow: auto; padding: 0.667rem; }
+.big-view svg { display: block; margin: 0 auto; background: var(--bg); cursor: default; }
 .fan text { text-anchor: middle; dominant-baseline: central; fill: #1d1d1d; }
-.num { font-size: 120px; fill: rgba(0,0,0,.18); text-anchor: middle; dominant-baseline: middle; font-weight: 700; }
+.num { fill: rgba(0,0,0,.18); text-anchor: middle; dominant-baseline: middle; font-weight: 700; }
 .seg.two { display: grid; grid-template-columns: 1fr 1fr; }
 .seg.two .span { grid-column: 1 / -1; }
 .check { align-items: flex-start; min-height: 2.667rem; }

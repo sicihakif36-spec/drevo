@@ -6,14 +6,15 @@ import { q } from '../db.js';
 import { ownerPerson } from '../tree.js';
 import { need } from '../auth.js';
 import { mediaPath } from './media.js';
-import { buildIndex, fullName, isPrivate, lifespan, shortName, shortGenitive } from '../../../shared/names.js';
+import { buildIndex, fullName, shortGenitive } from '../../../shared/names.js';
 import { guestTree, isGuest } from '../privacy.js';
 import { layoutTree, homePerson, BOX } from '../../../shared/layout.js';
 import { KIN_LINES } from '../../../shared/kin.js';
-import { MM, PAPER, SIZES, planPages } from '../../../shared/printplan.js';
+import { MM, PAPER, SIZES, THEMES, planPages } from '../../../shared/printplan.js';
 import { layoutFan, parseFanOptions } from '../../../shared/fan.js';
 import { drawFan } from '../fan.js';
 import { disposition } from '../pdf.js';
+import { treeCard } from '../../../shared/treecard.js';
 import { renderInWorker, sendPdf } from '../pdfpool.js';
 
 const require = createRequire(import.meta.url);
@@ -25,11 +26,8 @@ export const FONTS = {
   serifBold: path.join(fontDir, 'DejaVuSerif-Bold.ttf'),
 };
 
-export const THEMES = {
-  classic: { font: 'serif', bold: 'serifBold', M: ['#eef3fa', '#5b7db1'], F: ['#fbeef2', '#b15b7d'], U: ['#f2f2f2', '#888888'], line: '#6b5a45', title: '#4a3826' },
-  modern: { font: 'regular', bold: 'bold', M: ['#e3f0ff', '#2f6fd6'], F: ['#ffe6ef', '#d63f78'], U: ['#eeeeee', '#777777'], line: '#555555', title: '#222222' },
-  bw: { font: 'regular', bold: 'bold', M: ['#ffffff', '#000000'], F: ['#ffffff', '#000000'], U: ['#ffffff', '#000000'], line: '#000000', title: '#000000' },
-};
+// Оформления — общие с предпросмотром на телефоне.
+export { THEMES };
 
 export function parsePrintOptions(qs) {
   const num = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) && v !== '' && v !== undefined ? Number(v) : d));
@@ -70,22 +68,21 @@ function drawTree(doc, idx, layout, o, theme) {
     // в координатах до сдвига, — у высокого дерева (всё дерево, 7 рядов и больше) это тысячи пустых листов.
     doc.save().translate(n.x, n.y);
     doc.lineWidth(n.root ? 3 : 1.4).roundedRect(0, 0, BOX.w, BOX.h, 9).fillAndStroke(fill, stroke);
-    let tx = 8;
-    const hidden = o.hideLiving && isPrivate(p);
-    if (o.photos && p.photo_id && !hidden && p._photo) {
+    // Что в рамке — общее с предпросмотром (shared/treecard.js); строки уже обрезаны по ширине.
+    let card = treeCard(p, o, Boolean(p._photo));
+    if (card.photo) {
       try {
         doc.save().roundedRect(6, 6, BOX.h - 12, BOX.h - 12, 6).clip();
         doc.image(p._photo, 6, 6, { cover: [BOX.h - 12, BOX.h - 12], align: 'center', valign: 'center' });
         doc.restore();
-        tx = BOX.h;
-      } catch { doc.restore(); }
+      } catch {
+        doc.restore();
+        card = treeCard(p, o, false);
+      }
     }
-    const w = BOX.w - 6 - tx;
-    const nm = shortName(p);
-    doc.fillColor('#1d1d1d').font(t.bold).fontSize(12.5).text(nm.last || nm.first, tx, 9, { width: w, lineBreak: false, ellipsis: true });
-    if (nm.last) doc.font(t.font).fontSize(11).text(nm.first, tx, 27, { width: w, lineBreak: false, ellipsis: true });
-    const life = hidden ? '' : lifespan(p);
-    if (life) doc.fillColor('#555555').fontSize(10).text(life, tx, 50, { width: w, lineBreak: false, ellipsis: true });
+    for (const l of card.lines) {
+      doc.fillColor(l.color).font(l.bold ? t.bold : t.font).fontSize(l.size).text(l.text, card.tx, l.y, { lineBreak: false });
+    }
     doc.restore();
   }
 }

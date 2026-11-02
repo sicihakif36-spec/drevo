@@ -13,6 +13,8 @@ import { clans, randomTree } from './fixtures/clans.js';
 import { PassThrough } from 'node:stream';
 import { parsePrintOptions, renderPdf } from '../src/routes/print.js';
 import { MM, PAPER, READ_PT, TREE_TEXT, legibility, planPages, posters } from '../../shared/printplan.js';
+import { treeCard } from '../../shared/treecard.js';
+import { textWidth } from '../../shared/fan.js';
 
 // Проверки раскладки: возвращает узлы по id.
 function check(idx, L, ids) {
@@ -227,6 +229,24 @@ test('склейка «Читаемо» и плакат A3…A0 из листо�
   const pt = (paper) => TREE_TEXT * planPages(B, parsePrintOptions({ fit: 'page', paper })).s;
   assert.match(legibility(pt('A4')).level, /bad|warn/, `A4: ${pt('A4')}`);
   assert.match(legibility(pt('A2')).level, /ok|good/, `A2: ${pt('A2')}`);
+});
+
+test('рамка человека на печати — одна для PDF и предпросмотра: строки по ширине, у скрытых живых без дат и фото', () => {
+  const long = { id: 'x', sex: 'M', surname: 'Воронцов-Дашков-Самойлов', given: 'Константин', patronymic: 'Фёдорович', birth_date: '1880', death_date: '1942', photo_id: 'f' };
+  const c = treeCard(long, { photos: true });
+  assert.equal(c.photo, true);
+  assert.equal(c.tx, BOX.h);
+  assert.equal(c.lines.length, 3);
+  for (const l of c.lines) assert.ok(textWidth(l.text, l.bold) * l.size <= c.w + 1e-9, `«${l.text}» шире рамки`);
+  assert.match(c.lines[0].text, /…$/); // длинная фамилия — с многоточием, а не переносом на строку дат
+  assert.equal(c.lines[2].text, '1880 – 1942');
+  const alive = { ...long, birth_date: '1990', death_date: '', living: true };
+  const h = treeCard(alive, { photos: true, hideLiving: true });
+  assert.equal(h.photo, false);
+  assert.equal(h.tx, 8);
+  assert.equal(h.lines.length, 2);
+  assert.equal(treeCard(long, { photos: false }).photo, false);
+  assert.equal(treeCard(long, { photos: true }, false).photo, false); // файла фото нет — и места под него нет
 });
 
 // «Родня»: прадеды -> дед и его брат; бабка -> отец и тётя от деда, сын от второго мужа; отец + мать -> я и сестра;
