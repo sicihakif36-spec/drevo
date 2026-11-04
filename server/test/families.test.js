@@ -241,6 +241,47 @@ test('один телефон в двух семьях: «Мои семьи», �
   assert.deepEqual(me.tenants.map((t) => t.id), ['main']);
 });
 
+// Гость главной семьи завёл вход в семью Ольги в другом браузере (или приложение на экране «Домой» на iPhone —
+// у него свои входы): там только одна семья, а ссылки одноразовые. «Войти в другом месте» переносит все семьи разом.
+test('«Войти в другом месте»: одна ссылка — вход во все семьи этого телефона', async () => {
+  const phone = new Phone();
+  await join(phone, main, 'viewer', 'Надя');
+  await join(phone, fam, 'editor', 'Надя');
+  await phone.call('POST', '/api/tenants/switch', { id: 'main' });
+  // Без входа и с входом, ждущим пароль, — нельзя.
+  assert.equal((await new Phone().raw('POST', '/api/tenants/carry', {})).statusCode, 401);
+
+  const { url, count } = await phone.call('POST', '/api/tenants/carry', {});
+  assert.equal(count, 2);
+  const tokens = url.split('/#/carry/')[1].split('.');
+  assert.equal(tokens.length, 2);
+
+  // Другой браузер: по каждому ключу — вход; открытая там семья (главная) — последней, она и откроется.
+  const other = new Phone();
+  const res = [];
+  for (const token of tokens) res.push(await other.call('POST', '/api/invites/redeem', { token }));
+  // Участник с паролем на новом месте вводит пароль, гость входит сразу.
+  assert.deepEqual(res.map((r) => r.password), [true, false]);
+  let me = await other.call('GET', '/api/me');
+  assert.equal(me.tenant.id, 'main');
+  assert.equal(me.user.name, 'Надя');
+  assert.equal(me.user.role, 'viewer');
+  assert.deepEqual(me.tenants.map((t) => [t.id, t.role, t.pending]), [['main', 'viewer', false], [fam.id, 'editor', true]]);
+  assert.ok(!me.tenants.some((t) => 'user_id' in t));
+  // Ждущий пароля вход дальше не переносится: переносится только главная.
+  assert.equal((await other.call('POST', '/api/tenants/carry', {})).count, 1);
+  await other.call('POST', '/api/tenants/switch', { id: fam.id });
+  me = await other.call('GET', '/api/me');
+  assert.equal(me.pending.name, 'Надя');
+  await other.call('POST', '/api/login/password', { password: PASSWORD });
+  me = await other.call('GET', '/api/me');
+  assert.equal(me.user.role, 'editor');
+
+  // Ссылки сработали один раз; на прежнем телефоне вход остался.
+  assert.equal((await new Phone().raw('POST', '/api/invites/redeem', { token: tokens[1] })).statusCode, 400);
+  assert.equal((await phone.call('GET', '/api/me')).tenants.length, 2);
+});
+
 // Поток настоящим HTTP-запросом: какие события пришли.
 async function stream(phone) {
   const res = await new Promise((ok, fail) => http.get(`${base}/api/events`, { headers: { cookie: phone.cookie }, agent: false }, ok).on('error', fail));

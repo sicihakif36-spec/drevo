@@ -6,6 +6,7 @@ import { sizeText } from '../size.js';
 import { fullName } from '@shared/names.js';
 import { disablePush } from '../push.js';
 import { ask, askText } from '../components/ask.js';
+import LinkPaste from '../components/LinkPaste.vue';
 
 // «Профиль» — только своё: имя, мои семьи, установка на телефон, уведомления, устройства и пароль, выход.
 // У владельца — ещё название дерева и место на сервере. Разделы дерева — на «Главной» (HomeView).
@@ -24,6 +25,24 @@ onMounted(async () => {
 // Несколько семей на этом телефоне: «Мои семьи».
 const ROLE_SHORT = { owner: 'владелец', editor: 'участник', relative: 'родственник', viewer: 'гость' };
 const others = () => store.tenants.filter((t) => !t.current);
+
+// «Войти в другом месте»: одна ссылка — вход во все мои семьи в другом браузере, в приложении на экране «Домой», на компьютере.
+const carry = ref(null);
+async function makeCarry() {
+  carry.value = await api('POST', '/api/tenants/carry');
+}
+async function shareCarry() {
+  const text = `Ссылка, чтобы войти в Древо в другом месте. Откройте её там, где нужно войти: ${carry.value.url}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Древо', text }); return; } catch { /* отмена */ }
+  }
+  await navigator.clipboard?.writeText(carry.value.url);
+  toast('Ссылка скопирована');
+}
+async function copyCarry() {
+  await navigator.clipboard?.writeText(carry.value.url);
+  toast('Ссылка скопирована');
+}
 
 async function saveTitle() {
   await api('PUT', '/api/settings/title', { title: title.value });
@@ -78,6 +97,23 @@ async function logout() {
         </a>
       </div>
     </template>
+
+    <h2 id="elsewhere">Войти в другом месте</h2>
+    <div class="card">
+      <p class="small" style="margin-top:0">У каждого браузера и у значка Древа на экране «Домой» свои входы. Если там Древо открывается без
+        {{ store.tenants.length > 1 ? 'ваших семей' : 'вашей семьи' }}, сделайте ссылку здесь и откройте её там.</p>
+      <template v-if="carry">
+        <p class="small" style="word-break:break-all">{{ carry.url }}</p>
+        <div class="row">
+          <button class="primary grow" @click="shareCarry">Отправить</button>
+          <button class="grow" @click="copyCarry">Скопировать</button>
+        </div>
+        <p class="muted small" style="margin-bottom:0">Ссылка срабатывает один раз и действует сутки. Не пересылайте её другим: по ней входят как вы.</p>
+      </template>
+      <button v-else class="block" @click="makeCarry">Сделать ссылку</button>
+      <p class="small" style="margin-bottom:0.333rem"><b>Есть ссылка на Древо?</b> Если она открывается не там, где у вас Древо, вставьте её сюда:</p>
+      <LinkPaste />
+    </div>
 
     <div v-if="!standalone" class="card" style="margin-top:12px">
       <b>Установить на телефон</b>
