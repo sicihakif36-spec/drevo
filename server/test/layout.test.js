@@ -10,6 +10,7 @@ import { BOX, layoutTree } from '../../shared/layout.js';
 import { homePerson, treeParts, layoutWhole } from '../../shared/wholetree.js';
 import { kinLines, kinOf } from '../../shared/kin.js';
 import { clans, randomTree } from './fixtures/clans.js';
+import { marriages } from './fixtures/marriages.js';
 import { PassThrough } from 'node:stream';
 import { parsePrintOptions, renderPdf } from '../src/routes/print.js';
 
@@ -58,7 +59,7 @@ function check(idx, L, ids) {
 // Супруги рядом: между ними никого, кроме других супругов того же человека.
 function adjacent(at, a, b) {
   const [x, y] = [at.get(a), at.get(b)];
-  return x.y === y.y && Math.abs(x.x - y.x) === BOX.w + BOX.hgap;
+  return x.y === y.y && [BOX.w + BOX.hgap, BOX.w + BOX.mgap].includes(Math.abs(x.x - y.x));
 }
 
 test('три рода, связанные браками: все на месте ровно один раз, особые случаи', () => {
@@ -188,6 +189,84 @@ test('печать всего дерева: на одном листе и пла
     const pdf = Buffer.concat(chunks).toString('latin1');
     assert.equal((pdf.match(/\/Type \/Page\b/g) || []).length, plan.cols * plan.rows, JSON.stringify(qs));
     if (qs.fit === 'tiles') assert.ok(plan.cols > 1);
+  }
+});
+
+// Несколько браков у мужа и у жены: у каждого брака свой цвет (связка супругов, точка брака, линия к детям),
+// линии к детям разных браков не сливаются в одну, ребёнок связан линией цвета своего брака.
+function marriageCheck(idx, L, label) {
+  const at = new Map(L.nodes.map((n) => [n.id, n]));
+  const famColor = new Map();
+  // линия, приходящая к ребёнку сверху (её нижний конец — верх рамки, посередине)
+  for (const f of idx.families.values()) {
+    for (const c of f.children) {
+      const n = at.get(c);
+      if (!n || ![f.partner1, f.partner2].some((p) => p && at.has(p))) continue;
+      const e = L.edges.find((x) => x.points.some(([px, py]) => px === n.x + BOX.w / 2 && py === n.y));
+      assert.ok(e, `${label}: к ${c} идёт линия`);
+      if (famColor.has(f.id)) assert.equal(e.color, famColor.get(f.id), `${label}: дети одного брака — одним цветом`);
+      famColor.set(f.id, e.color);
+    }
+  }
+  // горизонтальные линии разных цветов на одной высоте не налезают друг на друга
+  const flat = L.edges.flatMap((e) => e.points.slice(1).map((p, i) => [e.points[i], p, e.color || 0]))
+    .filter(([a, b]) => a[1] === b[1] && a[0] !== b[0]);
+  for (const [a1, b1, c1] of flat) {
+    for (const [a2, b2, c2] of flat) {
+      if (c1 === c2 || a1[1] !== a2[1]) continue;
+      const lo = Math.max(Math.min(a1[0], b1[0]), Math.min(a2[0], b2[0]));
+      const hi = Math.min(Math.max(a1[0], b1[0]), Math.max(a2[0], b2[0]));
+      assert.ok(hi - lo <= 0.01, `${label}: линии браков ${c1} и ${c2} на одной высоте слились`);
+    }
+  }
+  return { at, famColor };
+}
+
+test('несколько браков у мужа и у жены: у каждого брака свой цвет и своя точка, линии к детям не сливаются', async () => {
+  const { data, ivan, maria, anna } = marriages();
+  const idx = buildIndex(data);
+  const famOf = (a, b) => [...idx.families.values()].find((f) => [f.partner1, f.partner2].includes(a) && [f.partner1, f.partner2].includes(b ?? null)).id;
+  for (const [mode, root] of [['hourglass', ivan], ['descendants', ivan], ['all', ivan], ['hourglass', maria], ['kin', ivan]]) {
+    const L = layoutTree(idx, root, { mode, up: 2, down: 2, line: 'father' });
+    const label = `${mode} от ${idx.persons.get(root).given}`;
+    const { at, famColor } = marriageCheck(idx, L, label);
+    const mine = [...famColor].filter(([fid]) => { const f = idx.families.get(fid); return [f.partner1, f.partner2].includes(root); });
+    assert.ok(mine.length >= 2, label);
+    assert.equal(new Set(mine.map(([, c]) => c)).size, mine.length, `${label}: у каждого брака свой цвет`);
+    assert.ok(mine.every(([, c]) => c >= 1 && c <= 4), label);
+    // у каждого брака с детьми — своя точка брака своим цветом
+    for (const [, c] of mine) assert.ok(L.marks.some((m) => m.color === c), `${label}: точка брака ${c}`);
+    // у родителей Ивана брак один — без цвета и без точки
+    if (at.has(ivan) && mode !== 'descendants' && root === ivan) assert.equal(famColor.get(idx.parentFamilies.get(ivan)[0]), undefined, label);
+    // супруги того, у кого несколько браков, стоят пошире
+    if (at.has(anna) && at.has(ivan)) assert.equal(Math.abs(at.get(anna).x - at.get(ivan).x), BOX.w + BOX.mgap, label);
+    if (mode === 'all') {
+      // Мария была замужем и за Петром: оба её брака — разного цвета
+      assert.notEqual(famColor.get(famOf(maria, ivan)), famColor.get([...idx.families.values()].find((f) => f.partner2 === maria && f.partner1 !== ivan).id));
+      check(idx, L, treeParts(idx).list[0]);
+    }
+    if (mode === 'kin') {
+      // брака Марии с Петром в родне Ивана нет: и точки под Марией нет
+      const m = at.get(maria);
+      assert.ok(!L.marks.some((k) => k.x === m.x + BOX.w / 2), label);
+    }
+  }
+  // ребёнок без записанной матери — тоже своим цветом, от точки под Иваном
+  const L = layoutTree(idx, ivan, { mode: 'hourglass', up: 1, down: 1 });
+  const iv = L.nodes.find((n) => n.id === ivan);
+  assert.ok(L.marks.some((m) => m.x === iv.x + BOX.w / 2 && m.y === iv.y + BOX.h), 'точка под Иваном — дети без записанной матери');
+  assert.ok(famOf(ivan, null));
+
+  // печать: цветом и на чёрно-белом листе — своим пунктиром
+  for (const theme of ['classic', 'bw']) {
+    const o = parsePrintOptions({ mode: 'all', root: ivan, theme });
+    const out = new PassThrough();
+    const chunks = [];
+    out.on('data', (c) => chunks.push(c));
+    const done = new Promise((r) => out.on('end', r));
+    renderPdf(out, data, o);
+    await done;
+    assert.ok(Buffer.concat(chunks).length > 1000, theme);
   }
 });
 

@@ -4,7 +4,7 @@
 // сколько людей и места, когда заходили; предел места и «Закрыть вход». Самих деревьев других семей они не видят.
 // Кто открыл ссылку — владелец новой пустой семьи; дальше он зовёт своих родных обычными приглашениями.
 import { q, core } from '../db.js';
-import { need, hash, newToken, startSession, chooseTenant, ALIVE } from '../auth.js';
+import { need, hash, newToken, startSession, chooseTenant, createInvite, ALIVE } from '../auth.js';
 import { config } from '../config.js';
 import { HttpError } from '../tree.js';
 import { checkRate, badLink } from '../limit.js';
@@ -12,6 +12,7 @@ import { USED, createTenant, gone, loadTenants, mainTenant, space, tenantById, t
 
 const DAYS = [1, 3, 7, 14];
 const LINK_DAYS = 7;
+const CARRY_DAYS = 1;
 const MB = 1024 * 1024;
 const text = (v, n) => String(v ?? '').trim().slice(0, n);
 const linkOf = (token) => `${config.publicUrl}/#/new/${token}`;
@@ -23,13 +24,14 @@ export async function tenantInfo(t) {
 }
 
 // В каких семьях вошёл этот телефон: по cookie входа каждой семьи, только живые входы.
-export async function myTenants(req) {
+// withUser — ещё и номер человека в каждой семье (для «Войти в другом месте»; телефону его не отдаём).
+export async function myTenants(req, { withUser = false } = {}) {
   const out = [];
   for (const [name, token] of Object.entries(req.cookies || {})) {
     const t = tenantOfCookie(name);
     if (!t || !token) continue;
     const [row] = await withTenant(t, () => q(
-      `select u.name, u.role, s.pending, (select value #>> '{}' from settings where key = 'title') as title
+      `select u.id, u.name, u.role, s.pending, (select value #>> '{}' from settings where key = 'title') as title
        from sessions s join users u on u.id = s.user_id where s.token_hash = $1 and not u.disabled and ${ALIVE}`,
       [hash(token)],
     )).catch(async (err) => {
@@ -38,7 +40,10 @@ export async function myTenants(req) {
       await loadTenants();
       return [];
     });
-    if (row) out.push({ id: t.id, main: t.main, title: row.title || t.title, name: row.name, role: row.role, pending: row.pending, closed: Boolean(t.closed_at), current: t.id === req.tenant.id });
+    if (row) {
+      out.push({ id: t.id, main: t.main, title: row.title || t.title, name: row.name, role: row.role, pending: row.pending, closed: Boolean(t.closed_at), current: t.id === req.tenant.id,
+        ...(withUser && { user_id: row.id }) });
+    }
   }
   // Главная — первой, дальше — по порядку создания.
   const order = tenants().map((t) => t.id);
@@ -82,6 +87,23 @@ export default async function tenantRoutes(app) {
     if (t.closed_at) throw new HttpError(403, 'Вход в это дерево закрыт');
     chooseTenant(reply, t);
     return { ok: true };
+  });
+
+  // Войти во все свои семьи в другом месте: в другом браузере, в приложении на экране «Домой» (у него на iPhone свои входы),
+  // на компьютере. Ссылки-приглашения одноразовые: открыл вторую не там, где первую, — и первая семья осталась там.
+  // Каждой семье этого телефона — обычная ссылка для нового телефона этого человека (invites.for_user) на сутки,
+  // общая ссылка — их ключи через точку. Кто правит дерево и придумал пароль, там введёт и пароль. Ждущий пароля вход не переносится.
+  app.post('/api/tenants/carry', async (req) => {
+    const mine = (await myTenants(req, { withUser: true })).filter((t) => !t.pending && !t.closed);
+    if (!mine.length) throw new HttpError(401, 'Нужно войти по ссылке-приглашению');
+    // Открытая сейчас — последней: там откроется она же.
+    mine.sort((a, b) => a.current - b.current);
+    const tokens = [];
+    for (const m of mine) {
+      const { token } = await withTenant(tenantById(m.id), () => createInvite({ role: m.role, label: m.name, createdBy: m.user_id, forUser: m.user_id, days: CARRY_DAYS }));
+      tokens.push(token);
+    }
+    return { url: `${config.publicUrl}/#/carry/${tokens.join('.')}`, count: tokens.length, days: CARRY_DAYS };
   });
 
   // Место семьи для её владельца: сколько занято и сколько можно (null — без предела).

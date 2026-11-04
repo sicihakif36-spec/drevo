@@ -9,6 +9,7 @@ import { askSheet } from './asks.js';
 import PasswordView from './views/PasswordView.vue';
 import Icon from './components/Icon.vue';
 import SideNav from './components/SideNav.vue';
+import LinkPaste from './components/LinkPaste.vue';
 import { wide } from './wide.js';
 import { addState, openAdd } from './components/addState.js';
 import { syncPush } from './push.js';
@@ -96,6 +97,12 @@ function added(id) {
           <p>Войти можно только по личной ссылке-приглашению. Попросите её у того, кто ведёт ваше семейное дерево, и откройте на этом телефоне или компьютере.</p>
           <p class="muted small">Ссылка срабатывает один раз. Если её уже открыли на другом устройстве, попросите новую. Дерево видят только приглашённые.</p>
         </div>
+        <div class="card" v-if="!store.offline">
+          <b>Ссылка открылась не здесь?</b>
+          <p class="small">Например, в браузере, а не в Древе на экране «Домой». Скопируйте её и вставьте сюда.
+            Если по ней вы уже вошли в другом месте, откройте Древо там: «Профиль → Войти в другом месте».</p>
+          <div style="margin-top:0.667rem"><LinkPaste /></div>
+        </div>
         <template v-if="others.length">
           <h2>Другие ваши семьи</h2>
           <div class="list">
@@ -151,6 +158,7 @@ function added(id) {
 .points .ico { flex: none; display: grid; place-items: center; width: 2.444rem; height: 2.444rem; border-radius: 0.778rem; background: var(--accent-soft); color: var(--accent-soft-text); }
 .points svg { width: 1.444rem; height: 1.444rem; }
 .welcome .card p { margin: 0.333rem 0 0; }
+.enter .card + .card { margin-top: 0.667rem; }
 @media (min-width: 64em) {
   .welcome { max-width: 66rem; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 3rem; align-items: center; min-height: 100vh; }
   .welcome h1 { font-size: 2.444rem; }

@@ -41,7 +41,10 @@ async function enter() {
     <div class="card">
       <p>Вас пригласили в закрытое семейное дерево. Здесь вся семья вместе записывает родных, даты и фотографии.</p>
       <label class="field"><span>Как вас зовут в семье?</span><input v-model="name" autocomplete="name" placeholder="Например: тётя Лена" /></label>
-      <p class="error" v-if="error">{{ error }}</p>
+      <template v-if="error">
+        <p class="error">{{ error }}</p>
+        <p class="small">Если вы уже входили по ней, но в другом браузере или в Древе на экране «Домой», откройте Древо там: «Профиль → Войти в другом месте».</p>
+      </template>
       <button class="primary block" :disabled="busy" @click="enter">{{ busy ? 'Вхожу…' : 'Войти' }}</button>
       <p class="muted small">Ссылка срабатывает один раз. После входа добавьте приложение на главный экран, чтобы открывать его как обычное.</p>
       <p v-if="before" class="muted small">Если вы уже пользуетесь Древом в другой семье, она останется — переключаться можно в «Профиле».</p>

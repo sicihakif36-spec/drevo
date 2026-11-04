@@ -35,21 +35,23 @@ const edgeBoxes = computed(() => props.layout.edges.map((e) => {
   const ys = e.points.map((p) => p[1]);
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }));
+// Линии разных браков одного человека — своим цветом (e.color 1–4), остальные — общим.
 const edgePaths = computed(() => {
   const pad = 200;
   const x0 = (-view.x - pad) / view.k;
   const y0 = (-view.y - pad) / view.k;
   const x1 = (size.w - view.x + pad) / view.k;
   const y1 = (size.h - view.y + pad) / view.k;
-  let solid = '';
+  const solid = {};
   let dashed = '';
   props.layout.edges.forEach((e, i) => {
     const b = edgeBoxes.value[i];
     if (b[2] < x0 || b[0] > x1 || b[3] < y0 || b[1] > y1) return;
     if (e.dashed) dashed += pathOf(e);
-    else solid += pathOf(e);
+    else solid[e.color || 0] = (solid[e.color || 0] || '') + pathOf(e);
   });
-  return { solid, dashed };
+  const marks = (props.layout.marks || []).filter((m) => m.x > x0 && m.x < x1 && m.y > y0 && m.y < y1);
+  return { solid, dashed, marks };
 });
 
 // Очень мелко и людей много — рамки тремя путями (мужчины, женщины, остальные): быстро даже на 4000 человек.
@@ -213,7 +215,9 @@ function fit(str, w, fs, bold) {
         <clipPath id="ph" clipPathUnits="objectBoundingBox"><rect width="1" height="1" rx=".18" /></clipPath>
       </defs>
       <g :transform="`translate(${view.x},${view.y}) scale(${view.k})`" :class="{ far: detail === 0 }">
-        <path v-if="edgePaths.solid" :d="edgePaths.solid" class="edge" />
+        <path v-for="(d, c) in edgePaths.solid" :key="'e' + c" :d="d" class="edge" :class="'m' + c" />
+        <!-- Точка брака: от неё линия к детям этого брака. -->
+        <circle v-for="(m, i) in edgePaths.marks" :key="'k' + i" :cx="m.x" :cy="m.y" r="7" class="mark" :class="'m' + m.color" />
         <path v-if="edgePaths.dashed" :d="edgePaths.dashed" class="edge dashed" />
         <template v-if="bulk">
           <path v-for="(d, sex) in bulkPaths" :key="'b' + sex" :d="d" class="box" :class="sex" />
@@ -249,6 +253,12 @@ function fit(str, w, fs, bold) {
 svg { display: block; }
 .edge { fill: none; stroke: var(--edge); stroke-width: 2.5; }
 .edge.dashed { stroke-dasharray: 7 6; }
+.edge.m1, .mark.m1 { stroke: var(--m1); }
+.edge.m2, .mark.m2 { stroke: var(--m2); }
+.edge.m3, .mark.m3 { stroke: var(--m3); }
+.edge.m4, .mark.m4 { stroke: var(--m4); }
+.mark { fill: var(--card); stroke-width: 4; }
+.far .mark { display: none; }
 /* Совсем мелко (всё большое дерево целиком): линии и рамки тонкие, но видны. */
 .far .edge, .far .box { vector-effect: non-scaling-stroke; stroke-width: 1.2; }
 .box { fill: var(--card); stroke: var(--field); stroke-width: 2.5; }

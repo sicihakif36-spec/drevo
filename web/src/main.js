@@ -3,6 +3,8 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import App from './App.vue';
 import './fonts.css';
 import './style.css';
+// Предложение браузера установить приходит сразу при запуске — ловим до того, как откроется «Главная» или «Профиль».
+import './install.js';
 import HomeView from './views/HomeView.vue';
 import TreeView from './views/TreeView.vue';
 import PersonView from './views/PersonView.vue';
@@ -35,6 +37,7 @@ import InterviewsView from './views/InterviewsView.vue';
 import InterviewFillView from './views/InterviewFillView.vue';
 import TenantsView from './views/TenantsView.vue';
 import NewFamilyView from './views/NewFamilyView.vue';
+import CarryView from './views/CarryView.vue';
 import HelpView from './views/HelpView.vue';
 import ArchiveView from './views/ArchiveView.vue';
 import { store } from './store.js';
@@ -84,6 +87,8 @@ const router = createRouter({
     { path: '/iv/:token', component: InterviewFillView, props: true, meta: { public: true } },
     // «Завести своё дерево» по ссылке от владельца главной семьи: новая семья на этом сервере.
     { path: '/new/:token', component: NewFamilyView, props: true, meta: { public: true } },
+    // «Войти в другом месте»: вход сразу во все семьи человека (в другом браузере, в приложении на экране «Домой»).
+    { path: '/carry/:tokens', component: CarryView, props: true, meta: { public: true } },
   ],
   scrollBehavior: (to, from) => (to.path === from.path ? false : { top: 0 }),
 });

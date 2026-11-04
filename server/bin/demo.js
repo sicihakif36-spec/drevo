@@ -70,6 +70,11 @@ const andrey = await P({ sex: 'M', surname: 'Новиков', given: 'Андре
 await F(ivan, agr, [petr, vas]);
 await F(nik, pel, [klav, tam]);
 const petrKlav = await F(petr, klav, [yuri, lyuda], '1945');
+// У Юрия и у Галины до их брака были другие браки и дети — в дереве у каждого брака свой цвет и своя точка.
+const nina = await P({ sex: 'F', surname: 'Соколова', given: 'Нина', patronymic: 'Ивановна', b: '1947', d: '2015' });
+const viktor = await P({ sex: 'M', surname: 'Зайцев', given: 'Виктор', patronymic: 'Павлович', b: '1945', d: '1990' });
+await F(yuri, nina, [await P({ sex: 'M', surname: 'Смирнов', given: 'Игорь', patronymic: 'Юрьевич', b: '1966', living: true })], '1965');
+await F(viktor, gal, [await P({ sex: 'F', surname: 'Зайцева', given: 'Светлана', patronymic: 'Викторовна', b: '1967', living: true })], '1966');
 await F(yuri, gal, [sergey, elena], '1970');
 await F(sergey, olga, [anna, dmitry], '1997');
 await F(andrey, anna, [misha], '2021');

@@ -14,6 +14,8 @@ import { openAdd } from '../components/addState.js';
 import FeedItem from '../components/FeedItem.vue';
 import Finding from '../components/Finding.vue';
 import Icon from '../components/Icon.vue';
+import InstallHint from '../components/InstallHint.vue';
+import { offerInstall, installLater } from '../install.js';
 
 // «Главная» — с неё открывается приложение: что требует вашего участия, ближайшие даты, коротко «Что нового»
 // и все разделы плитками по смыслу (sections.js). Каждому — только то, что ему можно.
@@ -90,6 +92,17 @@ const MON = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл
       <b>Придумайте пароль, чтобы править дерево.</b>
       <p class="small">Он нужен, только когда вы входите с нового телефона. Пока пароля нет, дерево можно только смотреть.</p>
       <router-link class="btn primary block" to="/password">Придумать пароль</router-link>
+    </div>
+
+    <!-- Древо открыто в браузере телефона — предложить поставить значок на экран. «Не сейчас» — на две недели. -->
+    <div v-if="!wide && offerInstall()" class="card install">
+      <b>Поставьте Древо на экран телефона</b>
+      <p class="small">Тогда оно будет открываться значком, как обычное приложение, и присылать уведомления.</p>
+      <InstallHint />
+      <div class="row more">
+        <router-link class="small" to="/help?s=install">Подробнее</router-link>
+        <button class="ghost" @click="installLater">Не сейчас</button>
+      </div>
     </div>
 
     <div v-if="store.tree && !persons.length" class="card">
@@ -237,6 +250,7 @@ const MON = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл
 .card p { margin: 0.333rem 0 0.667rem; }
 .warn { background: var(--warn-bg); color: var(--warn-text); border-color: transparent; }
 .find .x { min-height: 0; padding: 0.222rem 0.444rem; }
+.install .more { justify-content: space-between; margin-top: 0.444rem; }
 .banner.keep { display: grid; gap: 0.444rem; margin-top: 0.889rem; font-size: 1rem; }
 .keep .btn { white-space: nowrap; }
 .asked { border: 2px solid var(--accent); }
