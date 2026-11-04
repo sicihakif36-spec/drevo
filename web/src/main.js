@@ -3,6 +3,8 @@ import { createRouter, createWebHashHistory } from 'vue-router';
 import App from './App.vue';
 import './fonts.css';
 import './style.css';
+// Предложение браузера установить приходит сразу при запуске — ловим до того, как откроется «Главная» или «Профиль».
+import './install.js';
 import HomeView from './views/HomeView.vue';
 import TreeView from './views/TreeView.vue';
 import PersonView from './views/PersonView.vue';

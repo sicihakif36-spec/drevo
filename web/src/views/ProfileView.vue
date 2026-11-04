@@ -7,19 +7,17 @@ import { fullName } from '@shared/names.js';
 import { disablePush } from '../push.js';
 import { ask, askText } from '../components/ask.js';
 import LinkPaste from '../components/LinkPaste.vue';
+import InstallHint from '../components/InstallHint.vue';
+import { install } from '../install.js';
 
 // «Профиль» — только своё: имя, мои семьи, установка на телефон, уведомления, устройства и пароль, выход.
 // У владельца — ещё название дерева и место на сервере. Разделы дерева — на «Главной» (HomeView).
 const ROLE = { owner: 'владелец', editor: 'участник', relative: 'родственник: видит всё, не правит', viewer: 'гость (только просмотр)' };
 const title = ref(store.title);
-const installEvent = ref(null);
-const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 
 // Место на сервере для фото и записей — владельцу семьи, у которой есть предел.
 const space = ref(null);
 onMounted(async () => {
-  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent.value = e; });
   if (isOwner() && !store.tenant?.main) space.value = await api('GET', '/api/tenants/space').catch(() => null);
 });
 // Несколько семей на этом телефоне: «Мои семьи».
@@ -115,11 +113,10 @@ async function logout() {
       <LinkPaste />
     </div>
 
-    <div v-if="!standalone" class="card" style="margin-top:12px">
+    <div v-if="!install.standalone" class="card" style="margin-top:12px">
       <b>Установить на телефон</b>
-      <p class="small muted" v-if="isIos">В Safari нажмите «Поделиться» (квадрат со стрелкой), затем «На экран „Домой“».</p>
-      <p class="small muted" v-else-if="!installEvent">В меню браузера выберите «Установить приложение» или «Добавить на главный экран».</p>
-      <button v-else class="primary" @click="installEvent.prompt()">Установить</button>
+      <p v-if="install.installed" class="small muted">Древо уже стоит на экране — открывайте его значком.</p>
+      <InstallHint v-else />
     </div>
 
     <h2>Настройки</h2>
