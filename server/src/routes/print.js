@@ -30,6 +30,9 @@ export const THEMES = {
   modern: { font: 'regular', bold: 'bold', M: ['#e3f0ff', '#2f6fd6'], F: ['#ffe6ef', '#d63f78'], U: ['#eeeeee', '#777777'], line: '#555555', title: '#222222' },
   bw: { font: 'regular', bold: 'bold', M: ['#ffffff', '#000000'], F: ['#ffffff', '#000000'], U: ['#ffffff', '#000000'], line: '#000000', title: '#000000' },
 };
+// Браки одного человека (e.color, shared/layout.js): цветом, а на чёрно-белом листе — своим пунктиром.
+const MARRIAGE = ['#b3561c', '#2e7a4b', '#7a4aa8', '#1f6f8c'];
+const MARRIAGE_DASH = [null, [10, 4], [2, 3], [10, 3, 2, 3]];
 
 export function parsePrintOptions(qs) {
   const num = (v, d, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(Number(v)) && v !== '' && v !== undefined ? Number(v) : d));
@@ -53,13 +56,20 @@ export function parsePrintOptions(qs) {
 
 function drawTree(doc, idx, layout, o, theme) {
   const t = THEMES[theme];
-  doc.lineWidth(1.6).strokeColor(t.line);
+  const bw = theme === 'bw';
+  const colorOf = (c) => (c && !bw ? MARRIAGE[c - 1] : t.line);
+  doc.lineWidth(1.6);
   for (const e of layout.edges) {
     if (e.dashed) continue;
+    doc.save().strokeColor(colorOf(e.color));
+    const dash = bw && e.color && MARRIAGE_DASH[e.color - 1];
+    if (dash) doc.dash(dash);
     doc.moveTo(...e.points[0]);
     for (const p of e.points.slice(1)) doc.lineTo(...p);
-    doc.stroke();
+    doc.stroke().restore();
   }
+  // точка брака — кольцо, от него линия к детям
+  for (const m of layout.marks || []) doc.save().lineWidth(2.6).circle(m.x, m.y, 5.5).fillAndStroke('#ffffff', colorOf(m.color)).restore();
   for (const n of layout.nodes) {
     if (!n.id) continue;
     const p = idx.persons.get(n.id);

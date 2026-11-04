@@ -143,7 +143,8 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
         <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
           <rect v-for="(s, i) in sheets" :key="'s' + i" :x="s.x" :y="s.y" :width="s.w" :height="s.h" class="sheet-r" />
           <template v-if="layout">
-            <path v-for="(e, i) in layout.edges" :key="'e' + i" :d="e.points.map((p, j) => (j ? 'L' : 'M') + p[0] + ',' + p[1]).join('')" class="ln" />
+            <path v-for="(e, i) in layout.edges" :key="'e' + i" :d="e.points.map((p, j) => (j ? 'L' : 'M') + p[0] + ',' + p[1]).join('')" class="ln" :class="o.theme !== 'bw' && e.color ? 'm' + e.color : ''" />
+            <circle v-for="(m, i) in layout.marks || []" :key="'k' + i" :cx="m.x" :cy="m.y" r="6" class="mk" :class="o.theme !== 'bw' ? 'm' + m.color : ''" />
             <rect v-for="(n, i) in layout.nodes" :key="'n' + i" :x="n.x" :y="n.y" :width="BOX.w" :height="BOX.h" rx="10" :class="['nd', store.idx.persons.get(n.id)?.sex]" />
           </template>
           <g v-else class="fan">
@@ -268,6 +269,12 @@ const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n 
 .preview svg { width: 100%; height: 260px; display: block; background: var(--bg); border-radius: 8px; }
 .sheet-r { fill: #fff; stroke: #999; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .ln { fill: none; stroke: #8a7f70; stroke-width: 3; }
+/* браки одного человека — цветом, как на листе (server/src/routes/print.js) */
+.ln.m1, .mk.m1 { stroke: #b3561c; }
+.ln.m2, .mk.m2 { stroke: #2e7a4b; }
+.ln.m3, .mk.m3 { stroke: #7a4aa8; }
+.ln.m4, .mk.m4 { stroke: #1f6f8c; }
+.mk { fill: #fff; stroke: #8a7f70; stroke-width: 3; }
 .nd { fill: #eee; stroke: #888; stroke-width: 2; }
 .nd.M { fill: #e3ecf8; stroke: #5b7db1; }
 .nd.F { fill: #f8e3eb; stroke: #b15b7d; }

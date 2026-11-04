@@ -7,6 +7,8 @@
   --line: #ddd3c3;          /* разделители */
   --field: #8f8372;         /* рамка полей и чипов, не меньше 3 : 1 */
   --edge: #6f6557;          /* линии дерева */
+  /* Браки одного человека в дереве (shared/layout.js, MARRIAGE_COLORS): связка супругов, точка брака, линия к детям. */
+  --m1: #b3561c; --m2: #2e7a4b; --m3: #7a4aa8; --m4: #1f6f8c;
   --accent: #46682a;        /* главная кнопка */
   --on-accent: #ffffff;     /* текст на главной кнопке */
   --accent-text: #3c5a23;   /* ссылки, зелёный текст */
@@ -40,6 +42,7 @@
   :root {
     --bg: #1c1b18; --card: #272521; --text: #ece6dc; --muted: #b8ae9f;
     --line: #3a3630; --field: #8a8174; --edge: #9a907f;
+    --m1: #ef9a63; --m2: #7cc596; --m3: #bb9de3; --m4: #6dbcd6;
     --accent: #a7c97f; --on-accent: #1c1b18; --accent-text: #a7c97f;
     --accent-soft: #2f3a24; --accent-soft-text: #bcd89a;
     --male: #8fb1e4; --male-soft: #23303f; --female: #e28fb1; --female-soft: #3a2730;

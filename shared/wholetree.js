@@ -10,11 +10,11 @@
 // 4. Места по горизонтали: поддеревья сдвигаются вплотную по контурам (как в обычном родословном дереве),
 //    родители — над серединой своих детей; рамки не налезают друг на друга.
 // 5. Линии к детям — «гребёнкой» на своей высоте, чтобы гребёнки разных семей не сливались.
-import { BOX } from './layout.js';
+//    У кого несколько браков — супруги стоят пошире, у каждого брака свой цвет и точка брака между супругами.
+import { BOX, MARRIAGE_COLORS, TRACK, tracks } from './layout.js';
 import { parentsOf, childrenOf, spousesOf } from './names.js';
 
 const DUMMY = 12; // место под проходящую через ряд линию
-const TRACK = 11; // расстояние между гребёнками в одном промежутке
 
 // ---------- Связные части дерева ----------
 
@@ -108,6 +108,8 @@ function compute(idx, ids, start) {
       const f = idx.families.get(fid);
       const p = [f.partner1, f.partner2].filter((x) => x && inPart.has(x));
       if (!p.length) continue; // семья без родителей: детей связать не с кем
+      // от брака здесь только один супруг и ни одного ребёнка (родня по одной линии): показывать нечего
+      if (p.length === 1 && !f.children.some((c) => inPart.has(c))) continue;
       if (p.length === 2) up.set(find(p[0]), find(p[1]));
       fams.push({ f, partners: p });
     }
@@ -176,7 +178,9 @@ function compute(idx, ids, start) {
   // Семьи в рядах.
   const items = groups.map((gr, g) => {
     const it = { g, row: gen[g] - minGen, members: linearize(idx, gr), fams: gr.fams, up: [], down: [], kids: [], guests: [], x: 0 };
-    it.w = it.members.length * BOX.w + (it.members.length - 1) * BOX.hgap;
+    // несколько браков в семье ряда — супруги пошире: в промежутке точка брака
+    it.step = BOX.w + (it.members.length > 2 ? BOX.mgap : BOX.hgap);
+    it.w = it.members.length * it.step - (it.step - BOX.w);
     reindex(it);
     return it;
   });
@@ -333,6 +337,15 @@ function compute(idx, ids, start) {
   // 5. Линии. Промежуток между рядами: гребёнки семей на разной высоте.
   const nodes = [];
   const edges = [];
+  const marks = [];
+  // Несколько браков в семье ряда: у каждого брака свой цвет, слева направо.
+  const colorOf = new Map();
+  for (const it of items) {
+    if (it.fams.length < 2) continue;
+    [...it.fams].sort((p, q) => famPort(it, p).x - famPort(it, q).x || famPort(it, p).y - famPort(it, q).y)
+      .forEach((fam, i) => colorOf.set(fam, (i % MARRIAGE_COLORS) + 1));
+  }
+  const tint = (fam) => (colorOf.has(fam) ? { color: colorOf.get(fam) } : {});
   const buses = Array.from({ length: Math.max(0, R - 1) }, () => new Map());
   // Связь через несколько рядов идёт по свободному от рамок месту в промежуточных рядах.
   const spans = rows.map((row) => row.map((it) => [it.x - BOX.hgap / 2, it.x + it.w + BOX.hgap / 2]).sort((p, q) => p[0] - q[0]));
@@ -372,15 +385,8 @@ function compute(idx, ids, start) {
   const gapH = [];
   for (const bs of buses) {
     const list = [...bs.values()].map((b) => ({ ...b, lo: Math.min(b.x, ...b.kids.map((k) => k[2])), hi: Math.max(b.x, ...b.kids.map((k) => k[2])) }));
-    list.sort((p, q) => p.lo - q.lo);
-    const ends = [];
-    for (const b of list) {
-      let t = ends.findIndex((e) => e < b.lo - 8);
-      if (t < 0) { t = ends.length; ends.push(0); }
-      ends[t] = b.hi;
-      b.track = t;
-    }
-    const n = Math.max(1, ends.length);
+    const { of, n } = tracks(list);
+    list.forEach((b, i) => { b.track = of[i]; });
     gapH.push(Math.max(BOX.vgap, 44 + (n - 1) * TRACK));
     bs.list = list;
     bs.n = n;
@@ -391,17 +397,20 @@ function compute(idx, ids, start) {
   for (const row of rows) {
     for (const it of row) {
       const y = rowY[it.row];
-      it.members.forEach((id, i) => nodes.push({ id, x: it.x + i * (BOX.w + BOX.hgap), y }));
+      it.members.forEach((id, i) => nodes.push({ id, x: it.x + i * it.step, y }));
       for (const fam of it.fams) {
+        const c = tint(fam);
+        // точка брака — откуда линия к детям; у брака без детей — тоже, чтобы было видно, где какой
+        if (c.color) marks.push({ x: it.x + famPort(it, fam).x, y: y + famPort(it, fam).y, color: c.color });
         if (fam.partners.length < 2) continue;
         const [i, j] = fam.partners.map((id) => it.pos.get(id)).sort((p, q) => p - q);
-        const xi = it.x + i * (BOX.w + BOX.hgap);
-        const xj = it.x + j * (BOX.w + BOX.hgap);
-        if (j - i === 1) edges.push({ points: [[xi + BOX.w, y + BOX.h / 2], [xj, y + BOX.h / 2]], couple: true });
+        const xi = it.x + i * it.step;
+        const xj = it.x + j * it.step;
+        if (j - i === 1) edges.push({ points: [[xi + BOX.w, y + BOX.h / 2], [xj, y + BOX.h / 2]], couple: true, ...c });
         else {
           // супруги не рядом (третий брак): скобка под рамками
           const by = y + BOX.h + 8;
-          edges.push({ points: [[xi + BOX.w / 2, y + BOX.h], [xi + BOX.w / 2, by], [xj + BOX.w / 2, by], [xj + BOX.w / 2, y + BOX.h]], couple: true });
+          edges.push({ points: [[xi + BOX.w / 2, y + BOX.h], [xi + BOX.w / 2, by], [xj + BOX.w / 2, by], [xj + BOX.w / 2, y + BOX.h]], couple: true, ...c });
         }
       }
     }
@@ -411,11 +420,12 @@ function compute(idx, ids, start) {
     const first = y0 + (gapH[r] - (bs.n - 1) * TRACK) / 2;
     for (const b of bs.list) {
       const ty = first + b.track * TRACK;
-      edges.push({ points: [[b.x, rowY[r] + famPort(b.a, b.fam).y], [b.x, ty]] });
-      if (b.hi > b.lo) edges.push({ points: [[b.lo, ty], [b.hi, ty]] });
+      const c = tint(b.fam);
+      edges.push({ points: [[b.x, rowY[r] + famPort(b.a, b.fam).y], [b.x, ty]], ...c });
+      if (b.hi > b.lo) edges.push({ points: [[b.lo, ty], [b.hi, ty]], ...c });
       for (const [x, row, via] of b.kids) {
-        if (via === x) edges.push({ points: [[x, ty], [x, rowY[row]]] });
-        else edges.push({ points: [[via, ty], [via, rowY[row] - 12], [x, rowY[row] - 12], [x, rowY[row]]] });
+        if (via === x) edges.push({ points: [[x, ty], [x, rowY[row]]], ...c });
+        else edges.push({ points: [[via, ty], [via, rowY[row] - 12], [x, rowY[row] - 12], [x, rowY[row]]], ...c });
       }
     }
   });
@@ -425,7 +435,7 @@ function compute(idx, ids, start) {
     minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
     maxX = Math.max(maxX, n.x + BOX.w); maxY = Math.max(maxY, n.y + BOX.h);
   }
-  return { nodes, edges, bounds: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } };
+  return { nodes, edges, marks, bounds: { x: minX, y: minY, w: maxX - minX, h: maxY - minY } };
 }
 
 // Порядок людей в семье ряда: супруги рядом. Цепочка браков (вдова вышла снова) — по цепочке;
@@ -483,13 +493,13 @@ function reindex(it) {
   it.pos = new Map(it.members.map((id, i) => [id, i]));
   it.ports = new Map(it.fams.map((fam) => [fam, portOf(it, fam)]));
 }
-const memberX = (it, id) => it.pos.get(id) * (BOX.w + BOX.hgap) + BOX.w / 2;
+const memberX = (it, id) => it.pos.get(id) * it.step + BOX.w / 2;
 // Откуда идёт линия к детям семьи: середина между супругами (рядом), середина скобки, или низ одинокого родителя.
 function portOf(it, fam) {
   if (fam.partners.length < 2) return { x: memberX(it, fam.partners[0]), y: BOX.h };
   const [i, j] = fam.partners.map((id) => it.pos.get(id)).sort((p, q) => p - q);
-  if (j - i === 1) return { x: i * (BOX.w + BOX.hgap) + BOX.w + BOX.hgap / 2, y: BOX.h / 2 };
-  return { x: ((i + j) / 2) * (BOX.w + BOX.hgap) + BOX.w / 2, y: BOX.h + 8 };
+  if (j - i === 1) return { x: i * it.step + BOX.w + (it.step - BOX.w) / 2, y: BOX.h / 2 };
+  return { x: ((i + j) / 2) * it.step + BOX.w / 2, y: BOX.h + 8 };
 }
 const famPort = (it, fam) => it.ports.get(fam);
 
