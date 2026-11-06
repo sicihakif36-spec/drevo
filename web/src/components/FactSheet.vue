@@ -1,15 +1,17 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { canEdit, toast } from '../store.js';
+import { store, canEdit, toast } from '../store.js';
 import { api } from '../api.js';
 import { factInfo } from '../sources.js';
 import { fullName } from '@shared/names.js';
-import { KINDS, QUALITY, citeText, sourceTitle } from '@shared/sources.js';
+import { KINDS, QUALITY, citeText, docCite, pageText, partName, recordText, sourceTitle } from '@shared/sources.js';
 import SourceForm from './SourceForm.vue';
+import DocPicker from './DocPicker.vue';
 import { ask } from './ask.js';
 
-// Окно сведения снизу: достоверность и источники, «Указать источник» — выбрать записанный или создать новый по шаблону.
+// Окно сведения снизу: достоверность и источники. «Указать источник»: выбрать документ из записанных (метрическая книга
+// за год пишется один раз), потом его страницу — уже записанную или новую: лист, номер записи, скан. Или новый документ по шаблону.
 // fact — { subject, id, fact, label, value }; без него сначала выбирается сведение из facts.
 const props = defineProps({ fact: Object, facts: Array, data: Object, person: Object });
 const emit = defineEmits(['close', 'changed']);
@@ -17,23 +19,23 @@ const route = useRoute();
 const router = useRouter();
 
 const cur = ref(props.fact);
-const step = ref(props.fact ? 'main' : 'fact'); // fact, main, pick, kind, form, page
+const step = ref(props.fact ? 'main' : 'fact'); // fact, main, pick, pages, page, kind, form
 const kind = ref('');
-const chosen = ref(null); // уже записанный источник, к которому пишем уточнение
-const pageText = ref('');
-const all = ref(null); // все источники для выбора
-const query = ref('');
+const doc = ref(null); // выбранный документ со страницами
 const busy = ref('');
 const error = ref('');
 
 const info = computed(() => cur.value && factInfo(props.data, cur.value.subject, cur.value.id, cur.value.fact));
 const used = computed(() => new Set(info.value?.cites.map((c) => c.source_id)));
-const found = computed(() => {
-  const words = query.value.toLowerCase().split(/\s+/).filter(Boolean);
-  return (all.value || []).filter((s) => !used.value.has(s.id))
-    .filter((s) => words.every((w) => `${sourceTitle(s)} ${citeText(s)} ${s.note}`.toLowerCase().includes(w)));
-});
 const where = computed(() => ({ subject: cur.value.subject, subject_id: cur.value.id, fact: cur.value.fact }));
+// Страницы выбранного документа, ещё не указанные у этого сведения, — с людьми, к которым они уже привязаны.
+const pages = computed(() => (doc.value?.pages || []).filter((p) => !used.value.has(p.id)).map((p) => ({
+  ...p,
+  who: p.persons.map((id) => store.idx?.persons.get(id)).filter(Boolean).map((x) => fullName(x)).join(', '),
+})));
+
+// Документ — заголовком над полями новой страницы.
+const docHead = computed(() => doc.value && (({ kind, title, archive, fond, opis, delo }) => ({ kind, title, archive, fond, opis, delo }))(doc.value));
 
 function choose(f) {
   cur.value = f;
@@ -59,22 +61,34 @@ async function run(fn, done) {
 // Нажатие на выбранную отметку снимает её.
 const setQuality = (q) => run(() => api('PUT', '/api/quality', { ...where.value, quality: info.value.quality === q ? null : q }));
 
-async function startPick() {
+function startPick() {
   error.value = '';
-  query.value = '';
   step.value = 'pick';
-  all.value = await api('GET', '/api/sources').catch(() => []);
-  if (!all.value.length) step.value = 'kind';
 }
 
-async function create({ fields, page }) {
-  if (await run(() => api('POST', '/api/sources', { ...fields, cite: { ...where.value, page } }), 'Источник записан')) step.value = 'main';
-}
-
-async function attach() {
-  if (await run(() => api('POST', '/api/citations', { ...where.value, source_id: chosen.value.id, page: pageText.value }), 'Источник указан')) {
-    step.value = 'main';
+// Документ выбран: показываем его страницы; страниц нет — сразу новая.
+async function pickDoc(d) {
+  error.value = '';
+  doc.value = { ...d, pages: null };
+  step.value = 'pages';
+  try {
+    doc.value = await api('GET', `/api/documents/${d.id}`);
+  } catch (e) {
+    error.value = e.message;
   }
+  if (doc.value.pages && !pages.value.length) step.value = 'page';
+}
+
+async function create({ doc: d, page }) {
+  if (await run(() => api('POST', '/api/sources', { document: d, ...page, cite: where.value }), 'Источник записан')) step.value = 'main';
+}
+
+async function addPage({ page }) {
+  if (await run(() => api('POST', '/api/sources', { document_id: doc.value.id, ...page, cite: where.value }), 'Источник записан')) step.value = 'main';
+}
+
+async function attach(p) {
+  if (await run(() => api('POST', '/api/citations', { ...where.value, source_id: p.id }), 'Источник указан')) step.value = 'main';
 }
 
 async function detach(c) {
@@ -119,7 +133,7 @@ function openSource(id) {
         <div v-for="c in info.cites" :key="c.id" class="src">
           <button class="grow open" @click="openSource(c.source_id)">
             <span class="ttl">{{ sourceTitle(c.source) }}</span>
-            <span v-if="citeText(c.source)" class="small">{{ citeText(c.source) }}</span>
+            <span v-if="citeText(c.source) || c.source.record" class="small">{{ [citeText(c.source), recordText(c.source.record)].filter(Boolean).join(', ') }}</span>
             <span v-if="c.page" class="small muted">{{ c.page }}</span>
           </button>
           <button v-if="canEdit()" class="danger" :aria-label="`Убрать источник: ${sourceTitle(c.source)}`" @click="detach(c)">✕</button>
@@ -134,25 +148,42 @@ function openSource(id) {
     <template v-else-if="step === 'pick'">
       <h1>Указать источник</h1>
       <p class="muted">{{ cur.label }}{{ cur.value ? `: ${cur.value}` : '' }}</p>
-      <button class="primary block" @click="step = 'kind'">+ Новый источник</button>
-      <h2>Или выберите записанный</h2>
-      <input v-if="(all || []).length > 5" v-model="query" type="search" placeholder="Поиск по названию или архиву" />
-      <div v-if="all === null" class="muted">Загрузка…</div>
-      <div v-else class="list found">
-        <button v-for="s in found" :key="s.id" class="pick" @click="chosen = s; pageText = ''; step = 'page'">
-          <span class="grow">
-            <span class="ttl">{{ sourceTitle(s) }}</span>
-            <span class="muted small">{{ citeText(s) || KINDS[s.kind]?.label }}</span>
-          </span>
-          <span class="plus">+</span>
-        </button>
-        <div v-if="!found.length" class="muted">{{ query ? 'Ничего не нашлось.' : 'Других записанных источников нет.' }}</div>
-      </div>
+      <button class="primary block" @click="step = 'kind'">+ Новый документ</button>
+      <h2>Или выберите записанный документ</h2>
+      <p class="muted small">Метрическая книга, ревизская сказка, похозяйственная книга… Потом укажете лист и номер записи.</p>
+      <DocPicker @pick="pickDoc" @loaded="(n) => { if (!n) step = 'kind'; }" />
       <button class="block close" @click="step = 'main'">Назад</button>
     </template>
 
+    <template v-else-if="step === 'pages'">
+      <div class="muted small">{{ KINDS[doc.kind]?.label }}</div>
+      <h1>{{ sourceTitle(doc) }}</h1>
+      <p v-if="docCite(doc)" class="muted">{{ docCite(doc) }}</p>
+      <button class="primary block" @click="error = ''; step = 'page'">+ {{ doc.kind === 'legend' ? 'Новая запись' : 'Новая страница: лист, номер записи, скан' }}</button>
+      <h2>Или {{ partName(doc.kind).toLowerCase() }}, уже записанная</h2>
+      <div v-if="!doc.pages" class="muted">Загрузка…</div>
+      <div v-else class="list found">
+        <button v-for="p in pages" :key="p.id" class="pick" :disabled="Boolean(busy)" @click="attach(p)">
+          <span class="grow">
+            <span class="ttl">{{ pageText(p) || (p.url ? p.url.replace(/^https?:\/\//, '') : '') || p.note || 'Без листа и номера' }}</span>
+            <span v-if="p.who" class="muted small">{{ p.who }}</span>
+          </span>
+          <span class="plus">+</span>
+        </button>
+        <div v-if="!pages.length" class="muted">Других страниц нет.</div>
+      </div>
+      <p class="error" v-if="error">{{ error }}</p>
+      <button class="block close" @click="step = 'pick'">Назад</button>
+    </template>
+
+    <template v-else-if="step === 'page'">
+      <h1>{{ partName(doc.kind) }} документа</h1>
+      <p class="muted">Для: {{ cur.label.toLowerCase() }}{{ cur.value ? ` — ${cur.value}` : '' }}</p>
+      <SourceForm :source="docHead" :person-id="person.id" part :busy="busy" :error="error" @submit="addPage" @cancel="step = doc.pages?.length ? 'pages' : 'pick'" />
+    </template>
+
     <template v-else-if="step === 'kind'">
-      <h1>Новый источник</h1>
+      <h1>Новый документ</h1>
       <p class="muted">Что это за источник?</p>
       <div class="kinds">
         <button v-for="(k, key) in KINDS" :key="key" type="button" @click="kind = key; error = ''; step = 'form'">{{ k.label }}</button>
@@ -163,20 +194,7 @@ function openSource(id) {
     <template v-else-if="step === 'form'">
       <h1>{{ KINDS[kind].label }}</h1>
       <p class="muted">Для: {{ cur.label.toLowerCase() }}{{ cur.value ? ` — ${cur.value}` : '' }}</p>
-      <SourceForm :kind="kind" :person-id="person.id" page :busy="busy" :error="error" @submit="create" @cancel="step = 'kind'" />
-    </template>
-
-    <template v-else-if="step === 'page'">
-      <h1>{{ sourceTitle(chosen) }}</h1>
-      <p v-if="citeText(chosen)" class="muted">{{ citeText(chosen) }}</p>
-      <label class="field"><span>Уточнение: номер записи, страница (если есть)</span>
-        <input v-model="pageText" maxlength="300" placeholder="например: запись № 57" />
-      </label>
-      <p class="error" v-if="error">{{ error }}</p>
-      <div class="row">
-        <button class="grow" @click="step = 'pick'">Назад</button>
-        <button class="primary grow" :disabled="Boolean(busy)" @click="attach">{{ busy || 'Указать' }}</button>
-      </div>
+      <SourceForm :kind="kind" :person-id="person.id" doc part :busy="busy" :error="error" @submit="create" @cancel="step = 'kind'" />
     </template>
   </div>
 </template>

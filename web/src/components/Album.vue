@@ -2,8 +2,10 @@
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { loadTree, canEdit, toast, onLive } from '../store.js';
-import { api, upload, shrinkImage, photoUrl, thumbUrl } from '../api.js';
+import { api, uploadMedia, photoUrl, thumbUrl } from '../api.js';
+import { sourceTitle } from '@shared/sources.js';
 import MediaViewer from './MediaViewer.vue';
+import DocPicker from './DocPicker.vue';
 import { tell } from './ask.js';
 
 // Фото и документы человека. Просмотр открывается поверх карточки, адрес ?media=<id>: кнопка «Назад» на телефоне его закрывает.
@@ -15,10 +17,11 @@ const items = ref([]);
 const loaded = ref(false);
 const error = ref('');
 const picker = ref(false);
+const pickStep = ref('what'); // what — фото или документы; name — название документа для подписи сканов
+const caption = ref(''); // подпись ко всем выбранным сканам
 const photoInput = ref(null);
 const docInput = ref(null);
 const progress = ref(null); // { done, total, part } — сколько файлов ушло и доля текущего
-const MAX = 20 * 1024 * 1024; // как на сервере
 
 const photos = computed(() => items.value.filter((m) => m.kind === 'photo'));
 const docs = computed(() => items.value.filter((m) => m.kind === 'doc'));
@@ -53,7 +56,17 @@ function show(m) {
   pushed = true;
   router.push({ query: { ...route.query, media: m.id } });
 }
-defineExpose({ add: () => { picker.value = true; }, show: (id) => show({ id }) });
+function openPicker() {
+  pickStep.value = 'what';
+  caption.value = '';
+  picker.value = true;
+}
+defineExpose({ add: openPicker, show: (id) => show({ id }) });
+// Документ из списка — его название станет подписью сканов; файлы выбираются сразу.
+function pickDoc(d) {
+  caption.value = sourceTitle(d);
+  docInput.value.click();
+}
 function go(i) {
   return router.replace({ query: { ...route.query, media: ordered.value[i].id } });
 }
@@ -83,15 +96,9 @@ async function addFiles(e, kind) {
   const failed = [];
   for (const file of list) {
     try {
-      const pdf = file.type === 'application/pdf';
-      const img = pdf ? null : await shrinkImage(file, [[kind === 'doc' ? 2400 : 1280, 0.86], [400, 0.8]]);
-      if (!img && file.size > MAX) throw new Error('файл больше 20 МБ');
-      const fd = new FormData();
-      fd.append('kind', kind);
-      if (batch) fd.append('batch', batch);
-      fd.append('file', img ? img[0] : file, img ? file.name.replace(/\.[^.]*$/, '') + '.jpg' : file.name);
-      if (img) fd.append('thumb', img[1], 'thumb.jpg');
-      const m = await upload(`/api/persons/${props.person.id}/media`, fd, (x) => { progress.value.part = x; });
+      const m = await uploadMedia(props.person.id, file, {
+        kind, batch, caption: kind === 'doc' ? caption.value.trim() : '', onProgress: (x) => { progress.value.part = x; },
+      });
       batch = m.batch;
       items.value.push(m);
     } catch (err) {
@@ -141,7 +148,7 @@ async function addFiles(e, kind) {
       <div>Загружаю {{ Math.min(progress.done + 1, progress.total) }} из {{ progress.total }}…</div>
       <div class="bar"><div :style="{ width: `${percent}%` }" /></div>
     </div>
-    <button v-else-if="canEdit()" class="primary block" @click="picker = true">+ Добавить</button>
+    <button v-else-if="canEdit()" class="primary block" @click="openPicker">+ Добавить</button>
   </div>
 
   <input ref="photoInput" type="file" accept="image/*" multiple hidden @change="addFiles($event, 'photo')" />
@@ -149,13 +156,23 @@ async function addFiles(e, kind) {
 
   <template v-if="picker">
     <div class="sheet-backdrop" @click="picker = false" />
-    <div class="sheet">
+    <div v-if="pickStep === 'what'" class="sheet">
       <h1>Что добавить?</h1>
       <button class="primary block big" @click="photoInput.click()">Фотографии</button>
       <p class="muted small">Можно выбрать сразу несколько снимков или снять камерой.</p>
-      <button class="primary block big" @click="docInput.click()">Документы</button>
+      <button class="primary block big" @click="pickStep = 'name'">Документы</button>
       <p class="muted small">Свидетельства, письма, метрики: снимок или PDF. Снимки документов сохраняются крупнее, чтобы читался текст.</p>
       <button class="block" @click="picker = false">Отмена</button>
+    </div>
+    <div v-else class="sheet">
+      <h1>Из какого документа?</h1>
+      <p class="muted small">Название станет подписью у всех выбранных сканов — писать его каждый раз не нужно.</p>
+      <DocPicker @pick="pickDoc" />
+      <label class="field"><span>Или своя подпись</span>
+        <input v-model="caption" maxlength="500" placeholder="например: письмо деда с фронта, 1943" />
+      </label>
+      <button class="primary block big" @click="docInput.click()">{{ caption.trim() ? 'Выбрать сканы' : 'Выбрать сканы без подписи' }}</button>
+      <button class="block" @click="pickStep = 'what'">Назад</button>
     </div>
   </template>
 

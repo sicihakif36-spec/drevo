@@ -81,7 +81,7 @@ test('источник по шаблону: создание с привязко
   assert.equal(s.user_name, 'editor');
   assert.deepEqual(s.persons, [petr.id]);
   const created = await lastOp();
-  assert.deepEqual(created.entries.map((e) => `${e.entity}:${e.action}`), ['source:add', 'citation:add'], 'создание с привязкой — одно действие');
+  assert.deepEqual(created.entries.map((e) => `${e.entity}:${e.action}`), ['document:add', 'source:add', 'citation:add'], 'создание с привязкой — одно действие');
 
   let c = await card(owner, petr.id);
   assert.deepEqual(c.sources.map((x) => x.id), [s.id]);
@@ -263,12 +263,13 @@ test('лента и сводка: «добавила 1 источник», «у�
   const s = await json(editor, 'POST', '/api/sources', { kind: 'legend', title: 'Рассказ тёти Тамары', cite: { subject: 'person', subject_id: p.id, fact: 'birth_date' } });
   const feed = await json(owner, 'GET', '/api/feed');
   const op = feed.items.find((i) => i.kind === 'op' && i.entries.some((e) => e.entity === 'source'));
-  assert.deepEqual(op.entries.map((e) => e.entity), ['source', 'citation']);
-  assert.equal(op.entries[1].after.title, 'Рассказ тёти Тамары');
+  assert.deepEqual(op.entries.map((e) => e.entity), ['document', 'source', 'citation']);
+  assert.equal(op.entries[2].after.title, 'Рассказ тёти Тамары');
   const g = (await json(guest, 'GET', '/api/feed')).items.find((i) => i.op === op.op);
   assert.deepEqual(g.entries[0].after, { kind: 'legend' });
-  assert.deepEqual(g.entries[1].after, { kind: 'legend', subject: 'person', fact: 'birth_date' });
-  assert.equal(g.entries[1].entity_id, null);
+  assert.deepEqual(g.entries[1].after, { kind: 'legend' });
+  assert.deepEqual(g.entries[2].after, { kind: 'legend', subject: 'person', fact: 'birth_date' });
+  assert.equal(g.entries[2].entity_id, null);
 
   const entries = (ops) => ops.flatMap((o) => o.entries.map((e) => ({ ...e, op: o.op })));
   assert.equal(digestText('Елена', 'F', entries([op]), [op.op]), 'Елена добавила 1 источник');
@@ -282,4 +283,138 @@ test('лента и сводка: «добавила 1 источник», «у�
   const ops = (await json(owner, 'GET', '/api/changes')).slice(0, 5);
   assert.equal(digestText('Иван', 'M', entries(ops), ops.map((o) => o.op)),
     'Иван добавил 1 источник, указал 1 источник, отметил достоверность 2 сведений, удалил 1 источник');
+});
+
+test('документ и его страницы: выбор записанного документа, правка у всех страниц, объединение, удаление — всё отменяется', async () => {
+  const ivan = await add({ given: 'Иван', surname: 'Калинин', sex: 'M', living: false, birth_date: '1913' });
+  const anna = await add({ given: 'Анна', surname: 'Калинина', sex: 'F', living: false, birth_date: '1913' });
+  const book = { kind: 'metric', title: 'Метрическая книга Нижнеуфалейского завода, 1913 г.', archive: 'ГАЧО', fond: '226', opis: '1', delo: '45' };
+
+  // Новый документ вместе с первой страницей — одно действие.
+  const p1 = await json(editor, 'POST', '/api/sources', { document: book, sheet: '12', verso: true, record: '57',
+    cite: { subject: 'person', subject_id: ivan.id, fact: 'birth_date' } });
+  assert.equal(p1.title, book.title);
+  assert.equal(p1.record, '57');
+  assert.equal(citeText(p1), 'ГАЧО, ф. 226, оп. 1, д. 45, л. 12 об.');
+  const docId = p1.document_id;
+  assert.deepEqual((await lastOp()).entries.map((e) => `${e.entity}:${e.action}`), ['document:add', 'source:add', 'citation:add']);
+
+  // Вторая страница того же документа — без названия и шифра.
+  const p2 = await json(editor, 'POST', '/api/sources', { document_id: docId, sheet: '40', record: '112',
+    cite: { subject: 'person', subject_id: anna.id, fact: 'birth_date' } });
+  assert.equal(p2.title, book.title);
+  assert.equal(citeText(p2), 'ГАЧО, ф. 226, оп. 1, д. 45, л. 40');
+  assert.deepEqual((await lastOp()).entries.map((e) => e.entity), ['source', 'citation']);
+  // Без выбора документа, с тем же названием и шифром — тот же документ.
+  const p3 = await json(editor, 'POST', '/api/sources', { ...book, title: 'метрическая книга нижнеуфалейского завода, 1913 г', sheet: '41' });
+  assert.equal(p3.document_id, docId);
+
+  let docs = await json(editor, 'GET', '/api/documents');
+  assert.equal(docs.filter((d) => d.title === book.title).length, 1);
+  assert.equal(docs.find((d) => d.id === docId).pages, 3);
+  let full = await json(editor, 'GET', `/api/documents/${docId}`);
+  assert.deepEqual(full.pages.map((p) => p.sheet), ['12', '40', '41'], 'по порядку листов');
+  assert.equal(full.citations.length, 2);
+  assert.equal((await call(guest, 'GET', '/api/documents')).statusCode, 403);
+  assert.equal((await call(editor, 'POST', '/api/sources', { document_id: ivan.id, sheet: '1' })).statusCode, 404);
+
+  // Правка документа — у всех страниц; откат.
+  await json(editor, 'PATCH', `/api/documents/${docId}`, { delo: '46' });
+  assert.equal(citeText((await card(owner, anna.id)).sources[0]), 'ГАЧО, ф. 226, оп. 1, д. 46, л. 40');
+  assert.equal(citeText((await card(owner, ivan.id)).sources[0]), 'ГАЧО, ф. 226, оп. 1, д. 46, л. 12 об.');
+  const upd = await lastOp();
+  assert.deepEqual(upd.entries[0].persons, [ivan.id, anna.id].sort());
+  await revert(upd);
+  assert.equal(citeText((await card(owner, anna.id)).sources[0]), 'ГАЧО, ф. 226, оп. 1, д. 45, л. 40');
+
+  // Двойник документа: объединение переносит страницы, откат возвращает как было.
+  const twin = await json(editor, 'POST', '/api/sources', { document: { kind: 'metric', title: 'Метрич. книга Нижнеуфалейского з-да 1913' },
+    sheet: '77', cite: { subject: 'person', subject_id: anna.id, fact: 'birth_place' } });
+  const merge = await json(owner, 'POST', `/api/documents/${docId}/merge`, { from: twin.document_id });
+  assert.equal((await json(owner, 'GET', `/api/sources/${twin.id}`)).document_id, docId);
+  assert.equal((await call(owner, 'GET', `/api/documents/${twin.document_id}`)).statusCode, 404);
+  assert.equal((await json(editor, 'GET', `/api/documents/${docId}`)).pages.length, 4);
+  assert.equal((await call(owner, 'POST', `/api/documents/${docId}/merge`, { from: docId })).statusCode, 400);
+  await revert({ id: merge.changeId });
+  assert.equal((await json(owner, 'GET', `/api/sources/${twin.id}`)).document_id, twin.document_id);
+  assert.equal((await json(editor, 'GET', `/api/documents/${docId}`)).pages.length, 3);
+
+  // Удаление документа убирает все его страницы; откат возвращает их с привязками.
+  const del = await json(owner, 'DELETE', `/api/documents/${docId}`);
+  assert.deepEqual((await card(owner, ivan.id)).sources, []);
+  assert.deepEqual((await card(owner, anna.id)).sources.map((s) => s.id), [twin.id]);
+  assert.ok(!(await json(editor, 'GET', '/api/documents')).some((d) => d.id === docId));
+  await revert({ id: del.changeId });
+  assert.equal((await card(owner, ivan.id)).sources[0].id, p1.id);
+  assert.equal((await json(editor, 'GET', `/api/documents/${docId}`)).pages.length, 3);
+
+  // Последнюю страницу удалили, потом документ; возврат страницы возвращает и документ.
+  await json(owner, 'DELETE', `/api/sources/${twin.id}`);
+  const lone = await json(owner, 'DELETE', `/api/documents/${twin.document_id}`);
+  const back = await json(owner, 'GET', '/api/changes');
+  await revert(back.find((o) => o.entries.some((e) => e.entity === 'source' && e.action === 'delete' && e.entity_id === twin.id)));
+  assert.equal((await json(owner, 'GET', `/api/sources/${twin.id}`)).document_id, twin.document_id);
+  assert.ok(lone.changeId);
+
+  // Гость: документ виден по страницам, которые ему можно (как у источников: страница без привязок — не видна).
+  assert.deepEqual((await json(guest, 'GET', `/api/documents/${docId}`)).pages.map((p) => p.id), [p1.id, p2.id]);
+  const kid = await add({ given: 'Правнук', surname: 'Калинин', sex: 'M', birth_date: '2001' });
+  await json(owner, 'POST', '/api/citations', { source_id: p2.id, subject: 'person', subject_id: kid.id, fact: 'birth_date' });
+  assert.deepEqual((await json(guest, 'GET', `/api/documents/${docId}`)).pages.map((p) => p.id), [p1.id]);
+  for (const [method, url, body] of [['POST', '/api/documents', book], ['PATCH', `/api/documents/${docId}`, { title: 'x' }],
+    ['DELETE', `/api/documents/${docId}`], ['POST', `/api/documents/${docId}/merge`, { from: twin.document_id }]]) {
+    assert.equal((await call(guest, method, url, body)).statusCode, 403, `${method} ${url}`);
+  }
+});
+
+test('обновление: прежние источники-страницы собираются в документы', async () => {
+  const { peel, group, default: run } = await import('../migrations/023_documents.js');
+  assert.deepEqual(
+    (({ title, sheet, verso, record }) => ({ title, sheet, verso, record }))(peel({ title: 'Метрическая книга Нижнеуфалейского завода, 1913 г., л. 34 об., запись № 57' })),
+    { title: 'Метрическая книга Нижнеуфалейского завода, 1913 г.', sheet: '34', verso: true, record: '57' });
+  assert.equal(peel({ title: 'Ревизская сказка д. Горки, 1858' }).title, 'Ревизская сказка д. Горки, 1858', '«д. Горки» — деревня, не дело');
+  assert.equal(peel({ title: 'Книга, л. 5', sheet: '6' }).title, 'Книга, л. 5', 'лист уже записан другой — название не трогаем');
+  assert.equal(group([{ kind: 'legend', title: '' }, { kind: 'legend', title: '' }]).length, 2, 'без названия и шифра — каждый сам по себе');
+
+  // Схема до разделения: миграции по 022, источники — старого вида.
+  const schema = 'old_sources';
+  const client = await pool.connect();
+  try {
+    await client.query(`drop schema if exists ${schema} cascade; create schema ${schema}; set search_path to ${schema}`);
+    const fs = await import('node:fs/promises');
+    const dir = new URL('../migrations/', import.meta.url);
+    for (const f of (await fs.readdir(dir)).filter((x) => /^0(0\d|1\d|2[0-2])_.*\.sql$/.test(x)).sort()) {
+      await client.query(await fs.readFile(new URL(f, dir), 'utf8'));
+    }
+    const ins = async (x, at) => (await client.query(
+      `insert into sources (kind, title, archive, fond, opis, delo, sheet, verso, note, created_at, deleted_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
+      [x.kind || 'metric', x.title || '', x.archive || '', x.fond || '', x.opis || '', x.delo || '', x.sheet || '', Boolean(x.verso), x.note || '',
+        `2026-01-0${at}`, x.deleted_at || null])).rows[0].id;
+    const T = 'Метрическая книга Нижнеуфалейского завода, 1913 г.';
+    const a = await ins({ title: T, archive: 'ОГАЧО', fond: '226', opis: '1', delo: '45', sheet: '12', note: 'Иван' }, 1);
+    const b = await ins({ title: `${T}, л. 40`, note: 'Анна' }, 2); // шифр не дописан, лист — в названии
+    const c = await ins({ title: '«Метрическая  книга нижнеуфалейского завода, 1913 г»', archive: 'ОГАЧО', delo: '45', sheet: '41 об' }, 3);
+    const d = await ins({ title: T, archive: 'ОГАЧО', delo: '99', sheet: '1' }, 4); // другое дело — другой документ
+    const e = await ins({ kind: 'legend', title: 'Со слов бабушки' }, 5);
+    const f = await ins({ title: 'Удалённая книга', deleted_at: '2026-02-01' }, 6);
+    await client.query("insert into citations (source_id, subject, subject_id, fact, page) values ($1, 'person', gen_random_uuid(), 'birth_date', 'запись № 3')", [b]);
+    await run(client);
+    const rows = (await client.query(`select s.id, s.document_id, s.sheet, s.record, s.note, d.title, d.archive, d.fond, d.delo, d.deleted_at
+      from sources s join documents d on d.id = s.document_id`)).rows;
+    const by = new Map(rows.map((r) => [r.id, r]));
+    assert.equal(by.get(a).document_id, by.get(b).document_id);
+    assert.equal(by.get(a).document_id, by.get(c).document_id);
+    assert.notEqual(by.get(a).document_id, by.get(d).document_id);
+    assert.deepEqual([by.get(b).title, by.get(b).fond, by.get(b).delo, by.get(b).sheet, by.get(b).note], [T, '226', '45', '40', 'Анна']);
+    assert.equal(by.get(c).sheet, '41 об');
+    assert.equal(by.get(e).title, 'Со слов бабушки');
+    assert.ok(by.get(f).deleted_at, 'документ из одних удалённых страниц — удалён');
+    assert.equal((await client.query('select count(*)::int as n from documents')).rows[0].n, 4);
+    assert.equal((await client.query('select page from citations')).rows[0].page, 'запись № 3', 'уточнения на месте');
+    assert.ok(!(await client.query("select 1 from information_schema.columns where table_schema = $1 and table_name = 'sources' and column_name = 'title'", [schema])).rows.length);
+  } finally {
+    await client.query(`drop schema if exists ${schema} cascade; set search_path to public`);
+    client.release();
+  }
 });

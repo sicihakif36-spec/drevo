@@ -2,7 +2,7 @@ import { need } from '../auth.js';
 import { loadTreeData } from './print.js';
 import { sourceData } from './sources.js';
 import { eventData } from './timeline.js';
-import { citeText, sourceTitle, QUALITY, KINDS } from '../../../shared/sources.js';
+import { citeText, sourceTitle, recordText, QUALITY, KINDS } from '../../../shared/sources.js';
 import { EVENT_KINDS } from '../../../shared/events.js';
 import { parsePeriod, isOldStyle, withOldStyle, altName, altPerson } from '../../../shared/names.js';
 import { placeKey } from '../../../shared/places.js';
@@ -205,7 +205,7 @@ export function toGedcom(data) {
   for (const s of data.sources || []) {
     L.push(`0 ${sids.get(s.id)} SOUR`);
     line(1, 'TITL', sourceTitle(s));
-    line(1, 'ABBR', citeText(s));
+    line(1, 'ABBR', [citeText(s), /^\d/.test(s.record) ? recordText(s.record) : ''].filter(Boolean).join(', '));
     line(1, '_TYPE', KINDS[s.kind]?.label);
     const text = [s.url, s.note].filter(Boolean).join('\n');
     if (text) note(1, text);

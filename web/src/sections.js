@@ -23,6 +23,7 @@ export const sections = computed(() => {
     ] },
     { title: 'Уточнить дерево', tiles: [
       canEdit() && { to: '/checks', icon: 'check', title: 'Проверка дерева', hint: findings.value.length ? `вопросов к данным: ${findings.value.length}` : 'ошибки в датах, двойники', count: findings.value.length },
+      canEdit() && { to: '/documents', icon: 'book', title: 'Документы', hint: 'метрические книги, архивные дела' },
       canEdit() && { to: '/research', icon: 'search', title: 'Исследование', hint: 'поиск предков в архивах' },
       canEdit() && { to: '/names', icon: 'pen', title: 'Написание имён', hint: 'татарское и русское' },
       canTalk() && { to: '/changes', icon: 'history', title: 'Последние правки', hint: 'кто что изменил, отменить' },

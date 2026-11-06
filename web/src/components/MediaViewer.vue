@@ -4,6 +4,8 @@ import { store, loadTree, canEdit, toast } from '../store.js';
 import { api, photoUrl } from '../api.js';
 import { fullName, lifespan, personHas } from '@shared/names.js';
 import { ask } from './ask.js';
+import { sourceTitle } from '@shared/sources.js';
+import DocPicker from './DocPicker.vue';
 
 // Просмотр во весь экран: листание пальцем влево-вправо, увеличение щипком или нажатием, подпись и кто на фото.
 const props = defineProps({ items: Array, index: Number, person: Object });
@@ -121,9 +123,11 @@ async function act(fn, done) {
 
 // Подпись и дата.
 const editing = ref(false);
+const naming = ref(false); // выбор названия документа для подписи
 const form = ref({ caption: '', date: '' });
 function startEdit() {
   form.value = { caption: m.value.caption, date: m.value.date };
+  naming.value = false;
   editing.value = true;
 }
 const saveEdit = () => act(async () => {
@@ -196,6 +200,10 @@ function closeTags() {
     <div class="info">
       <form v-if="editing" @submit.prevent="saveEdit">
         <label class="field"><span>Подпись</span><textarea v-model="form.caption" maxlength="500" placeholder="Кто, где, по какому случаю" /></label>
+        <template v-if="m.kind === 'doc'">
+          <DocPicker v-if="naming" @pick="(d) => { form.caption = sourceTitle(d); naming = false; }" />
+          <button v-else type="button" class="block" @click="naming = true">Подписать названием документа</button>
+        </template>
         <label class="field"><span>Дата</span><input v-model="form.date" maxlength="100" placeholder="например: 1952, около 1950, лето 1961" /></label>
         <div class="row">
           <button type="button" class="grow" @click="editing = false">Отмена</button>

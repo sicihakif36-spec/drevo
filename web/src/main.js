@@ -19,6 +19,8 @@ import FeedView from './views/FeedView.vue';
 import NotifyView from './views/NotifyView.vue';
 import PlaceView from './views/PlaceView.vue';
 import PlacesView from './views/PlacesView.vue';
+import DocumentsView from './views/DocumentsView.vue';
+import DocumentView from './views/DocumentView.vue';
 import SurveysView from './views/SurveysView.vue';
 import SurveyView from './views/SurveyView.vue';
 import SurveyFillView from './views/SurveyFillView.vue';
@@ -63,6 +65,8 @@ const router = createRouter({
     { path: '/notify', component: NotifyView },
     { path: '/place', component: PlaceView },
     { path: '/places', component: PlacesView },
+    { path: '/documents', component: DocumentsView },
+    { path: '/documents/:id', component: DocumentView, props: true },
     { path: '/surveys', component: SurveysView },
     { path: '/surveys/:id', component: SurveyView, props: true },
     { path: '/import', component: ImportView },

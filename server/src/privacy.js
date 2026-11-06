@@ -62,7 +62,7 @@ export function trimEntry(e, hidden = new Set()) {
   if (e.entity === 'import') return both((x) => pick(x, ['file', 'persons', 'matched', 'families', 'events', 'sources']));
   // Интервью, сохранённое в истории: только сколько историй и фото — без даты и имени.
   if (e.entity === 'interview') return { ...both((x) => pick(x, ['stories', 'photos'])), entity_id: null };
-  if (e.entity === 'source') return { ...both((x) => pick(x, ['kind'])), entity_id: null };
+  if (e.entity === 'source' || e.entity === 'document') return { ...both((x) => pick(x, ['kind'])), entity_id: null };
   if (e.entity === 'citation') return { ...both((x) => pick(x, ['kind', 'subject', 'fact'])), entity_id: null };
   if (e.entity === 'quality') return { ...both((x) => x && { ...pick(x, ['subject', 'fact']), marked: Boolean(x.quality) }), entity_id: null };
   // События: без описаний, мест, дат и названий — только вид, участник и какие поля правили; у события с живым — и без вида.
