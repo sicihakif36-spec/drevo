@@ -60,3 +60,19 @@ export async function shrinkImage(file, sizes) {
   img.close();
   return out.every(Boolean) ? out : null;
 }
+
+// Один файл в альбом человека: снимок уменьшается на телефоне (скан документа — крупнее, чтобы читался текст),
+// PDF уходит как есть. caption — подпись (название документа), batch — продолжение того же выбора файлов.
+export const MAX_FILE = 20 * 1024 * 1024; // как на сервере
+export async function uploadMedia(personId, file, { kind = 'doc', caption = '', batch = '', onProgress } = {}) {
+  const pdf = file.type === 'application/pdf';
+  const img = pdf ? null : await shrinkImage(file, [[kind === 'doc' ? 2400 : 1280, 0.86], [400, 0.8]]);
+  if (!img && file.size > MAX_FILE) throw new Error('файл больше 20 МБ');
+  const fd = new FormData();
+  fd.append('kind', kind);
+  if (batch) fd.append('batch', batch);
+  if (caption) fd.append('caption', caption);
+  fd.append('file', img ? img[0] : file, img ? file.name.replace(/\.[^.]*$/, '') + '.jpg' : file.name);
+  if (img) fd.append('thumb', img[1], 'thumb.jpg');
+  return upload(`/api/persons/${personId}/media`, fd, onProgress);
+}

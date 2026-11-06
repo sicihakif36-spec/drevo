@@ -173,9 +173,11 @@ function eventLine(e, name) {
 // Гостю названия не приходят — тогда вид источника: «источник (Ревизская сказка)», а у достоверности — без самой отметки.
 const SOURCE_FIELD = {
   kind: 'вид', title: 'название', archive: 'архив', fond: 'фонд', opis: 'опись', delo: 'дело', sheet: 'лист', verso: 'оборот',
-  url: 'ссылка', media_id: 'скан', note: 'заметка',
+  record: 'номер записи', url: 'ссылка', media_id: 'скан', note: 'заметка', document_id: 'документ',
 };
-const sourceName = (x) => (x?.title ? `источник «${x.title}»` : KINDS[x?.kind] ? `источник (${KINDS[x.kind].label})` : 'источник');
+// Страница — с листом и номером записи: «источник «Метрическая книга…, л. 34, запись № 57»».
+const sourceName = (x) => (x?.title ? `источник «${x.title}${x.part ? `, ${x.part}` : ''}»` : KINDS[x?.kind] ? `источник (${KINDS[x.kind].label})` : 'источник');
+const docName = (x) => (x?.title ? `документ «${x.title}»` : KINDS[x?.kind] ? `документ (${KINDS[x.kind].label})` : 'документ');
 // « у Петра Ивановича — дата рождения».
 const factOf = (e, name) => {
   const x = e.after || e.before || {};
@@ -186,8 +188,22 @@ function sourceLines(entries, name) {
   // Новый источник сразу привязан к сведению — одной строкой.
   const added = entries.filter((e) => e.entity === 'source' && e.action === 'add');
   const merged = added.length === 1 ? entries.filter((e) => e.entity === 'citation' && e.action === 'add') : [];
+  // Документ, записанный вместе со страницей, удалённый или объединённый вместе со страницами, — часть их строк.
+  const withPages = entries.some((e) => e.entity === 'source');
+  const moved = entries.filter((e) => e.entity === 'source' && e.action === 'update' && e.before && 'document_id' in e.before);
   for (const e of entries) {
     const x = e.after || e.before || {};
+    if (e.entity === 'document') {
+      if (moved.length && e.action === 'delete') lines.push(`объединены документы: ${docName(x)} — к ${docName(moved[0].after)}`);
+      else if (e.action === 'update') {
+        const fields = Object.keys(e.before || {}).map((k) => SOURCE_FIELD[k] || k).join(', ');
+        lines.push(`исправлен ${docName(x)}${fields ? `: ${fields}` : ''}`);
+      } else if (!withPages || e.action === 'delete') {
+        lines.push(`${{ add: 'новый', delete: 'удалён', restore: 'возвращён' }[e.action] || 'изменён'} ${docName(x)}`);
+      }
+      continue;
+    }
+    if (moved.includes(e)) continue;
     if (e.entity === 'quality') {
       const q = QUALITY[e.after?.quality];
       const what = q ? `отмечено «${q.label.toLowerCase()}»` : e.after?.marked ? 'отмечена достоверность' : 'убрана отметка достоверности';
@@ -305,7 +321,7 @@ export function opLines(op, name) {
   const withFiles = op.entries.some((e) => e.entity === 'media' && ['add', 'delete', 'restore'].includes(e.action));
   const lines = [
     ...mediaLines(op.entries.filter((e) => e.entity === 'media'), name),
-    ...sourceLines(op.entries.filter((e) => ['source', 'citation', 'quality'].includes(e.entity)), name),
+    ...sourceLines(op.entries.filter((e) => ['document', 'source', 'citation', 'quality'].includes(e.entity)), name),
     ...op.entries.map((e) => {
       if (e.entity === 'person') return e.action === 'photo' && withFiles ? null : personLine(e, name);
       if (e.entity === 'story') return storyLine(e, name);
@@ -324,7 +340,8 @@ export const moreText = (n) => `Ещё ${count(n, 'изменение', 'изм�
 // У истории — только заголовок и дата: текст длинный, а запись голоса словами не покажешь. У источника — без скана и оборота.
 // У события — без вида и описания.
 const WAS = {
-  story: ['title', 'date'], place: ['title', 'now'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'url'], event: ['date', 'place', 'title', 'unit', 'rank'],
+  story: ['title', 'date'], place: ['title', 'now'], source: ['title', 'archive', 'fond', 'opis', 'delo', 'sheet', 'record', 'url'],
+  document: ['title', 'archive', 'fond', 'opis', 'delo'], event: ['date', 'place', 'title', 'unit', 'rank'],
   research: ['title'], research_note: ['place', 'ref', 'url'],
 };
 export function opWas(op) {

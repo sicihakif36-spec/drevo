@@ -7,8 +7,10 @@ import {
 } from './tree.js';
 import { MEDIA_FIELDS, deleteMedia, restoreMedia, tag, untag } from './album.js';
 import { STORY_FIELDS, deleteStory, restoreStory, updateStory, linkPerson, unlinkPerson } from './stories.js';
-import { SOURCE_FIELDS } from '../../shared/sources.js';
-import { deleteSource, restoreSource, updateSource, cite, uncite, updateCitation, setQuality } from './sources.js';
+import { SOURCE_FIELDS, DOC_FIELDS } from '../../shared/sources.js';
+import {
+  deleteSource, restoreSource, updateSource, cite, uncite, updateCitation, setQuality, deleteDocument, restoreDocument, updateDocument,
+} from './sources.js';
 import { EVENT_FIELDS } from '../../shared/events.js';
 import { deleteEvent, restoreEvent, updateEvent, addParticipant, removeParticipant } from './timeline.js';
 import { PLACE_FIELDS } from '../../shared/places.js';
@@ -253,7 +255,34 @@ async function undoSource(db, userId, e) {
     case 'update': {
       if (s.deleted_at) throw new HttpError(409, SOURCE_GONE);
       const before = e.before || {};
+      // Правки до разделения на документ и страницы: название и шифр дела теперь у документа.
+      const old = DOC_FIELDS.filter((c) => c !== 'note' && c in before);
+      const doc = old.length ? await updateDocument(db, userId, s.document_id, pick(before, old)) : null;
       const id = await updateSource(db, userId, s.id, pick(before, Object.keys(before).filter((c) => SOURCE_FIELDS.includes(c))));
+      if (!id && !doc) throw new HttpError(409, 'Здесь уже всё как было до этой правки');
+      return id || doc;
+    }
+  }
+  throw new HttpError(400, 'Эту правку нельзя отменить автоматически');
+}
+
+// Документ: удаляется и возвращается вместе со страницами (они в том же действии — откатываются своими записями).
+async function undoDocument(db, userId, e) {
+  const d = (await db.q('select * from documents where id = $1 for update', [e.entity_id]))[0];
+  if (!d) throw new HttpError(404, 'Документ не найден');
+  switch (e.action) {
+    case 'add':
+    case 'restore':
+      if (d.deleted_at) throw new HttpError(409, 'Этот документ уже удалён');
+      // Страницы того же действия к этому времени уже убраны; оставшиеся добавлены позже.
+      if ((await db.q('select 1 from sources where document_id = $1 and deleted_at is null limit 1', [d.id]))[0]) throw new HttpError(409, LATER);
+      return deleteDocument(db, userId, d.id);
+    case 'delete':
+      return restoreDocument(db, userId, d.id);
+    case 'update': {
+      if (d.deleted_at) throw new HttpError(409, 'Этот документ удалён. Сначала верните его.');
+      const before = e.before || {};
+      const id = await updateDocument(db, userId, d.id, pick(before, Object.keys(before).filter((c) => DOC_FIELDS.includes(c))));
       if (!id) throw new HttpError(409, 'Здесь уже всё как было до этой правки');
       return id;
     }
@@ -355,7 +384,7 @@ export async function revertOp(db, userId, changeId, by = null) {
   for (const e of entries) {
     if (e.entity === 'family') families.push(e.entity_id);
     const undo = {
-      person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory, source: undoSource, citation: undoCitation, quality: undoQuality,
+      person: undoPerson, media: undoMedia, family: undoFamily, story: undoStory, source: undoSource, document: undoDocument, citation: undoCitation, quality: undoQuality,
       event: undoEvent, place: undoPlace, import: undoImport, research: undoResearch, research_note: undoResearchNote,
       interview: undoInterview,
     }[e.entity];

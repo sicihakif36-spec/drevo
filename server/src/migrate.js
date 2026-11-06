@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pool } from './db.js';
 import { loadTenants } from './tenants.js';
 
@@ -8,7 +8,8 @@ const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'migra
 // Общее для сервера (список семей и т. п.) — в схеме core, его миграции применяются один раз.
 const coreDir = path.join(dir, 'core');
 
-const sqlFiles = async (d) => (await fs.readdir(d)).filter((f) => f.endsWith('.sql')).sort();
+// Миграция — файл .sql или .js (перестройка данных, которую на SQL не написать: export default async (client) => …).
+const sqlFiles = async (d) => (await fs.readdir(d)).filter((f) => /\.(sql|js)$/.test(f)).sort();
 
 // Миграции из папки d, которых ещё нет в таблице учёта table, — в схеме, выбранной у client.
 // Каждая — своей транзакцией; whole — все в уже открытой транзакции (новая семья создаётся целиком или никак).
@@ -17,10 +18,12 @@ export async function applyMigrations(client, { d = dir, table = 'schema_migrati
   const done = new Set((await client.query(`select name from ${table}`)).rows.map((r) => r.name));
   for (const file of await sqlFiles(d)) {
     if (done.has(file)) continue;
-    const sql = await fs.readFile(path.join(d, file), 'utf8');
+    const run = file.endsWith('.js')
+      ? (await import(pathToFileURL(path.join(d, file)).href)).default
+      : async (c) => c.query(await fs.readFile(path.join(d, file), 'utf8'));
     if (!whole) await client.query('begin');
     try {
-      await client.query(sql);
+      await run(client);
       await client.query(`insert into ${table} (name) values ($1)`, [file]);
       if (!whole) await client.query('commit');
     } catch (e) {

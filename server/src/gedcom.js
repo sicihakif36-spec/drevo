@@ -182,10 +182,11 @@ export function parseCiteText(text) {
     else if ((m = p.match(/^оп\.\s*(.+)$/i))) out.opis = m[1];
     else if ((m = p.match(/^д\.\s*(.+)$/i))) out.delo = m[1];
     else if ((m = p.match(/^л\.\s*(.+?)(\s+об\.?)?$/i))) Object.assign(out, { sheet: m[1], verso: Boolean(m[2]) });
+    else if ((m = p.match(/^запись\s*№\s*(.+)$/i))) out.record = m[1];
     else if (i === 0) out.archive = p;
     else return null;
   }
-  return out.fond || out.opis || out.delo || out.sheet ? out : null;
+  return out.fond || out.opis || out.delo || out.sheet || out.record ? out : null;
 }
 
 const cut = (s, n) => String(s || '').trim().slice(0, n);
@@ -235,7 +236,7 @@ export function parseGedcom(buf) {
     s.note = cut(lines.join('\n'), 5000);
     if (!s.title && !s.archive && !s.url) s.title = 'Источник из файла';
     s.title = cut(s.title, 300);
-    for (const k of ['archive', 'fond', 'opis', 'delo', 'sheet']) s[k] = cut(s[k], { archive: 200, delo: 100 }[k] || 50);
+    for (const k of ['archive', 'fond', 'opis', 'delo', 'sheet', 'record']) s[k] = cut(s[k], { archive: 200, delo: 100 }[k] || 50);
     s.verso = Boolean(s.verso);
     for (const c of r.children) if (!['TITL', 'ABBR', '_TYPE', 'AUTH', 'PUBL', 'TEXT', 'NOTE', 'REPO', 'OBJE', 'DATA'].includes(c.tag)) skip(c.tag);
     if (kid(r, 'OBJE')) skip('OBJE');

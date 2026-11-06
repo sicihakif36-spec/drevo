@@ -4,7 +4,7 @@
 
 ## Устройство
 
-- `server/` — Node.js 22, Fastify, PostgreSQL, PDF через pdfkit. Миграции `server/migrations/NNN_*.sql` применяются при старте.
+- `server/` — Node.js 22, Fastify, PostgreSQL, PDF через pdfkit. Миграции `server/migrations/NNN_*.sql` (или `.js` — перестройка данных) применяются при старте.
 - `web/` — Vue 3 + Vite + PWA, без TypeScript.
 - `shared/` — общий код телефона и сервера: имена, родство, раскладка дерева (`layout.js`; «Всё дерево» — `wholetree.js`), разбивка печати.
 - Ключевые модули сервера:

@@ -167,18 +167,20 @@ export async function loadGedcom(db, userId, g, plan = {}, file = '') {
   }
 
   // Источники: заводятся, когда на них первый раз ссылаются (у пропущенных людей — нет); такой же источник в дереве — он и есть.
+  // Документ с тем же названием и шифром дела — общий: в файле каждая страница — отдельный SOUR.
   const srcIds = new Map();
   let sources = 0;
-  const key = (s) => [s.kind, s.title, citeText(s), s.url].map((x) => String(x || '').trim().toLowerCase()).join('|');
-  const tree = new Map((await db.q('select * from sources where deleted_at is null')).map((s) => [key(s), s.id]));
+  const key = (s) => [s.kind, s.title, citeText(s), s.record, s.url].map((x) => String(x || '').trim().toLowerCase()).join('|');
+  const tree = new Map((await db.q(`select s.*, d.kind, d.title, d.archive, d.fond, d.opis, d.delo
+    from sources s join documents d on d.id = s.document_id where s.deleted_at is null`)).map((s) => [key(s), s.id]));
   const byRef = new Map(g.sources.map((s) => [s.ref, s]));
   const source = async (ref) => {
     if (srcIds.has(ref)) return srcIds.get(ref);
     const s = byRef.get(ref);
     let id = tree.get(key(s));
     if (!id) {
-      const { kind, title, archive, fond, opis, delo, sheet, verso, url, note } = s;
-      id = (await createSource(db, userId, { kind, title, archive, fond, opis, delo, sheet, verso, url, note })).id;
+      const { kind, title, archive, fond, opis, delo, sheet, verso, record, url, note } = s;
+      id = (await createSource(db, userId, { kind, title, archive, fond, opis, delo, sheet, verso, record, url, note })).id;
       tree.set(key(s), id);
       sources++;
     }

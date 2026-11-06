@@ -80,6 +80,12 @@ export function digestText(name, sex, entries, ops) {
         if (e.action === 'add') n.events++;
         else if (e.action === 'delete') n.dropEvents++;
         else n.eventEdits.add(e.entity_id);
+      } else if (e.entity === 'document') {
+        // Документ вместе со страницами — это правка страниц; отдельно считаем только сам документ без них.
+        if (mine.some((x) => x.entity === 'source')) continue;
+        if (e.action === 'add') n.sources++;
+        else if (e.action === 'delete') n.dropSources++;
+        else n.sourceEdits.add(e.entity_id);
       } else if (e.entity === 'source') {
         if (e.action === 'add') n.sources++;
         else if (e.action === 'delete') n.dropSources++;

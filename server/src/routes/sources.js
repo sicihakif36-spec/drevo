@@ -1,14 +1,19 @@
-// Источники сведений: запись по шаблону (метрическая книга, «Память народа», семейное предание…), общая для многих людей;
-// привязки источников к сведениям человека или семьи с уточнением и отметка достоверности каждого сведения.
+// Источники сведений: документ по шаблону (метрическая книга, «Память народа», семейное предание…) и его страницы,
+// общие для многих людей; привязки страниц к сведениям человека или семьи с уточнением и отметка достоверности каждого сведения.
 import { q, tx } from '../db.js';
 import { need } from '../auth.js';
 import { HttpError } from '../tree.js';
-import { SOURCE_FIELDS, FACTS } from '../../../shared/sources.js';
-import { createSource, updateSource, deleteSource, cite, uncite, updateCitation, setQuality } from '../sources.js';
+import { FACTS } from '../../../shared/sources.js';
+import {
+  createSource, updateSource, deleteSource, cite, uncite, updateCitation, setQuality,
+  createDocument, updateDocument, deleteDocument, mergeDocuments, liveDocument,
+} from '../sources.js';
 import { isGuest, guestSources, guestMedia, guestEvents, privateIds } from '../privacy.js';
 import { visibleEvents } from './timeline.js';
 
-const LIMITS = { kind: 20, title: 300, archive: 200, fond: 50, opis: 50, delo: 100, sheet: 50, url: 1000, note: 5000 };
+// Поля документа и страницы. Поля документа у страницы — когда документ не выбран (старый телефон, загрузка из файла).
+const DOC_LIMITS = { kind: 20, title: 300, archive: 200, fond: 50, opis: 50, delo: 100, note: 5000 };
+const LIMITS = { ...DOC_LIMITS, sheet: 50, record: 50, url: 1000, note: 5000 };
 
 // Люди, к сведениям которых привязан источник: сам человек, супруги или участники события; удалённые не в счёт.
 const PERSONS = `array(select distinct p.id from citations c
@@ -19,10 +24,18 @@ const PERSONS = `array(select distinct p.id from citations c
       and p.deleted_at is null
     where c.source_id = s.id order by p.id) as persons`;
 
-// Скан — только пока он есть в альбоме.
-const LIST = `select s.id, s.kind, s.title, s.archive, s.fond, s.opis, s.delo, s.sheet, s.verso, s.url, s.note,
+// Страница вместе с полями своего документа: так её показывают везде — название, шифр дела, лист. Скан — только пока он есть в альбоме.
+const LIST = `select s.id, s.document_id, d.kind, d.title, d.archive, d.fond, d.opis, d.delo, d.note as doc_note,
+    s.sheet, s.verso, s.record, s.url, s.note,
     m.id as media_id, m.kind as media_kind, m.thumb as media_thumb, s.created_by, u.name as user_name, s.created_at, ${PERSONS}
-  from sources s left join media m on m.id = s.media_id and m.deleted_at is null left join users u on u.id = s.created_by`;
+  from sources s join documents d on d.id = s.document_id
+  left join media m on m.id = s.media_id and m.deleted_at is null left join users u on u.id = s.created_by`;
+
+// Документы — для выбора: сколько у каждого страниц и людей, недавние — первыми.
+const DOCS = `select d.id, d.kind, d.title, d.archive, d.fond, d.opis, d.delo, d.note, d.created_at,
+    (select count(*)::int from sources s where s.document_id = d.id and s.deleted_at is null) as pages,
+    (select max(s.created_at) from sources s where s.document_id = d.id and s.deleted_at is null) as used_at
+  from documents d`;
 
 // Привязки к сведениям, которые есть в дереве: человек не удалён, семья на месте, событие не удалено.
 const CITATIONS = `select c.id, c.source_id, c.subject, c.subject_id, c.fact, c.page,
@@ -36,14 +49,17 @@ const CITATIONS = `select c.id, c.source_id, c.subject, c.subject_id, c.fact, c.
   where (p.id is not null and p.deleted_at is null or f.id is not null or e.id is not null and e.deleted_at is null)`;
 
 // Поля из запроса: только присланные. media_id null или '' — убрать скан.
-function clean(body) {
+function clean(body, limits = LIMITS) {
   const out = {};
-  for (const [k, n] of Object.entries(LIMITS)) if (body?.[k] !== undefined) out[k] = String(body[k] ?? '').trim().slice(0, n);
+  for (const [k, n] of Object.entries(limits)) if (body?.[k] !== undefined) out[k] = String(body[k] ?? '').trim().slice(0, n);
+  if (limits !== LIMITS) return out;
   if (body?.verso !== undefined) out.verso = Boolean(body.verso);
   if (body?.media_id !== undefined) out.media_id = body.media_id ? String(body.media_id) : null;
+  if (body?.document_id !== undefined) out.document_id = String(body.document_id || '');
   if (out.url && !/^https?:\/\//i.test(out.url)) out.url = `https://${out.url}`;
   return out;
 }
+const cleanDoc = (body) => clean(body, DOC_LIMITS);
 
 // Сведение из запроса: { subject, subject_id, fact }.
 function fact(body) {
@@ -120,12 +136,15 @@ export default async function sourceRoutes(app) {
 
   app.get('/api/persons/:id/sources', { preHandler: need('viewer') }, async (req) => personSources(req.user, req.params.id));
 
-  // Новый источник; cite — сразу привязать к сведению (одно действие в журнале).
+  // Новая страница: document_id — записанного документа, document — новый документ вместе с ней; cite — сразу привязать
+  // к сведению. Всё — одно действие в журнале.
   app.post('/api/sources', { preHandler: need('editor') }, async (req) => {
     const data = clean(req.body);
-    if (!data.kind) throw new HttpError(400, 'Выберите, что это за источник');
+    const doc = req.body?.document && cleanDoc(req.body.document);
+    if (!data.document_id && !doc && !data.kind) throw new HttpError(400, 'Выберите, что это за источник');
     const to = req.body?.cite && { ...fact(req.body.cite), page: page(req.body.cite.page) };
     const s = await tx(async (db) => {
+      if (doc) data.document_id = (await createDocument(db, req.user.id, doc)).id;
       const created = await createSource(db, req.user.id, data);
       if (to) await cite(db, req.user.id, { ...to, source_id: created.id });
       return created;
@@ -138,6 +157,49 @@ export default async function sourceRoutes(app) {
     const s = await one(req.params.id);
     if (!s) throw new HttpError(404, 'Источник не найден');
     return s;
+  });
+
+  // Документы. Список — для выбора при указании источника и подписи скана; гостю он не нужен.
+  app.get('/api/documents', { preHandler: need('editor') }, async () => q(`${DOCS} where d.deleted_at is null
+    order by coalesce((select max(s.created_at) from sources s where s.document_id = d.id and s.deleted_at is null), d.created_at) desc, d.id`));
+
+  // Документ и его страницы с людьми и сведениями; гостю — только страницы, которые ему видны.
+  app.get('/api/documents/:id', { preHandler: need('viewer') }, async (req) => {
+    const d = (await q(`${DOCS} where d.id = $1 and d.deleted_at is null`, [req.params.id]))[0];
+    if (!d) throw new HttpError(404, 'Документ не найден');
+    const pages = await visible(req, await q(`${LIST} where s.document_id = $1 and s.deleted_at is null
+      order by nullif(regexp_replace(s.sheet, '\\D.*', ''), '')::int nulls last, s.sheet, s.verso, s.created_at, s.id`, [d.id]));
+    if (isGuest(req.user) && !pages.length) throw new HttpError(404, 'Документ не найден');
+    const citations = await q(`${CITATIONS} and c.source_id = any($1::uuid[]) order by c.created_at, c.id`, [pages.map((p) => p.id)]);
+    return { ...d, pages, citations };
+  });
+
+  app.post('/api/documents', { preHandler: need('editor') }, async (req) => {
+    const d = await tx((db) => createDocument(db, req.user.id, cleanDoc(req.body)));
+    return (await q(`${DOCS} where d.id = $1`, [d.id]))[0];
+  });
+
+  // Правка документа — у всех его страниц сразу.
+  app.patch('/api/documents/:id', { preHandler: need('editor') }, async (req) => {
+    await tx((db) => updateDocument(db, req.user.id, req.params.id, cleanDoc(req.body)));
+    const d = (await q(`${DOCS} where d.id = $1 and d.deleted_at is null`, [req.params.id]))[0];
+    if (!d) throw new HttpError(404, 'Документ не найден');
+    return d;
+  });
+
+  app.delete('/api/documents/:id', { preHandler: need('editor') }, async (req) => {
+    const changeId = await tx((db) => deleteDocument(db, req.user.id, req.params.id));
+    return { ok: true, changeId };
+  });
+
+  // Объединить два одинаковых документа: страницы from переходят сюда.
+  app.post('/api/documents/:id/merge', { preHandler: need('editor') }, async (req) => {
+    const from = String(req.body?.from || '');
+    const changeId = await tx(async (db) => {
+      await liveDocument(db, from);
+      return mergeDocuments(db, req.user.id, req.params.id, from);
+    });
+    return { ok: true, changeId };
   });
 
   app.delete('/api/sources/:id', { preHandler: need('editor') }, async (req) => {
