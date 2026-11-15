@@ -216,6 +216,8 @@ async function itsMe(id, confirm = false) {
   setTimeout(() => canvas.value?.centerOn(id, 0.95), 0);
 }
 
+// Есть ли что менять в «Поколений»: во «всём дереве» — нет, в родне — если выше есть кто-то.
+const hasGens = computed(() => (mode.value === 'kin' ? Boolean(kin.value && kin.value.max > kin.value.min) : mode.value !== 'all'));
 const gensLabel = computed(() => (mode.value === 'kin' ? `${kin.value?.up} вверх` : mode.value === 'ancestors' ? `${up.value} вверх` : mode.value === 'descendants' ? `${down.value} вниз` : `${up.value} вверх, ${down.value} вниз`));
 function gens(delta) {
   if (mode.value === 'kin') {
@@ -230,12 +232,19 @@ function gens(delta) {
 <template>
   <div ref="page" class="tree-page" :class="{ 'has-sel': sel }">
     <div ref="topBar" class="top">
-      <div class="seg">
+      <!-- Виды — одной строкой; на узком телефоне «Всё дерево» — коротко «Всё». -->
+      <div class="seg modes">
         <button :class="{ on: mode === 'hourglass' }" @click="mode = 'hourglass'">Ветка</button>
         <button :class="{ on: mode === 'kin' }" @click="mode = 'kin'">Родня</button>
         <button :class="{ on: mode === 'ancestors' }" @click="mode = 'ancestors'">Предки</button>
         <button :class="{ on: mode === 'descendants' }" @click="mode = 'descendants'">Потомки</button>
-        <button :class="{ on: mode === 'all' }" @click="mode = 'all'">Всё дерево</button>
+        <button :class="{ on: mode === 'all' }" @click="mode = 'all'" aria-label="Всё дерево"><span class="long">Всё дерево</span><span class="short" aria-hidden="true">Всё</span></button>
+      </div>
+      <!-- Телефон: поколения — вверху, рядом с поиском, и видны, даже когда выбран человек. -->
+      <div class="gens" v-if="!wide && hasGens">
+        <button @click="gens(-1)" :disabled="mode === 'kin' && kin.up <= kin.min" aria-label="Меньше поколений">−</button>
+        <span class="grow">Поколений: <b class="nowrap">{{ gensLabel }}</b></span>
+        <button @click="gens(1)" :disabled="mode === 'kin' && kin.up >= kin.max" aria-label="Больше поколений">+</button>
       </div>
       <button class="round" @click="searching = true" aria-label="Найти человека">
         <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -247,7 +256,7 @@ function gens(delta) {
         <button class="primary" @click="finding = true">Найти себя</button>
         <button class="ghost x" @click="hideFind" aria-label="Убрать подсказку">✕</button>
       </div>
-      <div class="note" v-if="mode === 'kin' && rootP && (!sel || wide)">
+      <div class="note" v-if="mode === 'kin' && rootP">
         <template v-if="kin">
           <span class="grow"><b>{{ whose }} {{ kin.text }}</b>: {{ kinCount }}</span>
           <button @click="choosing = true">Другая линия</button>
@@ -284,7 +293,7 @@ function gens(delta) {
           <button @click="canvas.zoomAt(1 / 1.35)" aria-label="Мельче">−</button>
         </div>
       </div>
-      <div class="gens" v-if="mode === 'kin' ? kin && kin.max > kin.min : mode !== 'all'">
+      <div class="gens" v-if="wide && hasGens">
         <button @click="gens(-1)" :disabled="mode === 'kin' && kin.up <= kin.min" aria-label="Меньше поколений">−</button>
         <span class="grow">Поколений: <b class="nowrap">{{ gensLabel }}</b></span>
         <button @click="gens(1)" :disabled="mode === 'kin' && kin.up >= kin.max" aria-label="Больше поколений">+</button>
@@ -374,7 +383,17 @@ function gens(delta) {
 /* На узком экране или с крупным шрифтом лупа уходит на вторую строку, справа. */
 .top { position: absolute; z-index: 5; top: calc(0.556rem + var(--safe-t)); left: 0.667rem; right: 0.667rem; display: flex; flex-wrap: wrap; gap: 0.444rem; pointer-events: none; }
 .top > * { pointer-events: auto; }
-.top .seg { flex: 1 1 12rem; background: color-mix(in srgb, var(--line) 88%, transparent); backdrop-filter: blur(6px); }
+.top .seg { flex: 1 1 100%; background: color-mix(in srgb, var(--line) 88%, transparent); backdrop-filter: blur(6px); }
+/* Виды — всегда одной строкой: не влезают (очень крупный шрифт) — строку можно сдвинуть пальцем. */
+.modes { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.modes::-webkit-scrollbar { display: none; }
+.modes button { flex: 1 0 auto; padding: 0.25rem 0.389rem; white-space: nowrap; }
+.modes .short { display: none; }
+@media (max-width: 26em) {
+  .modes .long { display: none; }
+  .modes .short { display: inline; }
+}
+.top .gens { flex: 1 1 0; min-width: 0; }
 .round { flex: none; margin-left: auto; width: 3.111rem; min-height: 3.111rem; padding: 0; border-color: var(--field); border-width: 1.5px; color: var(--text); }
 .offline { flex: 1 1 100%; margin: 0; }
 .note { flex: 1 1 100%; display: flex; align-items: center; gap: 0.444rem; background: var(--card); border: 1.5px solid var(--field); border-radius: var(--radius-s); padding: 0.333rem 0.333rem 0.333rem 0.667rem; font-size: 0.889rem; line-height: 1.3; box-shadow: 0 2px 10px rgba(0,0,0,.1); }
@@ -415,6 +434,7 @@ function gens(delta) {
 @media (min-width: 64em) {
   .top { top: 1.111rem; left: 1.333rem; right: 1.333rem; }
   .top .seg { flex: 0 1 auto; }
+  .modes button { padding: 0.25rem 0.5rem; }
   .round { width: auto; padding: 0 1rem; gap: 0.444rem; font-size: 0.889rem; }
   .round svg { width: 1.222rem; height: 1.222rem; }
   .tools { flex-direction: row; flex-wrap: wrap; align-items: flex-end; left: 1.333rem; right: 1.333rem; bottom: 1.111rem; }
