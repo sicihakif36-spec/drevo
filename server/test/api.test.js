@@ -452,3 +452,55 @@ test('ребёнка с одним родителем привязали ко в
   const t2 = (await call(ownerCookie, 'GET', '/api/tree')).json();
   assert.equal(t2.children.filter((c) => c.child_id === kid.id).length, 1);
 });
+
+test('поменять отца: ребёнок со всей веткой — к другому мужу матери; одним действием, отменяется', async () => {
+  const add = async (person, relation) => (await call(ownerCookie, 'POST', '/api/persons', { person, ...(relation ? { relation } : {}) })).json();
+  const maria = await add({ given: 'Мария', sex: 'F' });
+  const petr = await add({ given: 'Пётр', sex: 'M' }, { to: maria.id, type: 'spouse' });
+  const ivan = await add({ given: 'Иван', sex: 'M' }, { to: maria.id, type: 'spouse' });
+  const tree = async () => (await call(ownerCookie, 'GET', '/api/tree')).json();
+  let t = await tree();
+  const famOf = (t, a, b) => t.families.find((f) => [f.partner1, f.partner2].sort().join() === [a, b].sort().join());
+  const f1 = famOf(t, petr.id, maria.id);
+  const f2 = famOf(t, ivan.id, maria.id);
+  // Олега записали сыном Петра, а он сын Ивана; у Олега свой сын
+  const oleg = await add({ given: 'Олег', sex: 'M' }, { to: maria.id, type: 'child', familyId: f1.id });
+  const denis = await add({ given: 'Денис', sex: 'M' }, { to: oleg.id, type: 'child' });
+  const put = (body, id = oleg.id) => call(ownerCookie, 'PUT', `/api/persons/${id}/parents`, body);
+
+  // нельзя: сам себе, потомок, женщина — отцом, никого
+  assert.equal((await put({ father: oleg.id, mother: maria.id })).statusCode, 400);
+  assert.match((await put({ father: denis.id, mother: maria.id })).json().error, /потомок/);
+  assert.match((await put({ father: maria.id })).json().error, /женщина/);
+  assert.equal((await put({})).statusCode, 400);
+
+  const r = await put({ father: ivan.id, mother: maria.id });
+  assert.equal(r.statusCode, 200);
+  assert.equal(r.json().changed, true);
+  t = await tree();
+  const parentsOf = (t, id) => t.children.filter((c) => c.child_id === id).map((c) => c.family_id);
+  assert.deepEqual(parentsOf(t, oleg.id), [f2.id]);
+  assert.equal(parentsOf(t, denis.id).length, 1);
+  assert.ok(t.families.some((f) => f.id === f1.id), 'брак Петра и Марии остался');
+  // повторно — без изменений
+  assert.equal((await put({ father: ivan.id, mother: maria.id })).json().changed, false);
+
+  // отмена — Олег снова сын Петра
+  const last = (await pool.query('select id from changes order by id desc limit 1')).rows[0].id;
+  assert.equal((await call(ownerCookie, 'POST', `/api/changes/${last}/revert`)).statusCode, 200);
+  assert.deepEqual(parentsOf(await tree(), oleg.id), [f1.id]);
+
+  // записан только отец (не тот); правильно — Иван и Мария: семья одного Николая без детей уходит
+  const nik = await add({ given: 'Николай', sex: 'M' });
+  const solo = await add({ given: 'Вера', sex: 'F' }, { to: nik.id, type: 'child' });
+  const soloFam = parentsOf(await tree(), solo.id)[0];
+  assert.equal((await put({ father: ivan.id, mother: maria.id }, solo.id)).statusCode, 200);
+  t = await tree();
+  assert.deepEqual(parentsOf(t, solo.id), [f2.id]);
+  assert.ok(!t.families.some((f) => f.id === soloFam), 'пустая семья убрана');
+  // только мать, без отца: новая семья из одной матери
+  assert.equal((await put({ mother: maria.id }, solo.id)).statusCode, 200);
+  t = await tree();
+  const fam = t.families.find((f) => f.id === parentsOf(t, solo.id)[0]);
+  assert.deepEqual([fam.partner1, fam.partner2], [null, maria.id]);
+});

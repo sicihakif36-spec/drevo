@@ -3,7 +3,7 @@ import { need, meOf } from '../auth.js';
 import { logChange, listOps, countNew, canResearch } from '../changes.js';
 import { revertOp } from '../revert.js';
 import { ALT_FIELDS } from '../../../shared/names.js';
-import { HttpError, ownerPerson, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty } from '../tree.js';
+import { HttpError, ownerPerson, PERSON_FIELDS, FAMILY_FIELDS, SLOTS, link, deletePerson, unsetPartner, removeChild, dropEmpty, setParents } from '../tree.js';
 import { guestTree, isGuest, privateIds } from '../privacy.js';
 import { listPlaces } from './places.js';
 import { listMarks } from './checks.js';
@@ -140,6 +140,13 @@ export default async function personRoutes(app) {
     const { personId, ...relation } = req.body || {};
     await tx((db) => link(db, req.user.id, relation, personId));
     return { ok: true };
+  });
+
+  // Поменять отца и мать: ребёнок со всей своей веткой переходит в другую семью.
+  app.put('/api/persons/:id/parents', { preHandler: need('editor') }, async (req) => {
+    const { father = null, mother = null } = req.body || {};
+    const changed = await tx((db) => setParents(db, req.user.id, req.params.id, { father: father || null, mother: mother || null }));
+    return { ok: true, changed };
   });
 
   app.patch('/api/families/:id', { preHandler: need('editor') }, async (req, reply) => {

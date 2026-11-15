@@ -10,6 +10,7 @@ import Album from '../components/Album.vue';
 import Stories from '../components/Stories.vue';
 import Life from '../components/Life.vue';
 import MarriageSheet from '../components/MarriageSheet.vue';
+import ParentsSheet from '../components/ParentsSheet.vue';
 import Sources from '../components/Sources.vue';
 import Research from '../components/Research.vue';
 import FactBadge from '../components/FactBadge.vue';
@@ -39,6 +40,7 @@ const showHistory = ref(false);
 const album = ref(null);
 const marriage = ref(null); // { family, spouse } — окно «Брак»
 const linking = ref(false); // «Убрать связь»: у мужа, жены и детей появляется кнопка
+const parentsOfId = ref(null); // окно «Родители»: чьих родителей меняем (сам человек или его ребёнок)
 // Сколько фото, историй, источников, сообщений — для закладок под именем; null — ещё не знаем.
 const counts = reactive({ photo: null, stories: null, talk: null, research: null });
 
@@ -195,7 +197,7 @@ async function loadHistory() {
   if (showHistory.value) await reloadHistory();
 }
 
-watch(() => props.id, () => { editing.value = false; showHistory.value = false; linking.value = false; Object.assign(counts, { photo: null, stories: null, talk: null, research: null }); });
+watch(() => props.id, () => { parentsOfId.value = null; editing.value = false; showHistory.value = false; linking.value = false; Object.assign(counts, { photo: null, stories: null, talk: null, research: null }); });
 // Пришли из проверки дерева: «Исправить» открывает правку (?edit=1) или «Убрать связь» (?links=1).
 watch(() => [props.id, route.query.edit, route.query.links, Boolean(p.value)], () => {
   if (!p.value || !canEdit() || p.value.hidden) return;
@@ -335,9 +337,12 @@ onUnmounted(onLive((events) => {
           <div class="avatar" :class="x.sex">{{ (x.given || '?')[0] }}</div>
           <div class="grow"><div class="name">{{ fullName(x) }}</div><div class="muted small">{{ lifespan(x) }}</div></div>
         </router-link>
-        <div v-if="canEdit() && parents.length < 2" class="add">
-          <button v-if="!parents.some((x) => x.sex === 'M')" @click="openAdd({ to: p.id, type: 'father' })">+ Отец</button>
-          <button v-if="!parents.some((x) => x.sex === 'F')" @click="openAdd({ to: p.id, type: 'mother' })">+ Мать</button>
+        <div v-if="canEdit()" class="add">
+          <template v-if="parents.length < 2">
+            <button v-if="!parents.some((x) => x.sex === 'M')" @click="openAdd({ to: p.id, type: 'father' })">+ Отец</button>
+            <button v-if="!parents.some((x) => x.sex === 'F')" @click="openAdd({ to: p.id, type: 'mother' })">+ Мать</button>
+          </template>
+          <button v-if="parents.length" class="ghost wide" @click="parentsOfId = p.id">Изменить родителей…</button>
         </div>
         <div v-else-if="!parents.length" class="muted">Не указаны</div>
       </div>
@@ -362,13 +367,16 @@ onUnmounted(onLive((events) => {
             <div class="avatar" :class="c.sex">{{ (c.given || '?')[0] }}</div>
             <div class="grow">
               <div class="name">{{ fullName(c) }}</div><div class="muted small">{{ [c.sex === 'F' ? 'дочь' : 'сын', lifespan(c)].filter(Boolean).join(' · ') }}</div>
-              <button v-if="linking" class="danger unlink" @click.prevent.stop="unlink(m, c)">Убрать связь</button>
+              <div v-if="linking" class="row unlinks">
+                <button class="danger unlink" @click.prevent.stop="unlink(m, c)">Убрать связь</button>
+                <button class="unlink" @click.prevent.stop="parentsOfId = c.id">Другие родители</button>
+              </div>
             </div>
           </router-link>
         </template>
         <div v-if="!marriages.length" class="muted">Муж или жена и дети не указаны</div>
         <div v-if="canEdit() && linking" class="add">
-          <p class="muted">Нажмите «Убрать связь» у того, кто записан в семью по ошибке. Сам человек останется в дереве.</p>
+          <p class="muted">Нажмите «Убрать связь» у того, кто записан в семью по ошибке. Сам человек останется в дереве. Ребёнок записан не к тому отцу или матери — «Другие родители».</p>
           <button class="primary" @click="linking = false">Готово</button>
         </div>
         <div v-else-if="canEdit()" class="add">
@@ -409,6 +417,8 @@ onUnmounted(onLive((events) => {
 
     <FactSheet v-if="sheet" :key="sheet.fact ? sheet.fact.subject + sheet.fact.id + sheet.fact.fact : 'pick'" :fact="sheet.fact" :facts="facts"
       :data="sources" :person="p" @close="sheet = null" @changed="loadSources" />
+
+    <ParentsSheet v-if="parentsOfId && idx.persons.get(parentsOfId)" :key="parentsOfId" :person="idx.persons.get(parentsOfId)" @close="parentsOfId = null" />
 
     <MarriageSheet v-if="marriage" :family="marriage.family" :spouse="marriage.spouse" @close="marriage = null" />
 
@@ -465,6 +475,8 @@ onUnmounted(onLive((events) => {
 .kin .avatar { margin-top: 0.111rem; }
 .kid { padding-left: 1.778rem !important; }
 .unlink { margin-top: 0.444rem; min-height: 2.667rem; font-size: 0.889rem; }
+.unlinks { flex-wrap: wrap; gap: 0.444rem; }
+.unlinks .unlink { flex: 1 1 auto; }
 .list > .bond { padding-left: 4.333rem; color: var(--accent-text); font-weight: 700; font-size: 0.889rem; min-height: 3rem; }
 .add { display: flex !important; flex-wrap: wrap; gap: 0.5rem; }
 .add > button { flex: 1 1 auto; }
