@@ -175,6 +175,15 @@ export async function link(db, userId, { to, type, familyId }, newId) {
     } else {
       const fams = await db.q('select id from families where partner1 = $1 or partner2 = $1 order by created_at', [to]);
       if (fams.length > 1) throw new HttpError(400, 'Выберите второго родителя');
+      if (!fams.length) {
+        // У ребёнка уже записан один родитель — второго ставим в ту же семью, а не в отдельную:
+        // иначе отец и мать окажутся в разных семьях.
+        const fam = await parentFamily(db, newId);
+        if (fam && fam.partner1 !== to && fam.partner2 !== to && (!fam.partner1 || !fam.partner2)) {
+          await setPartner(db, userId, fam.id, fam.partner1 ? 'partner2' : 'partner1', to);
+          return;
+        }
+      }
       fid = fams[0]?.id || (await newFamily(db, userId, to, null)).id;
     }
     await addChild(db, userId, fid, newId);

@@ -14,7 +14,7 @@ import RospisText from '../components/RospisText.vue';
 
 const saved = (() => { try { return JSON.parse(localStorage.getItem('drevo.print') || '{}'); } catch { return {}; } })();
 const o = reactive({
-  root: '', mode: 'hourglass', up: 4, down: 3, line: 'father', kinUp: null, paper: 'A4', orient: 'auto', fit: 'page', scale: 100,
+  root: '', mode: 'hourglass', up: 4, down: 3, line: '', kinUp: null, paper: 'A4', orient: 'auto', fit: 'page', scale: 100,
   photos: true, hideLiving: false, theme: 'classic', title: '', gens: 5, shape: 180, colors: 'branch', empty: true, ...saved,
 });
 // Из карточки: «Веер предков» с этим человеком в центре.
@@ -103,7 +103,7 @@ const rUrl = (download) => `/api/rospis.pdf?${new URLSearchParams({ ...rqs.value
 
 const url = (download) => {
   const qs = new URLSearchParams({
-    root: rootId.value || '', mode: o.mode, up: kin.value ? kin.value.up : o.up, down: o.down, line: o.line, paper: o.paper, orient: o.orient, fit: o.fit,
+    root: rootId.value || '', mode: o.mode, up: kin.value ? kin.value.up : o.up, down: o.down, line: kin.value ? kin.value.key : o.line, paper: o.paper, orient: o.orient, fit: o.fit,
     scale: o.scale, photos: o.photos ? '1' : '0', hideLiving: o.hideLiving ? '1' : '0', theme: o.theme, title: o.title,
     ...(isFan.value ? { gens: o.gens, shape: o.shape, colors: o.colors, empty: o.empty ? '1' : '0' } : {}),
   });

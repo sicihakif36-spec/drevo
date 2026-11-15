@@ -39,7 +39,7 @@ export function parsePrintOptions(qs) {
   return {
     root: qs.root,
     mode: ['all', 'kin', 'ancestors', 'descendants', 'hourglass', 'fan'].includes(qs.mode) ? qs.mode : 'hourglass',
-    line: KIN_LINES.some((l) => l.key === qs.line) ? qs.line : 'father',
+    line: KIN_LINES.some((l) => l.key === qs.line) ? qs.line : null,
     up: num(qs.up, 4, 0, 12),
     down: num(qs.down, 3, 0, 12),
     paper: PAPER[qs.paper] ? qs.paper : 'A4',

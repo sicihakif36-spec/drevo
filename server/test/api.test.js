@@ -436,3 +436,19 @@ test('удалить человека: участник — только доб�
   assert.equal((await call(ownerCookie, 'DELETE', `/api/persons/${byOwner.id}`)).statusCode, 200);
   assert.ok(!(await has(byOwner.id)));
 });
+
+test('ребёнка с одним родителем привязали ко второму: оба родителя — в одной семье', async () => {
+  const dad = (await call(ownerCookie, 'POST', '/api/persons', { person: { given: 'Павел', surname: 'Урманчеев', sex: 'M' } })).json();
+  const kid = (await call(ownerCookie, 'POST', '/api/persons', { person: { given: 'Маргарита', sex: 'F' }, relation: { to: dad.id, type: 'child' } })).json();
+  const mom = (await call(ownerCookie, 'POST', '/api/persons', { person: { given: 'Надежда', surname: 'Калинина', sex: 'F' } })).json();
+  // мать без семьи: «Связать → ребёнок» ставит её в семью отца, а не в отдельную
+  assert.equal((await call(ownerCookie, 'POST', '/api/relations', { personId: kid.id, to: mom.id, type: 'child' })).statusCode, 200);
+  const t = (await call(ownerCookie, 'GET', '/api/tree')).json();
+  const fams = t.children.filter((c) => c.child_id === kid.id).map((c) => t.families.find((f) => f.id === c.family_id));
+  assert.equal(fams.length, 1);
+  assert.deepEqual([fams[0].partner1, fams[0].partner2].sort(), [dad.id, mom.id].sort());
+  // повторно — ничего не меняется
+  assert.equal((await call(ownerCookie, 'POST', '/api/relations', { personId: kid.id, to: mom.id, type: 'child' })).statusCode, 200);
+  const t2 = (await call(ownerCookie, 'GET', '/api/tree')).json();
+  assert.equal(t2.children.filter((c) => c.child_id === kid.id).length, 1);
+});
