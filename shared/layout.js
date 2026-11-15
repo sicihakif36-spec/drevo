@@ -26,14 +26,28 @@ export function tracks(list) {
 
 const rowStep = () => BOX.h + BOX.vgap;
 
+// Отец и мать человека. Родители могут быть записаны в разных семьях (отец — в одной, мать — в другой,
+// например когда ребёнка привязали к матери отдельно): смотрим все. Есть родные — только они, иначе приёмные;
+// семьи с обоими родителями — раньше.
 export function fatherMother(idx, id) {
-  const fid = (idx.parentFamilies.get(id) || [])[0];
-  if (!fid) return [null, null];
-  const f = idx.families.get(fid);
-  const a = f.partner1 ? idx.persons.get(f.partner1) : null;
-  const b = f.partner2 ? idx.persons.get(f.partner2) : null;
-  if (a?.sex === 'F' || b?.sex === 'M') return [b?.id || null, a?.id || null];
-  return [a?.id || null, b?.id || null];
+  const all = (idx.parentFamilies.get(id) || []).map((fid) => idx.families.get(fid)).filter(Boolean);
+  const birth = all.filter((f) => (f.kinds?.get(id) || 'birth') === 'birth');
+  const fams = (birth.length ? birth : all).sort((x, y) => (x.partner1 && x.partner2 ? 0 : 1) - (y.partner1 && y.partner2 ? 0 : 1));
+  let father = null;
+  let mother = null;
+  for (const f of fams) {
+    const a = f.partner1 ? idx.persons.get(f.partner1) : null;
+    const b = f.partner2 ? idx.persons.get(f.partner2) : null;
+    const [m, w] = a?.sex === 'F' || b?.sex === 'M' ? [b, a] : [a, b];
+    // пол не указан — по полу, а не по месту в семье, если другое место уже занято
+    for (const p of [m, w]) {
+      if (!p || p.id === father || p.id === mother) continue;
+      const male = p.sex === 'M' || (p.sex !== 'F' && (p === m ? !father : !!mother));
+      if (male && !father) father = p.id;
+      else if (!male && !mother) mother = p.id;
+    }
+  }
+  return [father, mother];
 }
 
 // ---------- Предки ----------

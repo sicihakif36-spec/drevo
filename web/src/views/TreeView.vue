@@ -23,8 +23,9 @@ const MODES = ['hourglass', 'kin', 'ancestors', 'descendants', 'all'];
 const mode = ref(MODES.includes(saved.mode) ? saved.mode : 'hourglass');
 const up = ref(saved.up ?? 4);
 const down = ref(saved.down ?? 3);
-// Родня: по какой линии (shared/kin.js) и сколько поколений вверх до общих предков (null — как принято у линии).
-const line = ref(saved.line || 'father');
+// Родня: по какой линии (shared/kin.js; null — с обеих сторон) и сколько поколений вверх до общих предков
+// (null — как принято у линии). Линия хранится, только если её выбрали сами.
+const line = ref(saved.kinLine || null);
 const kinUp = ref(Number.isFinite(saved.kinUp) ? saved.kinUp : null);
 const rootId = ref(saved.root || null);
 const selected = ref(null);
@@ -60,7 +61,7 @@ function toOthers() {
 }
 
 watch([mode, up, down, rootId, line, kinUp], () => {
-  try { localStorage.setItem('drevo.view', JSON.stringify({ mode: mode.value, up: up.value, down: down.value, root: rootId.value, line: line.value, kinUp: kinUp.value })); } catch {}
+  try { localStorage.setItem('drevo.view', JSON.stringify({ mode: mode.value, up: up.value, down: down.value, root: rootId.value, kinLine: line.value, kinUp: kinUp.value })); } catch {}
 });
 watch(selected, (id) => (store.selectedId = id));
 

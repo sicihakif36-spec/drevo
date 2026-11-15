@@ -67,12 +67,13 @@ export function kinLines(idx, id) {
 
 /**
  * Кровная родня по линии: общие предки (до up поколений вверх от человека), все их потомки, их мужья и жёны.
- * Нет такой линии — первая из тех, что есть; нет никакой (родители не указаны) — null.
+ * Линия не выбрана или такой нет — с обеих сторон («По отцу и матери»), а если известен один родитель — его;
+ * нет никакой (родители не указаны) — null.
  * Возвращает линию, up, blood — кровные родственники (вместе с самим человеком), ids — все, кого рисовать.
  */
 export function kinOf(idx, id, key, up) {
   const lines = kinLines(idx, id);
-  const line = lines.find((l) => l.key === key) || lines[0];
+  const line = lines.find((l) => l.key === key) || lines.find((l) => l.key === 'parents') || lines[0];
   if (!line) return null;
   const k = Math.min(line.max, Math.max(line.min, Number.isFinite(up) ? up : line.up));
   const blood = new Set(line.vias.flatMap((via) => [...ancestorsOf(idx, via, k - line.min).keys()]));

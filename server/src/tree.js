@@ -175,6 +175,15 @@ export async function link(db, userId, { to, type, familyId }, newId) {
     } else {
       const fams = await db.q('select id from families where partner1 = $1 or partner2 = $1 order by created_at', [to]);
       if (fams.length > 1) throw new HttpError(400, 'Выберите второго родителя');
+      if (!fams.length) {
+        // У ребёнка уже записан один родитель — второго ставим в ту же семью, а не в отдельную:
+        // иначе отец и мать окажутся в разных семьях.
+        const fam = await parentFamily(db, newId);
+        if (fam && fam.partner1 !== to && fam.partner2 !== to && (!fam.partner1 || !fam.partner2)) {
+          await setPartner(db, userId, fam.id, fam.partner1 ? 'partner2' : 'partner1', to);
+          return;
+        }
+      }
       fid = fams[0]?.id || (await newFamily(db, userId, to, null)).id;
     }
     await addChild(db, userId, fid, newId);
@@ -190,4 +199,53 @@ export async function link(db, userId, { to, type, familyId }, newId) {
     return;
   }
   throw new HttpError(400, 'Неизвестный тип связи');
+}
+
+// Поменять родителей человека (записали не к тому отцу или матери): ребёнок уходит из прежних родных семей
+// в семью father + mother — уже записанную или новую. Его дети и внуки остаются с ним, приёмные семьи не трогаем.
+// Прежняя семья, где не осталось ни детей, ни второго супруга, убирается. Всё — одним действием, отменяется целиком.
+export async function setParents(db, userId, childId, { father = null, mother = null }) {
+  if (!father && !mother) throw new HttpError(400, 'Укажите отца или мать');
+  if (father && father === mother) throw new HttpError(400, 'Отец и мать — один и тот же человек');
+  if (!(await alive(db, childId))) throw new HttpError(404, 'Человек не найден');
+  for (const [id, sex, text] of [[father, 'F', 'Отцом выбрана женщина'], [mother, 'M', 'Матерью выбран мужчина']]) {
+    if (!id) continue;
+    const p = (await db.q('select sex from persons where id = $1 and deleted_at is null', [id]))[0];
+    if (!p) throw new HttpError(404, 'Человек не найден');
+    if (p.sex === sex) throw new HttpError(400, text);
+  }
+  // Родителем не может быть сам человек или его потомок.
+  const own = await db.q(
+    `with recursive d(id) as (select $1::uuid union
+       select fc.child_id from d join families f on f.partner1 = d.id or f.partner2 = d.id join family_children fc on fc.family_id = f.id)
+     select id from d where id = any($2::uuid[])`, [childId, [father, mother].filter(Boolean)]);
+  if (own.length) throw new HttpError(400, own.some((r) => r.id === childId) ? 'Человек не может быть родителем сам себе' : 'Родителем выбран потомок этого человека');
+
+  const links = await db.q(
+    `select c.family_id, c.kind, f.partner1, f.partner2 from family_children c join families f on f.id = c.family_id
+     where c.child_id = $1 order by f.created_at`, [childId]);
+  const birth = links.filter((l) => l.kind === 'birth');
+  const old = birth.length ? birth : links;
+  const kind = old[0]?.kind || 'birth';
+  const same = (l) => [l.partner1, l.partner2].filter(Boolean).sort().join() === [father, mother].filter(Boolean).sort().join();
+  if (old.length === 1 && same(old[0])) return false;
+
+  // Семья именно этих двоих (или одного родителя без второго) — уже есть? Иначе новая.
+  let fam = (await db.q(
+    `select id from families where (partner1 is not distinct from $1 and partner2 is not distinct from $2)
+       or (partner1 is not distinct from $2 and partner2 is not distinct from $1) order by created_at limit 1`, [father, mother]))[0];
+  if (!fam) fam = await newFamily(db, userId, father, mother);
+  for (const l of old) if (l.family_id !== fam.id) await removeChild(db, userId, l.family_id, childId);
+  if (!links.some((l) => l.family_id === fam.id)) await addChild(db, userId, fam.id, childId, kind);
+
+  // Прежние семьи: без детей и без второго супруга — пустые, убираем (иначе «Выберите второго родителя» без выбора).
+  for (const l of old) {
+    if (l.family_id === fam.id) continue;
+    const f = (await db.q('select * from families where id = $1', [l.family_id]))[0];
+    if (!f) continue;
+    const n = (await db.q('select count(*)::int as n from family_children where family_id = $1', [f.id]))[0].n;
+    if (!n && !(f.partner1 && f.partner2)) await dropFamily(db, userId, f);
+  }
+  await dropEmpty(db, userId, old.map((l) => l.family_id));
+  return true;
 }

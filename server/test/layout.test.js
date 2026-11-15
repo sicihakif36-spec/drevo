@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildIndex, fullName, shortGenitive } from '../../shared/names.js';
-import { BOX, layoutTree } from '../../shared/layout.js';
+import { BOX, layoutTree, fatherMother } from '../../shared/layout.js';
 import { homePerson, treeParts, layoutWhole } from '../../shared/wholetree.js';
 import { kinLines, kinOf } from '../../shared/kin.js';
 import { clans, randomTree } from './fixtures/clans.js';
@@ -337,12 +337,43 @@ test('родня: линии по отцу, по матери, по деду и 
   const one = buildIndex(tiny([['дед', 'M'], ['мать', 'F'], ['сын', 'M']], [['дед', null, ['мать']], [null, 'мать', ['сын']]]));
   assert.deepEqual(kinLines(one, 'сын').map((l) => l.key), ['mother']);
 
-  // нет такой линии — первая из тех, что есть; родители не указаны — родни нет, на дереве только сам человек
-  assert.equal(kinOf(idx, 'я', 'mm').key, 'father');
+  // линия не выбрана или такой нет — с обеих сторон; один родитель — его сторона;
+  // родители не указаны — родни нет, на дереве только сам человек
+  assert.equal(kinOf(idx, 'я').key, 'parents');
+  assert.equal(kinOf(idx, 'я', 'mm').key, 'parents');
+  assert.equal(kinOf(one, 'сын').key, 'mother');
   assert.equal(kinOf(idx, 'жена', 'father'), null);
   L = layoutTree(idx, 'жена', { mode: 'kin', line: 'father' });
   assert.equal(L.kin, null);
   assert.deepEqual(L.nodes.map((n) => n.id), ['жена']);
+});
+
+test('отец и мать записаны в разных семьях: родня по матери и её родители видны', () => {
+  // ребёнка привязали к отцу и к матери порознь: две семьи с одним родителем в каждой
+  const idx = buildIndex(tiny(
+    [['дед', 'M'], ['бабка', 'F'], ['отец', 'M'], ['дядя', 'M'], ['дед2', 'M'], ['бабка2', 'F'], ['мать', 'F'], ['тётя2', 'F'], ['её сын', 'M'], ['я', 'F']],
+    [['дед', 'бабка', ['отец', 'дядя']], ['дед2', 'бабка2', ['мать', 'тётя2']], [null, 'тётя2', ['её сын']],
+      ['отец', null, ['я']], [null, 'мать', ['я']], ['отец', 'мать', []]],
+  ));
+  assert.deepEqual(fatherMother(idx, 'я'), ['отец', 'мать']);
+  assert.deepEqual(kinLines(idx, 'я').map((l) => l.key), ['father', 'mother', 'parents']);
+  const k = kinOf(idx, 'я');
+  assert.equal(k.key, 'parents');
+  assert.ok(['дед2', 'бабка2', 'тётя2', 'её сын', 'дед', 'дядя'].every((id) => k.blood.has(id)));
+  check(idx, layoutTree(idx, 'я', { mode: 'kin' }), k.ids);
+  // в ветке у матери — её родители
+  const ids = layoutTree(idx, 'я', { mode: 'ancestors' }).nodes.map((n) => n.id);
+  assert.ok(['отец', 'мать', 'дед', 'бабка', 'дед2', 'бабка2'].every((id) => ids.includes(id)));
+  // родная семья главнее приёмной: приёмная мать не встаёт на место неизвестной родной
+  const adopted = buildIndex({
+    persons: [{ id: 'о', sex: 'M' }, { id: 'п', sex: 'M' }, { id: 'пм', sex: 'F' }, { id: 'р', sex: 'F' }],
+    families: [{ id: 'f1', partner1: 'о', partner2: null }, { id: 'f2', partner1: 'п', partner2: 'пм' }],
+    children: [{ family_id: 'f2', child_id: 'р', kind: 'adopted' }, { family_id: 'f1', child_id: 'р', kind: 'birth' }],
+  });
+  assert.deepEqual(fatherMother(adopted, 'р'), ['о', null]);
+  // пол не указан: первый — отец, второй — мать, как раньше
+  const nosex = buildIndex({ persons: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], families: [{ id: 'f', partner1: 'a', partner2: 'b' }], children: [{ family_id: 'f', child_id: 'c' }] });
+  assert.deepEqual(fatherMother(nosex, 'c'), ['a', 'b']);
 });
 
 test('родня в больших деревьях: у каждого по всем линиям — без наложений и быстро', () => {
@@ -376,12 +407,12 @@ test('родня в больших деревьях: у каждого по вс
 test('печать родни: линия из адреса, заголовок «Родня … по отцу», если свой не задан', async () => {
   assert.equal(parsePrintOptions({ mode: 'kin', line: 'mf' }).line, 'mf');
   assert.equal(parsePrintOptions({ mode: 'kin', line: 'grand' }).line, 'grand');
-  assert.equal(parsePrintOptions({ mode: 'kin', line: 'чужая' }).line, 'father');
+  assert.equal(parsePrintOptions({ mode: 'kin', line: 'чужая' }).line, null); // не выбрана — с обеих сторон
   const data = clans();
   const idx = buildIndex(data);
   const root = data.persons.find((p) => kinLines(idx, p.id).some((l) => l.key === 'mf')).id;
   const who = shortGenitive(idx.persons.get(root));
-  for (const [line, title, expect] of [['mf', '', `Родня ${who} по деду — отцу матери`], ['parents', '', `Родня ${who} по отцу и матери`], ['mf', 'Наша родня', 'Наша родня']]) {
+  for (const [line, title, expect] of [['mf', '', `Родня ${who} по деду — отцу матери`], ['parents', '', `Родня ${who} по отцу и матери`], [null, '', `Родня ${who} по отцу и матери`], ['mf', 'Наша родня', 'Наша родня']]) {
     const o = { ...parsePrintOptions({ mode: 'kin', line, root, title }), kinTitle: !title };
     if (!o.title) o.title = 'Семейное древо';
     const out = new PassThrough();

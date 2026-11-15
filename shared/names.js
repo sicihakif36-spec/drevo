@@ -386,13 +386,15 @@ export function kinshipTerm(up, down, sex, side) {
 // Индекс связей из выгрузки дерева.
 export function buildIndex(data) {
   const persons = new Map(data.persons.map((p) => [p.id, p]));
-  const families = new Map(data.families.map((f) => [f.id, { ...f, children: [] }]));
+  // kinds: вид связи ребёнка в семье (birth — родной, иначе приёмный и т. п.)
+  const families = new Map(data.families.map((f) => [f.id, { ...f, children: [], kinds: new Map() }]));
   const parentFamilies = new Map();
   const spouseFamilies = new Map();
   for (const c of data.children) {
     const f = families.get(c.family_id);
     if (!f) continue;
     f.children.push(c.child_id);
+    f.kinds.set(c.child_id, c.kind || 'birth');
     if (!parentFamilies.has(c.child_id)) parentFamilies.set(c.child_id, []);
     parentFamilies.get(c.child_id).push(f.id);
   }
