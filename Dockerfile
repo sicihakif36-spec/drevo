@@ -1,5 +1,5 @@
 # Образ Node берётся из Docker Hub. Если он недоступен с сервера, задайте зеркало:
-#   NODE_IMAGE=mirror.gcr.io/library/node:22-bookworm-slim в deploy/.env
+#   NODE_IMAGE=mirror.gcr.io/library/node:22-bookworm-slim в /srv/drevo/.env (ошибка «429 Too Many Requests» — docs/zapusk.md, раздел 5)
 ARG NODE_IMAGE=node:22-bookworm-slim
 
 FROM ${NODE_IMAGE} AS web
